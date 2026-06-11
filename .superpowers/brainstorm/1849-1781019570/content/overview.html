@@ -1,0 +1,94 @@
+<h2>期末复习 Agent — 项目全景回顾</h2>
+<p class="subtitle">v2.0 设计 → v3.0 升级方向</p>
+
+<div class="section">
+  <h3>当前 v2.0 设计（单 RAG 问答系统）</h3>
+  <div class="mockup">
+    <div class="mockup-header">架构：用户提问 → 检索 → 回答</div>
+    <div class="mockup-body" style="padding: 16px;">
+      <div style="display:flex; gap:12px; align-items:center; flex-wrap:wrap;">
+        <div class="mock-content" style="padding:10px 16px; font-size:14px;">用户</div>
+        <span style="font-size:20px;">→</span>
+        <div class="mock-content" style="padding:10px 16px; font-size:14px;">FastAPI</div>
+        <span style="font-size:20px;">→</span>
+        <div class="mock-content" style="padding:10px 16px; font-size:14px;">RAG 检索</div>
+        <span style="font-size:20px;">→</span>
+        <div class="mock-content" style="padding:10px 16px; font-size:14px;">LLM 生成</div>
+        <span style="font-size:20px;">→</span>
+        <div class="mock-content" style="padding:10px 16px; font-size:14px;">回答</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="section">
+  <h3>v3.0 升级方向（3 Agent + 调度器）</h3>
+  <div class="mockup">
+    <div class="mockup-header">架构：用户意图 → 调度 → 专业 Agent 处理</div>
+    <div class="mockup-body" style="padding: 16px;">
+      <div style="text-align:center; margin-bottom:12px;">
+        <div class="mock-content" style="display:inline-block; padding:10px 24px; font-size:14px; margin-bottom:10px;">用户</div>
+      </div>
+      <div style="text-align:center; margin-bottom:8px;">
+        <span style="font-size:18px;">↓</span>
+      </div>
+      <div style="text-align:center; margin-bottom:12px;">
+        <div class="mock-button" style="display:inline-block; padding:8px 20px;">调度器 Dispatcher</div>
+      </div>
+      <div style="display:flex; gap:12px; justify-content:center; flex-wrap:wrap;">
+        <div style="text-align:center;">
+          <span style="font-size:16px;">↙</span>
+          <span style="font-size:16px;">↓</span>
+          <span style="font-size:16px;">↘</span>
+        </div>
+      </div>
+      <div style="display:flex; gap:16px; justify-content:center; flex-wrap:wrap; margin-top:8px;">
+        <div class="mock-content" style="padding:12px 20px; text-align:center;">
+          <strong>问答 Agent</strong><br>
+          <span style="font-size:12px;">RAG检索+回答</span>
+        </div>
+        <div class="mock-content" style="padding:12px 20px; text-align:center;">
+          <strong>出题 Agent</strong><br>
+          <span style="font-size:12px;">生成题目+模拟卷</span>
+        </div>
+        <div class="mock-content" style="padding:12px 20px; text-align:center;">
+          <strong>诊断 Agent</strong><br>
+          <span style="font-size:12px;">错题分析+薄弱点</span>
+        </div>
+      </div>
+      <div style="text-align:center; margin-top:12px;">
+        <span style="font-size:16px;">↓</span>
+      </div>
+      <div style="text-align:center;">
+        <div class="mock-content" style="display:inline-block; padding:10px 24px; font-size:14px;">共享 RAG 引擎</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="section">
+  <h3>三个核心 Agent 职责</h3>
+  <div class="cards">
+    <div class="card">
+      <div class="card-body">
+        <h3>问答 Agent</h3>
+        <p>"导数的几何意义是什么？"<br>"第三章讲了哪些内容？"</p>
+        <p style="font-size:12px; color:#888;">RAG 检索 → 带引用回答 → 置信度标注</p>
+      </div>
+    </div>
+    <div class="card">
+      <div class="card-body">
+        <h3>出题 Agent</h3>
+        <p>"基于第三章出5道选择题"<br>"出一份期末模拟卷"</p>
+        <p style="font-size:12px; color:#888;">知识点提取 → 难度控制 → 组卷</p>
+      </div>
+    </div>
+    <div class="card">
+      <div class="card-body">
+        <h3>诊断 Agent</h3>
+        <p>"分析我的薄弱点"<br>"哪些章节需要重点复习？"</p>
+        <p style="font-size:12px; color:#888;">错题归类 → 知识覆盖分析 → 复习建议</p>
+      </div>
+    </div>
+  </div>
+</div>

@@ -1,0 +1,25 @@
+{
+  "version": 1,
+  "skills": {
+    "claw-superpowers": {
+      "version": "1.0.1",
+      "installedAt": 1780590024664,
+      "registry": "https://clawhub.ai"
+    },
+    "tavily": {
+      "version": "1.0.0",
+      "installedAt": 1780920173175,
+      "registry": "https://clawhub.ai"
+    },
+    "skill-vetter": {
+      "version": "1.0.0",
+      "installedAt": 1780921186490,
+      "registry": "https://clawhub.ai"
+    },
+    "openclaw-find-skills": {
+      "version": "1.0.0",
+      "installedAt": 1780921573814,
+      "registry": "https://clawhub.ai"
+    }
+  }
+}

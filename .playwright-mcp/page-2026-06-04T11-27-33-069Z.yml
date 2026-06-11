@@ -1,0 +1,1606 @@
+- generic [active] [ref=e1]:
+  - banner [ref=e2]:
+    - generic [ref=e4]:
+      - link [ref=e5] [cursor=pointer]:
+        - /url: https://cloud.baidu.com
+        - img [ref=e6]
+      - img "菜单" [ref=e25]
+      - img "用户信息" [ref=e27]
+      - generic [ref=e28] [cursor=pointer]:
+        - img "搜索" [ref=e29]
+        - generic [ref=e30]: 云服务器
+  - group [ref=e32]:
+    - generic [ref=e33]:
+      - generic [ref=e35]:
+        - link "文档中心" [ref=e37] [cursor=pointer]:
+          - /url: https://cloud.baidu.com/doc/index.html
+        - generic [ref=e38]:
+          - link "大模型培训服务 限时9折特惠" [ref=e39] [cursor=pointer]:
+            - /url: https://cloud.baidu.com/campaign/event/qianfan/index.html?track=d4945c45ecdc3affe1372d6123d488c728504fcfa5bf1f50
+            - generic [ref=e40]: 大模型培训服务 限时9折特惠
+          - generic [ref=e41] [cursor=pointer]: 搜索本产品文档关键词
+          - link "立即试用" [ref=e42] [cursor=pointer]:
+            - /url: https://cloud.baidu.com/
+      - generic [ref=e43]:
+        - generic [ref=e44]:
+          - generic [ref=e45]:
+            - generic [ref=e46] [cursor=pointer]: 所有文档
+            - generic [ref=e47] [cursor=pointer]:
+              - img "menu" [ref=e48]
+              - generic:
+                - textbox "搜索本产品文档目录" [ref=e50]
+                - generic [ref=e51]:
+                  - list:
+                    - listitem:
+                      - generic: 人工智能
+                      - list:
+                        - listitem:
+                          - link "百度千帆模型服务及Agent开发平台":
+                            - /url: https://cloud.baidu.com/doc/WENXINWORKSHOP/s/7ltgucw50
+                        - listitem:
+                          - link "百度胜算":
+                            - /url: https://cloud.baidu.com/doc/DataBuilder/index.html
+                        - listitem:
+                          - link "DuClaw":
+                            - /url: https://cloud.baidu.com/doc/DuClaw/index.html
+                        - listitem:
+                          - link "秒哒":
+                            - /url: https://cloud.baidu.com/doc/MIAODA/index.html
+                        - listitem:
+                          - link "百度伐谋":
+                            - /url: https://cloud.baidu.com/doc/FAMOU/index.html
+                        - listitem:
+                          - link "百度一见":
+                            - /url: https://cloud.baidu.com/doc/yijian/index.html
+                        - listitem:
+                          - link "智能代码助手":
+                            - /url: https://cloud.baidu.com/doc/COMATE/index.html
+                        - listitem:
+                          - link "文字识别":
+                            - /url: https://cloud.baidu.com/doc/OCR/index.html
+                        - listitem:
+                          - link "语音技术":
+                            - /url: https://cloud.baidu.com/doc/SPEECH/index.html
+                        - listitem:
+                          - link "人脸识别":
+                            - /url: https://cloud.baidu.com/doc/FACE/index.html
+                        - listitem:
+                          - link "人体分析":
+                            - /url: https://cloud.baidu.com/doc/BODY/index.html
+                        - listitem:
+                          - link "语言处理技术":
+                            - /url: https://cloud.baidu.com/doc/NLP/index.html
+                        - listitem:
+                          - link "图像识别":
+                            - /url: https://cloud.baidu.com/doc/IMAGERECOGNITION/index.html
+                        - listitem:
+                          - link "图像搜索":
+                            - /url: https://cloud.baidu.com/doc/IMAGESEARCH/index.html
+                        - listitem:
+                          - link "图像增强":
+                            - /url: https://cloud.baidu.com/doc/IMAGEPROCESS/index.html
+                        - listitem:
+                          - link "BML全功能AI开发平台":
+                            - /url: https://cloud.baidu.com/doc/BML/index.html
+                        - listitem:
+                          - link "零门槛AI开发平台 EasyDL":
+                            - /url: https://cloud.baidu.com/doc/EASYDL/index.html
+                        - listitem:
+                          - link "知识理解":
+                            - /url: https://cloud.baidu.com/doc/KG/index.html
+                        - listitem:
+                          - link "机器人平台 ABC Robot":
+                            - /url: https://cloud.baidu.com/doc/ABCROBOT/index.html
+                        - listitem:
+                          - link "内容审核":
+                            - /url: https://cloud.baidu.com/doc/ANTIPORN/index.html
+                        - listitem:
+                          - link "机器翻译":
+                            - /url: https://cloud.baidu.com/doc/MT/index.html
+                        - listitem:
+                          - link "居民服务Agent":
+                            - /url: https://cloud.baidu.com/doc/ACSP/index.html
+                        - listitem:
+                          - link "曦灵数字人":
+                            - /url: https://cloud.baidu.com/doc/AI_DH_CLOUD/index.html
+                    - listitem:
+                      - generic: 计算
+                      - list:
+                        - listitem:
+                          - link "云服务器 BCC":
+                            - /url: https://cloud.baidu.com/doc/BCC/index.html
+                        - listitem:
+                          - link "专属服务器 DCC":
+                            - /url: https://cloud.baidu.com/doc/DCC/index.html
+                        - listitem:
+                          - link "弹性裸金属服务器":
+                            - /url: https://cloud.baidu.com/doc/BBC/index.html
+                        - listitem:
+                          - link "GPU云服务器":
+                            - /url: https://cloud.baidu.com/doc/GPU/index.html
+                        - listitem:
+                          - link "FPGA云服务器":
+                            - /url: https://cloud.baidu.com/doc/FPGA/index.html
+                        - listitem:
+                          - link "云手机":
+                            - /url: https://cloud.baidu.com/doc/ARMCM/index.html
+                        - listitem:
+                          - link "弹性伸缩 AS":
+                            - /url: https://cloud.baidu.com/doc/AS/index.html
+                        - listitem:
+                          - link "云编排服务 COS":
+                            - /url: https://cloud.baidu.com/doc/COS/index.html
+                        - listitem:
+                          - link "应用引擎 BAE":
+                            - /url: https://cloud.baidu.com/doc/BAE-Pro/index.html
+                        - listitem:
+                          - link "轻量应用服务器 LS":
+                            - /url: https://cloud.baidu.com/doc/LS/index.html
+                        - listitem:
+                          - link "本地计算集群 LCC":
+                            - /url: https://cloud.baidu.com/doc/LCC/index.html
+                        - listitem:
+                          - link "百度百舸·AI计算平台":
+                            - /url: https://cloud.baidu.com/doc/AIHC/s/2liv5fhy5
+                        - listitem:
+                          - link "云高性能计算平台":
+                            - /url: https://cloud.baidu.com/doc/CHPC/index.html
+                        - listitem:
+                          - link "磐玉一体机":
+                            - /url: https://cloud.baidu.com/doc/PYCS/index.html
+                    - listitem:
+                      - generic: 网络
+                      - list:
+                        - listitem:
+                          - link "弹性公网IP":
+                            - /url: https://cloud.baidu.com/doc/EIP/index.html
+                        - listitem:
+                          - link "私有网络 VPC":
+                            - /url: https://cloud.baidu.com/doc/VPC/index.html
+                        - listitem:
+                          - link "服务网卡 SNIC":
+                            - /url: https://cloud.baidu.com/doc/SNIC/index.html
+                        - listitem:
+                          - link "负载均衡 BLB":
+                            - /url: https://cloud.baidu.com/doc/BLB/index.html
+                        - listitem:
+                          - link "智能云解析 DNS":
+                            - /url: https://cloud.baidu.com/doc/DNS/index.html
+                        - listitem:
+                          - link "专线接入 ET":
+                            - /url: https://cloud.baidu.com/doc/ET/index.html
+                        - listitem:
+                          - link "云智能网 CSN":
+                            - /url: https://cloud.baidu.com/doc/CSN/index.html
+                        - listitem:
+                          - link "智能流量管理":
+                            - /url: https://cloud.baidu.com/doc/ITM/index.html
+                        - listitem:
+                          - link "云防火墙 CFW":
+                            - /url: https://cloud.baidu.com/doc/CFW/index.html
+                        - listitem:
+                          - link "智能网络接入服务":
+                            - /url: https://cloud.baidu.com/doc/SMART-WAN/index.html
+                        - listitem:
+                          - link "网络诊断服务":
+                            - /url: https://cloud.baidu.com/doc/NDS/s/Ulvxtamqg
+                    - listitem:
+                      - generic: 存储
+                      - list:
+                        - listitem:
+                          - link "对象存储 BOS":
+                            - /url: https://cloud.baidu.com/doc/BOS/index.html
+                        - listitem:
+                          - link "云磁盘 CDS":
+                            - /url: https://cloud.baidu.com/doc/CDS/index.html
+                        - listitem:
+                          - link "文件存储 CFS":
+                            - /url: https://cloud.baidu.com/doc/CFS/index.html
+                        - listitem:
+                          - link "并行文件存储 PFS":
+                            - /url: https://cloud.baidu.com/doc/PFS/index.html
+                        - listitem:
+                          - link "存储网关 BSG":
+                            - /url: https://cloud.baidu.com/doc/BSG/index.html
+                        - listitem:
+                          - link "数据流转平台 CloudFlow":
+                            - /url: https://cloud.baidu.com/doc/CLOUDFLOW/index.html
+                        - listitem:
+                          - link "数据湖存储加速工具 RapidFS":
+                            - /url: https://cloud.baidu.com/doc/RAPIDFS/index.html
+                        - listitem:
+                          - link "云备份 BCB":
+                            - /url: https://cloud.baidu.com/doc/BCB/index.html
+                        - listitem:
+                          - link "表格存储 TableStorage":
+                            - /url: https://cloud.baidu.com/doc/BTS/index.html
+                    - listitem:
+                      - generic: CDN与边缘服务
+                      - list:
+                        - listitem:
+                          - link "内容分发网络 CDN":
+                            - /url: https://cloud.baidu.com/doc/CDN/index.html
+                        - listitem:
+                          - link "海外CDN":
+                            - /url: https://cloud.baidu.com/doc/CDN-ABROAD/index.html
+                        - listitem:
+                          - link "动态加速 DRCDN":
+                            - /url: https://cloud.baidu.com/doc/DRCDN/index.html
+                        - listitem:
+                          - link "边缘计算节点 BEC":
+                            - /url: https://cloud.baidu.com/doc/BEC/index.html
+                        - listitem:
+                          - link "边缘服务器 ECS":
+                            - /url: https://cloud.baidu.com/doc/ECS/index.html
+                    - listitem:
+                      - generic: 数据库
+                      - list:
+                        - listitem:
+                          - link "云数据库 RDS":
+                            - /url: https://cloud.baidu.com/doc/RDS/index.html
+                        - listitem:
+                          - link "云数据库 Redis":
+                            - /url: https://cloud.baidu.com/doc/SCS/index.html
+                        - listitem:
+                          - link "云数据库 DocDB for MongoDB":
+                            - /url: https://cloud.baidu.com/doc/MONGODB/index.html
+                        - listitem:
+                          - link "云原生数据库 GaiaDB":
+                            - /url: https://cloud.baidu.com/doc/GaiaDB/s/mkd45c3ap
+                        - listitem:
+                          - link "数据传输服务 DTS":
+                            - /url: https://cloud.baidu.com/doc/DTS/index.html
+                        - listitem:
+                          - link "数据库智能驾驶舱 DBSC":
+                            - /url: https://cloud.baidu.com/doc/DBSC/index.html
+                        - listitem:
+                          - link "消息服务 for RabbitMQ":
+                            - /url: https://cloud.baidu.com/doc/RabbitMQ/index.html
+                        - listitem:
+                          - link "向量数据库 VectorDB":
+                            - /url: https://cloud.baidu.com/doc/VDB/index.html
+                    - listitem:
+                      - generic: 云原生
+                      - list:
+                        - listitem:
+                          - link "容器引擎服务 CCE":
+                            - /url: https://cloud.baidu.com/doc/CCE/index.html
+                        - listitem:
+                          - link "容器镜像服务CCR":
+                            - /url: https://cloud.baidu.com/doc/CCR/index.html
+                        - listitem:
+                          - link "Prometheus监控服务":
+                            - /url: https://cloud.baidu.com/doc/CProm/index.html
+                        - listitem:
+                          - link "容器实例BCI":
+                            - /url: https://cloud.baidu.com/doc/BCI/index.html
+                        - listitem:
+                          - link "函数计算 CFC":
+                            - /url: https://cloud.baidu.com/doc/CFC/index.html
+                        - listitem:
+                          - link "服务网格 CSM":
+                            - /url: https://cloud.baidu.com/doc/CSM/index.html
+                        - listitem:
+                          - link "微服务引擎 MSE":
+                            - /url: https://cloud.baidu.com/doc/MSE/index.html
+                        - listitem:
+                          - link "AI原生网关 AIGW":
+                            - /url: https://cloud.baidu.com/doc/AIGW/index.html
+                    - listitem:
+                      - generic: 管理运维
+                      - list:
+                        - listitem:
+                          - link "云监控BCM":
+                            - /url: https://cloud.baidu.com/doc/BCM/index.html
+                        - listitem:
+                          - link "运维编排服务":
+                            - /url: https://cloud.baidu.com/doc/OOS/index.html
+                        - listitem:
+                          - link "效率云":
+                            - /url: https://cloud.baidu.com/doc/XLY/index.html
+                        - listitem:
+                          - link "API网关":
+                            - /url: https://cloud.baidu.com/doc/APIGW/index.html
+                        - listitem:
+                          - link "标签管理":
+                            - /url: https://cloud.baidu.com/doc/TAG/index.html
+                        - listitem:
+                          - link "资源管理":
+                            - /url: https://cloud.baidu.com/doc/ResManagement/index.html
+                        - listitem:
+                          - link "配额中心":
+                            - /url: https://cloud.baidu.com/doc/QUOTA_CENTER/s/iks9z7yuw
+                        - listitem:
+                          - link "云迁移中心":
+                            - /url: https://cloud.baidu.com/doc/cmc/index.html
+                        - listitem:
+                          - link "服务与支持":
+                            - /url: https://cloud.baidu.com/doc/Service-Support/index.html
+                    - listitem:
+                      - generic: 智能视频
+                      - list:
+                        - listitem:
+                          - link "音视频处理":
+                            - /url: https://cloud.baidu.com/doc/MCT/index.html
+                        - listitem:
+                          - link "智能视频 SDK":
+                            - /url: https://cloud.baidu.com/doc/VideoCreatingSDK/index.html
+                        - listitem:
+                          - link "媒体内容分析":
+                            - /url: https://cloud.baidu.com/doc/VCA/index.html
+                        - listitem:
+                          - link "媒体内容审核":
+                            - /url: https://cloud.baidu.com/doc/VCR/index.html
+                        - listitem:
+                          - link "音视频直播":
+                            - /url: https://cloud.baidu.com/doc/LSS/index.html
+                        - listitem:
+                          - link "智能直播应用平台 ILAP":
+                            - /url: https://cloud.baidu.com/doc/LCPS/index.html
+                        - listitem:
+                          - link "实时音视频 RTC":
+                            - /url: https://cloud.baidu.com/doc/RTC/index.html
+                        - listitem:
+                          - link "智能点播平台 VOD":
+                            - /url: https://cloud.baidu.com/doc/VOD/index.html
+                        - listitem:
+                          - link "多模态资源检索":
+                            - /url: https://cloud.baidu.com/doc/MMS/index.html
+                        - listitem:
+                          - link "智能视联网平台":
+                            - /url: https://cloud.baidu.com/doc/EVS/index.html
+                    - listitem:
+                      - generic: 智能大数据
+                      - list:
+                        - listitem:
+                          - link "MapReduce":
+                            - /url: https://cloud.baidu.com/doc/BMR/index.html
+                        - listitem:
+                          - link "流式计算 BSC":
+                            - /url: https://cloud.baidu.com/doc/BSC/index.html
+                        - listitem:
+                          - link "数据可视化 Sugar BI":
+                            - /url: https://cloud.baidu.com/doc/SUGAR/index.html
+                        - listitem:
+                          - link "Elasticsearch":
+                            - /url: https://cloud.baidu.com/doc/BES/index.html
+                        - listitem:
+                          - link "数据仓库 PALO":
+                            - /url: https://cloud.baidu.com/doc/PALO/index.html
+                        - listitem:
+                          - link "日志服务 BLS":
+                            - /url: https://cloud.baidu.com/doc/BLS/index.html
+                        - listitem:
+                          - link "消息服务 for Kafka":
+                            - /url: https://cloud.baidu.com/doc/Kafka/index.html
+                        - listitem:
+                          - link "消息服务 for RocketMQ":
+                            - /url: https://cloud.baidu.com/doc/RocketMQ/index.html
+                        - listitem:
+                          - link "千帆数据智能平台 DataBuilder":
+                            - /url: https://cloud.baidu.com/doc/DataBuilder/index.html
+                        - listitem:
+                          - link "城市时空大数据分析 DMI":
+                            - /url: https://cloud.baidu.com/doc/DMI/index.html
+                    - listitem:
+                      - generic: 安全
+                      - list:
+                        - listitem:
+                          - link "DDoS防护服务":
+                            - /url: https://cloud.baidu.com/doc/DDOS/index.html
+                        - listitem:
+                          - link "应用防火墙WAF":
+                            - /url: https://cloud.baidu.com/doc/WAF/index.html
+                        - listitem:
+                          - link "云安全中心":
+                            - /url: https://cloud.baidu.com/doc/CSC/index.html
+                        - listitem:
+                          - link "安全检测服务":
+                            - /url: https://cloud.baidu.com/doc/SRD/index.html
+                        - listitem:
+                          - link "流量审计分析":
+                            - /url: https://cloud.baidu.com/doc/IDS/index.html
+                        - listitem:
+                          - link "云审计":
+                            - /url: https://cloud.baidu.com/doc/BCT/index.html
+                        - listitem:
+                          - link "业务安全风控":
+                            - /url: https://cloud.baidu.com/doc/AFD/index.html
+                        - listitem:
+                          - link "号码安全服务SPNS":
+                            - /url: https://cloud.baidu.com/doc/SPNS/index.html
+                        - listitem:
+                          - link "密钥管理服务":
+                            - /url: https://cloud.baidu.com/doc/KMS/index.html
+                        - listitem:
+                          - link "SSL证书":
+                            - /url: https://cloud.baidu.com/doc/CAS/index.html
+                        - listitem:
+                          - link "云堡垒机":
+                            - /url: https://cloud.baidu.com/doc/CAG/index.html
+                        - listitem:
+                          - link "安全漏洞预警":
+                            - /url: https://cloud.baidu.com/doc/SVW/index.html
+                        - listitem:
+                          - link "操作系统安全加固":
+                            - /url: https://cloud.baidu.com/doc/SR/index.html
+                        - listitem:
+                          - link "应用加固与安全检测":
+                            - /url: https://cloud.baidu.com/doc/IAP/index.html
+                        - listitem:
+                          - link "短网址服务":
+                            - /url: https://cloud.baidu.com/doc/DWZ/index.html
+                        - listitem:
+                          - link "史宾格安全及隐私合规平台":
+                            - /url: https://cloud.baidu.com/doc/SPRINGER/index.html
+                        - listitem:
+                          - link "大模型内容安全平台":
+                            - /url: https://cloud.baidu.com/doc/AIGC_SEC/s/rlvyo97v7
+                    - listitem:
+                      - generic: 云通信
+                      - list:
+                        - listitem:
+                          - link "短信服务 SMS":
+                            - /url: https://cloud.baidu.com/doc/SMS/index.html
+                        - listitem:
+                          - link "号码隐私保护服务 PNS":
+                            - /url: https://cloud.baidu.com/doc/PNS/index.html
+                        - listitem:
+                          - link "号码认证服务":
+                            - /url: https://cloud.baidu.com/doc/PNVS/index.html
+                        - listitem:
+                          - link "语音通话":
+                            - /url: https://cloud.baidu.com/doc/VCS/index.html
+                        - listitem:
+                          - link "语言通知服务":
+                            - /url: https://cloud.baidu.com/doc/VNS/index.html
+                        - listitem:
+                          - link "5G消息服务":
+                            - /url: https://cloud.baidu.com/doc/FIFTHG_MS/index.html
+                    - listitem:
+                      - generic: 域名与网站
+                      - list:
+                        - listitem:
+                          - link "智能门户":
+                            - /url: https://cloud.baidu.com/doc/AIPAGE/index.html
+                        - listitem:
+                          - link "域名服务":
+                            - /url: https://cloud.baidu.com/doc/BCD/index.html
+                        - listitem:
+                          - link "备案服务":
+                            - /url: https://cloud.baidu.com/doc/BeiAn/index.html
+                        - listitem:
+                          - link "移动域名解析":
+                            - /url: https://cloud.baidu.com/doc/HTTPDNS/index.html
+                        - listitem:
+                          - link "商标服务":
+                            - /url: https://cloud.baidu.com/doc/TMS/index.html
+                        - listitem:
+                          - link "云主机管家":
+                            - /url: https://cloud.baidu.com/doc/HME/index.html
+                    - listitem:
+                      - generic: 数字营销云
+                      - list:
+                        - listitem:
+                          - link "智能对话营销服务":
+                            - /url: https://cloud.baidu.com/doc/AIDA/index.html
+                    - listitem:
+                      - generic: 企业智能应用
+                      - list:
+                        - listitem:
+                          - link "智能对话平台UNIT私有化":
+                            - /url: https://cloud.baidu.com/doc/ICS/index.html
+                        - listitem:
+                          - link "智能对话平台UNIT云端版":
+                            - /url: http://cloud.baidu.com/doc/UNIT-LLM/s/tlrydwwi6
+                        - listitem:
+                          - link "智能外呼":
+                            - /url: https://cloud.baidu.com/doc/CCC/index.html
+                        - listitem:
+                          - link "智能推荐引擎":
+                            - /url: https://cloud.baidu.com/doc/AI_REC/index.html
+                        - listitem:
+                          - link "工商财税服务 CBS":
+                            - /url: https://cloud.baidu.com/doc/CBS/index.html
+                        - listitem:
+                          - link "问卷调研服务":
+                            - /url: https://cloud.baidu.com/doc/QSS/index.html
+                        - listitem:
+                          - link "移动APP测试服务":
+                            - /url: https://cloud.baidu.com/doc/MAT/index.html
+                    - listitem:
+                      - generic: 物联网服务
+                      - list:
+                        - listitem:
+                          - link "物联网核心套件":
+                            - /url: https://cloud.baidu.com/doc/IoTCore/index.html
+                        - listitem:
+                          - link "时序时空数据库 TSDB":
+                            - /url: https://cloud.baidu.com/doc/TSDB/index.html
+                        - listitem:
+                          - link "物联网安全套件":
+                            - /url: https://cloud.baidu.com/doc/HISK/index.html
+                        - listitem:
+                          - link "天工智能物联网解决方案":
+                            - /url: https://cloud.baidu.com/doc/IoTSolution/index.html
+                        - listitem:
+                          - link "度家-AIOT语音平台":
+                            - /url: https://cloud.baidu.com/doc/SHC/index.html
+                    - listitem:
+                      - generic: 区块链
+                      - list:
+                        - listitem:
+                          - link "超级链BaaS平台":
+                            - /url: https://cloud.baidu.com/doc/BBE/index.html
+                        - listitem:
+                          - link "超级链数字商品可信登记平台":
+                            - /url: https://cloud.baidu.com/doc/XuperAsset/index.html
+                        - listitem:
+                          - link "超级链可信存证":
+                            - /url: https://cloud.baidu.com/doc/XUPEREVID/index.html
+                    - listitem:
+                      - generic: 混合云
+                      - list:
+                        - listitem:
+                          - link "广目混合云管理平台":
+                            - /url: https://cloud.baidu.com/doc/BHCMP/s/alz9iwz78
+                        - listitem:
+                          - link "BaiduLinuxOS":
+                            - /url: https://cloud.baidu.com/doc/BaiduLinuxOS/index.html
+                    - listitem:
+                      - generic: 云市场
+                      - list:
+                        - listitem:
+                          - link "云市场":
+                            - /url: https://cloud.baidu.com/doc/Market/index.html
+                    - listitem:
+                      - generic: 解决方案
+                      - list:
+                        - listitem:
+                          - link "金融云":
+                            - /url: https://cloud.baidu.com/doc/Financialcloud/index.html
+                        - listitem:
+                          - link "工业视觉智能平台":
+                            - /url: https://cloud.baidu.com/doc/IQI/index.html
+                        - listitem:
+                          - link "云游戏":
+                            - /url: https://cloud.baidu.com/doc/CG/index.html
+                        - listitem:
+                          - link "金融智能体":
+                            - /url: https://cloud.baidu.com/doc/ZHIJIN_AGENT/s/Hlvbxmg11
+                    - listitem:
+                      - generic: 账户管理
+                      - list:
+                        - listitem:
+                          - link "账号管理":
+                            - /url: https://cloud.baidu.com/doc/UserGuide/index.html
+                        - listitem:
+                          - link "多用户访问控制":
+                            - /url: https://cloud.baidu.com/doc/IAM/index.html
+                        - listitem:
+                          - link "企业组织":
+                            - /url: https://cloud.baidu.com/doc/Reference/s/jjwvz2aog
+                        - listitem:
+                          - link "证书管理":
+                            - /url: https://cloud.baidu.com/doc/Reference/s/8jwvz26si
+                        - listitem:
+                          - link "实名认证":
+                            - /url: https://cloud.baidu.com/doc/UserGuide/s/8jwvy3c96
+                    - listitem:
+                      - generic: 通用参考
+                      - list:
+                        - listitem:
+                          - link "ICP备案帮助":
+                            - /url: https://cloud.baidu.com/doc/BeiAn/index.html
+                        - listitem:
+                          - link "区域选择说明":
+                            - /url: https://cloud.baidu.com/doc/Reference/s/2jwvz23xx
+                        - listitem:
+                          - link "鉴权认证机制":
+                            - /url: https://cloud.baidu.com/doc/Reference/s/Njwvz1wot
+                        - listitem:
+                          - link "获取AK/SK":
+                            - /url: https://cloud.baidu.com/doc/Reference/s/jjwvz2e3p
+                        - listitem:
+                          - link "术语表":
+                            - /url: https://cloud.baidu.com/doc/Reference/s/fjwvz2o9t
+                        - listitem:
+                          - link "法律条款":
+                            - /url: https://cloud.baidu.com/doc/Agreements/index.html
+                        - listitem:
+                          - link "API入门指南":
+                            - /url: https://cloud.baidu.com/doc/APIGUIDE/index.html
+                    - listitem:
+                      - generic: 财务参考
+                      - list:
+                        - listitem:
+                          - link "计费说明":
+                            - /url: https://cloud.baidu.com/doc/Finance/s/cjwvyt346/
+                        - listitem:
+                          - link "发票":
+                            - /url: https://cloud.baidu.com/doc/Finance/s/2l1xhy8xr
+                        - listitem:
+                          - link "充值":
+                            - /url: https://cloud.baidu.com/doc/Finance/s/djwvyt4f8
+                        - listitem:
+                          - link "续费":
+                            - /url: https://cloud.baidu.com/doc/Finance/s/Ajwvysr88
+                        - listitem:
+                          - link "代金券":
+                            - /url: https://cloud.baidu.com/doc/Finance/s/wjwvyswbe
+                        - listitem:
+                          - link "账单与收支":
+                            - /url: https://cloud.baidu.com/doc/Finance/s/Yjwvyt6i7
+                        - listitem:
+                          - link "订单管理":
+                            - /url: https://cloud.baidu.com/doc/Finance/s/zjwvyspy0
+                        - listitem:
+                          - link "提现":
+                            - /url: https://cloud.baidu.com/doc/Finance/s/yjwvysp9a
+                        - listitem:
+                          - link "退款":
+                            - /url: https://cloud.baidu.com/doc/Finance/s/ajwvysqm9
+                        - listitem:
+                          - link "配置升/降级":
+                            - /url: https://cloud.baidu.com/doc/Finance/s/Fjwvyt534
+                        - listitem:
+                          - link "赔付":
+                            - /url: https://cloud.baidu.com/doc/Finance/s/Njwvyt7ma
+                        - listitem:
+                          - link "企业组织财务管理":
+                            - /url: https://cloud.baidu.com/doc/Finance/s/gjwvyt1gn
+                        - listitem:
+                          - link "合同":
+                            - /url: https://cloud.baidu.com/doc/Finance/s/5jwvyt0tf
+                        - listitem:
+                          - link "常见问题":
+                            - /url: https://cloud.baidu.com/doc/Finance/s/Vk3i5qy0p
+          - heading "百度千帆·大模型服务及Agent开发平台" [level=2] [ref=e52]:
+            - link "百度千帆·大模型服务及Agent开发平台" [ref=e53] [cursor=pointer]:
+              - /url: /doc/qianfan/index.html
+          - textbox "搜索本产品文档目录" [ref=e58]
+          - list [ref=e59]:
+            - listitem [ref=e60] [cursor=pointer]:
+              - generic [ref=e61]: 平台介绍
+            - listitem [ref=e62] [cursor=pointer]:
+              - generic [ref=e63]: 模型介绍
+            - listitem [ref=e64] [cursor=pointer]:
+              - generic [ref=e65]: Coding Plan
+              - list [ref=e66]:
+                - listitem [ref=e67]:
+                  - link "Coding Plan" [ref=e68]:
+                    - /url: /doc/qianfan/s/imlg0beiu
+                - listitem [ref=e69]:
+                  - generic [ref=e70]: 接入AI工具
+                  - list [ref=e71]:
+                    - listitem [ref=e72]:
+                      - link "OpenClaw" [ref=e73]:
+                        - /url: /doc/qianfan/s/Rmn2ms2nm
+                    - listitem [ref=e74]:
+                      - link "Claude Code" [ref=e75]:
+                        - /url: /doc/qianfan/s/0mn2mnemj
+                    - listitem [ref=e76]:
+                      - link "OpenCode" [ref=e77]:
+                        - /url: /doc/qianfan/s/Kmmymei1b
+                    - listitem [ref=e78]:
+                      - link "Cursor" [ref=e79]:
+                        - /url: /doc/qianfan/s/ommymvojr
+                    - listitem [ref=e80]:
+                      - link "Cline" [ref=e81]:
+                        - /url: /doc/qianfan/s/3mmymsgv1
+                    - listitem [ref=e82]:
+                      - link "CodeX" [ref=e83]:
+                        - /url: /doc/qianfan/s/Wmmymp9op
+                    - listitem [ref=e84]:
+                      - link "Qwen Code Companion" [ref=e85]:
+                        - /url: /doc/qianfan/s/Vmmynbwr0
+                    - listitem [ref=e86]:
+                      - link "Cherry studio" [ref=e87]:
+                        - /url: /doc/qianfan/s/2mmyn8oac
+                    - listitem [ref=e88]:
+                      - link "Kilo CLI" [ref=e89]:
+                        - /url: /doc/qianfan/s/emmyn316m
+                    - listitem [ref=e90]:
+                      - link "Kilo Code" [ref=e91]:
+                        - /url: /doc/qianfan/s/ymmyn5kc2
+                    - listitem [ref=e92]:
+                      - link "cc-switch" [ref=e93]:
+                        - /url: /doc/qianfan/s/immyngfjz
+            - listitem [ref=e94] [cursor=pointer]:
+              - generic [ref=e95]: 计费说明
+            - listitem [ref=e96] [cursor=pointer]:
+              - generic [ref=e97]: 最佳实践
+            - listitem [ref=e98] [cursor=pointer]:
+              - generic [ref=e99]: 平台操作
+            - listitem [ref=e100] [cursor=pointer]:
+              - generic [ref=e101]: API参考
+            - listitem [ref=e102] [cursor=pointer]:
+              - generic [ref=e103]: SDK参考
+            - listitem [ref=e104] [cursor=pointer]:
+              - generic [ref=e105]: 常见问题
+            - listitem [ref=e106] [cursor=pointer]:
+              - generic [ref=e107]: 相关协议
+        - generic [ref=e109]:
+          - list [ref=e110]:
+            - listitem [ref=e111]:
+              - link "文档中心" [ref=e112] [cursor=pointer]:
+                - /url: /doc/index.html
+            - listitem [ref=e113]:
+              - img "arrow" [ref=e114]
+            - listitem [ref=e115]:
+              - link "百度千帆·大模型服务及Agent开发平台" [ref=e116] [cursor=pointer]:
+                - /url: /doc/qianfan/index.html
+            - listitem [ref=e117]:
+              - img "arrow" [ref=e118]
+            - listitem [ref=e119] [cursor=pointer]:
+              - generic [ref=e120]: ...
+            - listitem [ref=e121]:
+              - img "arrow" [ref=e122]
+            - listitem [ref=e123]: OpenClaw
+          - generic [ref=e124]:
+            - heading "OpenClaw" [level=1] [ref=e125]
+            - generic [ref=e127]: 更新时间：2026-04-14
+            - generic [ref=e128]:
+              - heading "关于 OpenClaw 关于 openclaw permalink" [level=1] [ref=e129]:
+                - text: 关于 OpenClaw
+                - link "关于 openclaw permalink" [ref=e130] [cursor=pointer]:
+                  - /url: "#%E5%85%B3%E4%BA%8E-openclaw"
+              - paragraph [ref=e131]: OpenClaw 是一款开源、自托管的个人 AI 助手。本文介绍如何在 OpenClaw 中使用百度智能云千帆的 Coding Plan，可参考下文配置。
+              - 'heading "Step 1: 安装 OpenClaw step 1 安装 openclaw permalink" [level=1] [ref=e132]':
+                - text: "Step 1: 安装 OpenClaw"
+                - link "step 1 安装 openclaw permalink" [ref=e133] [cursor=pointer]:
+                  - /url: "#step-1-%E5%AE%89%E8%A3%85-openclaw"
+              - paragraph [ref=e134]: 安装或更新 Node.js 22 或更新版本。
+              - list [ref=e135]:
+                - listitem [ref=e136]:
+                  - strong [ref=e137]: macOS / Linux
+              - generic [ref=e139]:
+                - generic [ref=e140]:
+                  - generic [ref=e141]: Bash
+                  - button "复制" [ref=e142] [cursor=pointer]:
+                    - img [ref=e143]
+                    - text: 复制
+                - code [ref=e147]:
+                  - generic [ref=e148]: "1"
+                  - text: curl -fsSL https://openclaw.ai/install.sh | bash
+              - list [ref=e149]:
+                - listitem [ref=e150]:
+                  - strong [ref=e151]: Windows
+              - generic [ref=e153]:
+                - generic [ref=e154]:
+                  - generic [ref=e155]: Bash
+                  - button "复制" [ref=e156] [cursor=pointer]:
+                    - img [ref=e157]
+                    - text: 复制
+                - code [ref=e161]:
+                  - generic [ref=e162]: "1"
+                  - text: iwr -useb https://openclaw.ai/install.ps1 | iex
+              - 'heading "Step 2: 配置网络与模型参数 step 2 配置网络与模型参数 permalink" [level=1] [ref=e163]':
+                - text: "Step 2: 配置网络与模型参数"
+                - link "step 2 配置网络与模型参数 permalink" [ref=e164] [cursor=pointer]:
+                  - /url: "#step-2-%E9%85%8D%E7%BD%AE%E7%BD%91%E7%BB%9C%E4%B8%8E%E6%A8%A1%E5%9E%8B%E5%8F%82%E6%95%B0"
+              - paragraph [ref=e165]:
+                - strong [ref=e166]: 1. 创建并打开配置文件：
+              - list [ref=e167]:
+                - listitem [ref=e168]:
+                  - strong [ref=e169]: macOS / Linux：
+              - generic [ref=e171]:
+                - generic [ref=e172]:
+                  - generic [ref=e173]: Bash
+                  - button "复制" [ref=e174] [cursor=pointer]:
+                    - img [ref=e175]
+                    - text: 复制
+                - code [ref=e179]:
+                  - generic [ref=e180]: "1"
+                  - text: mkdir -p ~/.openclaw
+                  - generic [ref=e181]: "2"
+                  - text: vim ~/.openclaw/openclaw.json
+              - list [ref=e182]:
+                - listitem [ref=e183]:
+                  - strong [ref=e184]: Windows
+              - generic [ref=e186]:
+                - generic [ref=e187]:
+                  - generic [ref=e188]: Bash
+                  - button "复制" [ref=e189] [cursor=pointer]:
+                    - img [ref=e190]
+                    - text: 复制
+                - code [ref=e194]:
+                  - generic [ref=e195]: "1"
+                  - text: mkdir %USERPROFILE%\.openclaw
+                  - generic [ref=e196]: "2"
+                  - text: notepad %USERPROFILE%\.openclaw\openclaw.json
+              - paragraph [ref=e197]:
+                - strong [ref=e198]: 2. 添加配置：
+                - text: 将以下内容完整填入 openclaw.json。
+              - paragraph [ref=e199]:
+                - generic [ref=e200]:
+                  - text: 由于Coding Plan支持模型的contextWindow和maxTokens限制不一样，您可以在文档：
+                  - link "模型列表" [ref=e201] [cursor=pointer]:
+                    - /url: https://cloud.baidu.com/doc/qianfan/s/rmh4stp0j
+                  - text: 中找到您所选择模型的上下文长度（contextWindow）和最大输出tokens长度（maxTokens）值配置。
+              - generic [ref=e203]:
+                - generic [ref=e204]:
+                  - generic [ref=e205]: Bash
+                  - button "复制" [ref=e206] [cursor=pointer]:
+                    - img [ref=e207]
+                    - text: 复制
+                - code [ref=e211]:
+                  - generic [ref=e212]: "1"
+                  - text: "{"
+                  - generic [ref=e213]: "2"
+                  - text: "\"models\": {"
+                  - generic [ref=e214]: "3"
+                  - text: "\"mode\": \"merge\","
+                  - generic [ref=e215]: "4"
+                  - text: "\"providers\": {"
+                  - generic [ref=e216]: "5"
+                  - text: "\"baiduqianfancodingplan\": {"
+                  - generic [ref=e217]: "6"
+                  - text: "\"baseUrl\": \"https://qianfan.baidubce.com/v2/coding\","
+                  - generic [ref=e218]: "7"
+                  - text: "\"apiKey\": \"请填入您的千帆API Key\","
+                  - generic [ref=e219]: "8"
+                  - text: "\"api\": \"openai-completions\","
+                  - generic [ref=e220]: "9"
+                  - text: "\"models\": ["
+                  - generic [ref=e221]: "10"
+                  - text: "{"
+                  - generic [ref=e222]: "11"
+                  - text: "\"id\": \"qianfan-code-latest\","
+                  - generic [ref=e223]: "12"
+                  - text: "\"name\": \"qianfan-code-latest\","
+                  - generic [ref=e224]: "13"
+                  - text: "\"reasoning\": false,"
+                  - generic [ref=e225]: "14"
+                  - text: "\"input\": ["
+                  - generic [ref=e226]: "15"
+                  - text: "\"text\""
+                  - generic [ref=e227]: "16"
+                  - text: "],"
+                  - generic [ref=e228]: "17"
+                  - text: "\"cost\": {"
+                  - generic [ref=e229]: "18"
+                  - text: "\"input\": 0.0025,"
+                  - generic [ref=e230]: "19"
+                  - text: "\"output\": 0.01,"
+                  - generic [ref=e231]: "20"
+                  - text: "\"cacheRead\": 0,"
+                  - generic [ref=e232]: "21"
+                  - text: "\"cacheWrite\": 0"
+                  - generic [ref=e233]: "22"
+                  - text: "},"
+                  - generic [ref=e234]: "23"
+                  - text: "\"contextWindow\": 98304,"
+                  - generic [ref=e235]: "24"
+                  - text: "\"maxTokens\": 65536"
+                  - generic [ref=e236]: "25"
+                  - text: "}"
+                  - generic [ref=e237]: "26"
+                  - text: "]"
+                  - generic [ref=e238]: "27"
+                  - text: "}"
+                  - generic [ref=e239]: "28"
+                  - text: "}"
+                  - generic [ref=e240]: "29"
+                  - text: "},"
+                  - generic [ref=e241]: "30"
+                  - text: "\"agents\": {"
+                  - generic [ref=e242]: "31"
+                  - text: "\"defaults\": {"
+                  - generic [ref=e243]: "32"
+                  - text: "\"model\": {"
+                  - generic [ref=e244]: "33"
+                  - text: "\"primary\": \"baiduqianfancodingplan/qianfan-code-latest\""
+                  - generic [ref=e245]: "34"
+                  - text: "},"
+                  - generic [ref=e246]: "35"
+                  - text: "\"models\": {"
+                  - generic [ref=e247]: "36"
+                  - text: "\"baiduqianfancodingplan/qianfan-code-latest\": {}"
+                  - generic [ref=e248]: "37"
+                  - text: "},"
+                  - generic [ref=e249]: "38"
+                  - text: "\"compaction\": {"
+                  - generic [ref=e250]: "39"
+                  - text: "\"mode\": \"safeguard\""
+                  - generic [ref=e251]: "40"
+                  - text: "},"
+                  - generic [ref=e252]: "41"
+                  - text: "\"maxConcurrent\": 4,"
+                  - generic [ref=e253]: "42"
+                  - text: "\"subagents\": {"
+                  - generic [ref=e254]: "43"
+                  - text: "\"maxConcurrent\": 8"
+                  - generic [ref=e255]: "44"
+                  - text: "}"
+                  - generic [ref=e256]: "45"
+                  - text: "}"
+                  - generic [ref=e257]: "46"
+                  - text: "}"
+                  - generic [ref=e258]: "47"
+                  - text: "}"
+              - 'heading "Step 3: 启动配置 step 3 启动配置 permalink" [level=1] [ref=e259]':
+                - text: "Step 3: 启动配置"
+                - link "step 3 启动配置 permalink" [ref=e260] [cursor=pointer]:
+                  - /url: "#step-3-%E5%90%AF%E5%8A%A8%E9%85%8D%E7%BD%AE"
+              - paragraph [ref=e261]: 配置完成后，在终端执行以下命令启动OpenClaw
+              - generic [ref=e263]:
+                - generic [ref=e264]:
+                  - generic [ref=e265]: Bash
+                  - button "复制" [ref=e266] [cursor=pointer]:
+                    - img [ref=e267]
+                    - text: 复制
+                - code [ref=e271]:
+                  - generic [ref=e272]: "1"
+                  - text: openclaw onboard --install-daemon
+            - generic [ref=e274]:
+              - paragraph [ref=e277]: 评价此篇文章
+              - generic [ref=e279]:
+                - generic [ref=e280] [cursor=pointer]: 有帮助
+                - generic [ref=e281] [cursor=pointer]: 没帮助
+            - generic:
+              - img [ref=e283] [cursor=pointer]
+              - img
+          - generic [ref=e285]:
+            - link "上一篇 Coding Plan" [ref=e286] [cursor=pointer]:
+              - /url: /doc/qianfan/s/imlg0beiu
+              - generic [ref=e287]: 上一篇
+              - generic [ref=e288]: Coding Plan
+            - link "下一篇 Claude Code" [ref=e289] [cursor=pointer]:
+              - /url: /doc/qianfan/s/0mn2mnemj
+              - generic [ref=e290]: 下一篇
+              - generic [ref=e291]: Claude Code
+  - contentinfo:
+    - list:
+      - listitem:
+        - heading "关于智能云" [level=3]
+        - list:
+          - listitem:
+            - link "百度智能云2.0" [ref=e292] [cursor=pointer]:
+              - /url: https://cloud.baidu.com/cloudai.html
+          - listitem:
+            - link "云智技术论坛" [ref=e293] [cursor=pointer]:
+              - /url: https://cloud.baidu.com/techday/index.html
+          - listitem:
+            - link "行业白皮书" [ref=e294] [cursor=pointer]:
+              - /url: https://cloud.baidu.com/solution/industry-report.html
+          - listitem:
+            - link "智能云公告" [ref=e295] [cursor=pointer]:
+              - /url: https://cloud.baidu.com/news/notice
+          - listitem:
+            - link "最新资讯" [ref=e296] [cursor=pointer]:
+              - /url: https://cloud.baidu.com/news/news
+          - listitem:
+            - link "客户案例" [ref=e297] [cursor=pointer]:
+              - /url: https://cloud.baidu.com/case/index.html
+          - listitem:
+            - link "服务案例" [ref=e298] [cursor=pointer]:
+              - /url: https://cloud.baidu.com/doc/support/index.html#case
+          - listitem:
+            - link "方案手册" [ref=e299] [cursor=pointer]:
+              - /url: https://doc.bce.baidu.com/bce-documentation/GUIDE/百度智能云总体业务手册.pdf
+          - listitem:
+            - link "产品手册" [ref=e300] [cursor=pointer]:
+              - /url: https://doc.bce.baidu.com/bce-documentation/GUIDE/百度智能云产品手册.pdf
+      - listitem:
+        - heading "热门产品" [level=3]
+        - list:
+          - listitem:
+            - link "云服务器" [ref=e301] [cursor=pointer]:
+              - /url: https://cloud.baidu.com/product/bcc.html
+          - listitem:
+            - link "对象存储" [ref=e302] [cursor=pointer]:
+              - /url: https://cloud.baidu.com/product/bos.html
+          - listitem:
+            - link "数据可视化" [ref=e303] [cursor=pointer]:
+              - /url: https://cloud.baidu.com/product/sugar.html
+          - listitem:
+            - link "文字识别" [ref=e304] [cursor=pointer]:
+              - /url: https://cloud.baidu.com/product/ocr
+          - listitem:
+            - link "语音识别" [ref=e305] [cursor=pointer]:
+              - /url: https://cloud.baidu.com/product/speech
+          - listitem:
+            - link "图像识别" [ref=e306] [cursor=pointer]:
+              - /url: https://cloud.baidu.com/product/imagerecognition
+          - listitem:
+            - link "域名服务" [ref=e307] [cursor=pointer]:
+              - /url: https://cloud.baidu.com/product/bcd.html
+          - listitem:
+            - link "BML全功能AI开发平台" [ref=e308] [cursor=pointer]:
+              - /url: https://cloud.baidu.com/product/bml
+          - listitem:
+            - link "曦灵·数字人直播平台" [ref=e309] [cursor=pointer]:
+              - /url: https://cloud.baidu.com/product/baidudigitalhumanlivestream.html/
+          - listitem:
+            - link "内容分发网络CDN" [ref=e310] [cursor=pointer]:
+              - /url: https://cloud.baidu.com/product/cdn.html
+          - listitem:
+            - link "负载均衡" [ref=e311] [cursor=pointer]:
+              - /url: https://cloud.baidu.com/theme/F/331409-1
+      - listitem:
+        - heading "智能解决方案" [level=3]
+        - list:
+          - listitem:
+            - link "智慧城市" [ref=e312] [cursor=pointer]:
+              - /url: https://cloud.baidu.com/solution/city/index.html
+          - listitem:
+            - link "智能制造" [ref=e313] [cursor=pointer]:
+              - /url: https://cloud.baidu.com/solution/manufacture/index.html
+          - listitem:
+            - link "智慧能源" [ref=e314] [cursor=pointer]:
+              - /url: https://cloud.baidu.com/solution/energy/index.html
+          - listitem:
+            - link "智慧水务" [ref=e315] [cursor=pointer]:
+              - /url: https://cloud.baidu.com/solution/water/index.html
+          - listitem:
+            - link "智慧金融" [ref=e316] [cursor=pointer]:
+              - /url: https://cloud.baidu.com/solution/finance/fintech.html
+          - listitem:
+            - link "智慧媒体" [ref=e317] [cursor=pointer]:
+              - /url: https://cloud.baidu.com/solution/media.html
+          - listitem:
+            - link "智慧电信" [ref=e318] [cursor=pointer]:
+              - /url: https://cloud.baidu.com/solution/dianxin.html
+          - listitem:
+            - link "智慧教育" [ref=e319] [cursor=pointer]:
+              - /url: https://cloud.baidu.com/solution/education/index.html
+          - listitem:
+            - link "企业上云" [ref=e320] [cursor=pointer]:
+              - /url: https://cloud.baidu.com/solution/cloud.html
+      - listitem:
+        - heading "快速入口" [level=3]
+        - list:
+          - listitem:
+            - link "控制台" [ref=e321] [cursor=pointer]:
+              - /url: https://console.bce.baidu.com/#/index/overview_v3
+          - listitem:
+            - link "备案帮助" [ref=e322] [cursor=pointer]:
+              - /url: https://cloud.baidu.com/doc/BeiAn/index.html
+          - listitem:
+            - link "产品促销" [ref=e323] [cursor=pointer]:
+              - /url: https://cloud.baidu.com/campaign/PromotionActivity/index.html
+          - listitem:
+            - link "企业服务" [ref=e324] [cursor=pointer]:
+              - /url: https://qifu.baidu.com
+          - listitem:
+            - link "云市场" [ref=e325] [cursor=pointer]:
+              - /url: https://market.baidu.com
+          - listitem:
+            - link "合作伙伴中心" [ref=e326] [cursor=pointer]:
+              - /url: https://cloud.baidu.com/partner/plan.html
+          - listitem:
+            - link "支持计划" [ref=e327] [cursor=pointer]:
+              - /url: https://cloud.baidu.com/support/plan.html
+          - listitem:
+            - link "专家服务" [ref=e328] [cursor=pointer]:
+              - /url: https://cloud.baidu.com/doc/support/index.html
+          - listitem:
+            - link "帮助文档" [ref=e329] [cursor=pointer]:
+              - /url: https://cloud.baidu.com/doc/index.html
+      - listitem:
+        - heading "售前服务咨询" [level=3]
+        - list:
+          - listitem:
+            - heading "支持热线（4008-777-818）" [level=4]
+          - listitem:
+            - link "技术工单" [ref=e330] [cursor=pointer]:
+              - /url: https://ticket.bce.baidu.com/#/ticket/list
+          - listitem:
+            - link "建议反馈" [ref=e331] [cursor=pointer]:
+              - /url: https://console.bce.baidu.com/voc/#/voc
+          - listitem:
+            - link "违规举报" [ref=e332] [cursor=pointer]:
+              - /url: http://help.baidu.com/newadd?prod_id=26&category=1
+      - listitem:
+        - heading "关于百度智能云" [level=3]
+        - list:
+          - listitem:
+            - link "云智一体2.0" [ref=e333] [cursor=pointer]:
+              - /url: https://cloud.baidu.com/cloudai.html
+          - listitem:
+            - link "AI体验中心" [ref=e334] [cursor=pointer]:
+              - /url: https://cloud.baidu.com/experience
+          - listitem:
+            - link "最新资讯" [ref=e335] [cursor=pointer]:
+              - /url: https://cloud.baidu.com/news/news
+          - listitem:
+            - link "产品动态" [ref=e336] [cursor=pointer]:
+              - /url: https://cloud.baidu.com/news/productNews
+          - listitem:
+            - link "市场活动" [ref=e337] [cursor=pointer]:
+              - /url: https://cloud.baidu.com/news/campaign
+          - listitem:
+            - link "客户案例" [ref=e338] [cursor=pointer]:
+              - /url: https://cloud.baidu.com/case/index.html
+          - listitem:
+            - link "行业解读" [ref=e339] [cursor=pointer]:
+              - /url: https://cloud.baidu.com/solution/industry-report.html
+          - listitem:
+            - link "公告通知" [ref=e340] [cursor=pointer]:
+              - /url: https://cloud.baidu.com/news/notice
+          - listitem:
+            - link "联系我们" [ref=e341] [cursor=pointer]:
+              - /url: https://cloud.baidu.com/survey/connect-us.html
+      - listitem:
+        - heading "服务与支持" [level=3]
+        - list:
+          - listitem:
+            - link "文档中心" [ref=e342] [cursor=pointer]:
+              - /url: https://cloud.baidu.com/doc/index.html
+          - listitem:
+            - link "入门指南" [ref=e343] [cursor=pointer]:
+              - /url: https://cloud.baidu.com/doc/StartGuide/index.html
+          - listitem:
+            - link "视频中心" [ref=e344] [cursor=pointer]:
+              - /url: https://cloud.baidu.com/video-center/index.html
+          - listitem:
+            - link "健康看板" [ref=e345] [cursor=pointer]:
+              - /url: https://cloud.baidu.com/status.html
+          - listitem:
+            - link "企业支持计划" [ref=e346] [cursor=pointer]:
+              - /url: https://cloud.baidu.com/support/plan.html
+          - listitem:
+            - link "专家服务" [ref=e347] [cursor=pointer]:
+              - /url: https://cloud.baidu.com/doc/support/index.html#expert
+          - listitem:
+            - link "重大保障服务" [ref=e348] [cursor=pointer]:
+              - /url: https://cloud.baidu.com/doc/support/guarantee.html
+          - listitem:
+            - link "自助服务" [ref=e349] [cursor=pointer]:
+              - /url: https://cloud.baidu.com/doc/self-service/index.html
+          - listitem:
+            - link "智能助手" [ref=e350] [cursor=pointer]:
+              - /url: https://console.bce.baidu.com/znzs/
+      - listitem:
+        - heading "账户管理" [level=3]
+        - list:
+          - listitem:
+            - link "管理控制台" [ref=e351] [cursor=pointer]:
+              - /url: https://console.bce.baidu.com/
+          - listitem:
+            - link "实名认证" [ref=e352] [cursor=pointer]:
+              - /url: https://console.bce.baidu.com/qualify/#/qualify/index?isActivated=1
+          - listitem:
+            - link "域名管理" [ref=e353] [cursor=pointer]:
+              - /url: https://console.bce.baidu.com/bcd/#/bcd/overview
+          - listitem:
+            - link "备案管理" [ref=e354] [cursor=pointer]:
+              - /url: https://beian.bce.baidu.com/user/dashboard
+          - listitem:
+            - link "个人中心" [ref=e355] [cursor=pointer]:
+              - /url: https://console.bce.baidu.com/iam/#/iam/baseinfo
+          - listitem:
+            - link "财务与订单" [ref=e356] [cursor=pointer]:
+              - /url: https://console.bce.baidu.com/billing/#/account/index
+          - listitem:
+            - link "发票申请" [ref=e357] [cursor=pointer]:
+              - /url: https://console.bce.baidu.com/finance/#/invoice/list
+          - listitem:
+            - link "消息中心" [ref=e358] [cursor=pointer]:
+              - /url: https://console.bce.baidu.com/mc/#/mc/letterlist
+          - listitem:
+            - link "我的工单" [ref=e359] [cursor=pointer]:
+              - /url: https://ticket.bce.baidu.com/#/ticket/list
+      - listitem:
+        - heading "快速入口" [level=3]
+        - list:
+          - listitem:
+            - link "成为合作伙伴" [ref=e360] [cursor=pointer]:
+              - /url: https://cloud.baidu.com/partner/plan.html
+          - listitem:
+            - link "云市场" [ref=e361] [cursor=pointer]:
+              - /url: https://market.baidu.com/
+          - listitem:
+            - link "最新活动" [ref=e362] [cursor=pointer]:
+              - /url: https://cloud.baidu.com/campaign/PromotionActivity/index.html
+          - listitem:
+            - link "企业服务" [ref=e363] [cursor=pointer]:
+              - /url: https://qifu.baidu.com/
+          - listitem:
+            - link "开发者社区" [ref=e364] [cursor=pointer]:
+              - /url: https://developer.baidu.com/
+          - listitem:
+            - link "SDK中心" [ref=e365] [cursor=pointer]:
+              - /url: https://cloud.baidu.com/doc/Developer/index.html
+          - listitem:
+            - link "API平台" [ref=e366] [cursor=pointer]:
+              - /url: https://cloud.baidu.com/doc/API/index.html
+          - listitem:
+            - link "开发者沙龙" [ref=e367] [cursor=pointer]:
+              - /url: https://developer.baidu.com/activity.html
+          - listitem:
+            - link "飞桨大赛" [ref=e368] [cursor=pointer]:
+              - /url: https://aistudio.baidu.com/aistudio/competition/1/1
+      - listitem:
+        - heading "实用工具" [level=3]
+        - list:
+          - listitem:
+            - link "短网址" [ref=e369] [cursor=pointer]:
+              - /url: https://console.bce.baidu.com/dwz/?_=1582187668387#/dwz/overview
+          - listitem:
+            - link "域名信息查询" [ref=e370] [cursor=pointer]:
+              - /url: https://cloud.baidu.com/product/bcd/toolPack.html?pageTitle=whois
+          - listitem:
+            - link "SSL证书" [ref=e371] [cursor=pointer]:
+              - /url: https://console.bce.baidu.com/cas/?_=1608000073370#/cas/apply/create
+          - listitem:
+            - link "文字识别" [ref=e372] [cursor=pointer]:
+              - /url: https://console.bce.baidu.com/ai/?fromai=1#/ai/ocr/overview/index
+          - listitem:
+            - link "语音识别" [ref=e373] [cursor=pointer]:
+              - /url: https://console.bce.baidu.com/ai/?fromai=1#/ai/speech/overview/index
+          - listitem:
+            - link "图片识别" [ref=e374] [cursor=pointer]:
+              - /url: https://console.bce.baidu.com/ai/?_=&fromai=1#/ai/imagerecognition/overview/index
+          - listitem:
+            - link "卡证识别" [ref=e375] [cursor=pointer]:
+              - /url: https://console.bce.baidu.com/ai/?fromai=1#/ai/ocr/overview/index
+          - listitem:
+            - link "文档翻译" [ref=e376] [cursor=pointer]:
+              - /url: https://console.bce.baidu.com/ai/?_=1626169856745#/ai/machinetranslation/overview/index
+          - listitem:
+            - link "图片翻译" [ref=e377] [cursor=pointer]:
+              - /url: https://console.bce.baidu.com/ai/#/ai/machinetranslation/overview/index
+      - listitem:
+        - heading "售前咨询热线" [level=3]
+        - list:
+          - listitem:
+            - heading "4008-777-818转1" [level=4]
+          - listitem:
+            - link "售前在线咨询" [ref=e378] [cursor=pointer]:
+              - /url: https://cloud.baidu.com/znzs/pre-sale?source=https%3A%2F%2Fcloud.baidu.com%2Fsupport%2Fplan.html
+          - listitem:
+            - link "售后智能助手" [ref=e379] [cursor=pointer]:
+              - /url: https://console.bce.baidu.com/znzs/
+          - listitem:
+            - link "技术工单" [ref=e380] [cursor=pointer]:
+              - /url: https://ticket.bce.baidu.com/#/
+          - listitem:
+            - link "违规举报" [ref=e381] [cursor=pointer]:
+              - /url: http://help.baidu.com/newadd?prod_id=26&category=1
+      - listitem:
+        - heading "头部" [level=3]
+        - list:
+          - listitem:
+            - link "7*24小时服务" [ref=e382] [cursor=pointer]:
+              - /url: https://cloud.baidu.com/doc/support/index.html#base
+          - listitem:
+            - link "企业支持计划" [ref=e383] [cursor=pointer]:
+              - /url: https://cloud.baidu.com/support/plan.html
+          - listitem:
+            - link "电子化备案" [ref=e384] [cursor=pointer]:
+              - /url: https://cloud.baidu.com/beian/index.html
+          - listitem:
+            - link "建议反馈" [ref=e385] [cursor=pointer]:
+              - /url: https://console.bce.baidu.com/voc/#/voc
+      - listitem:
+        - heading "热门推荐" [level=3]
+        - list:
+          - listitem:
+            - link "云服务器" [ref=e386] [cursor=pointer]:
+              - /url: https://cloud.baidu.com/product/bcc.html
+          - listitem:
+            - link "云磁盘" [ref=e387] [cursor=pointer]:
+              - /url: https://cloud.baidu.com/product/cds.html
+          - listitem:
+            - link "商标注册" [ref=e388] [cursor=pointer]:
+              - /url: https://cloud.baidu.com/product/tms
+          - listitem:
+            - link "文字识别" [ref=e389] [cursor=pointer]:
+              - /url: https://cloud.baidu.com/product/ocr
+          - listitem:
+            - link "弹性公网IP" [ref=e390] [cursor=pointer]:
+              - /url: https://cloud.baidu.com/product/eip.html
+          - listitem:
+            - link "海外CDN" [ref=e391] [cursor=pointer]:
+              - /url: https://cloud.baidu.com/product/cdnabroad.html
+          - listitem:
+            - link "数据传输服务" [ref=e392] [cursor=pointer]:
+              - /url: https://cloud.baidu.com/product/dts.html
+          - listitem:
+            - link "内容分发网络" [ref=e393] [cursor=pointer]:
+              - /url: https://cloud.baidu.com/product/cdn.html
+          - listitem:
+            - link "人脸与人体识别" [ref=e394] [cursor=pointer]:
+              - /url: https://cloud.baidu.com/product/face
+          - listitem:
+            - link "弹性裸金属服务器" [ref=e395] [cursor=pointer]:
+              - /url: https://cloud.baidu.com/product/bbc.html
+          - listitem:
+            - link "SSL证书" [ref=e396] [cursor=pointer]:
+              - /url: https://cloud.baidu.com/product/ssl.html
+          - listitem:
+            - link "域名服务" [ref=e397] [cursor=pointer]:
+              - /url: https://cloud.baidu.com/product/bcd.html
+          - listitem:
+            - link "容器引擎" [ref=e398] [cursor=pointer]:
+              - /url: https://cloud.baidu.com/product/cce.html
+          - listitem:
+            - link "专线接入" [ref=e399] [cursor=pointer]:
+              - /url: https://cloud.baidu.com/product/et.html
+          - listitem:
+            - link "音视频直播" [ref=e400] [cursor=pointer]:
+              - /url: https://cloud.baidu.com/product/lss.html
+          - listitem:
+            - link "智能推荐引擎" [ref=e401] [cursor=pointer]:
+              - /url: https://cloud.baidu.com/product/ai-rec.html
+          - listitem:
+            - link "GPU云服务器" [ref=e402] [cursor=pointer]:
+              - /url: https://cloud.baidu.com/product/gpu.html
+          - listitem:
+            - link "Elasticsearch" [ref=e403] [cursor=pointer]:
+              - /url: https://cloud.baidu.com/product/bes.html
+          - listitem:
+            - link "云数据库HBase" [ref=e404] [cursor=pointer]:
+              - /url: https://cloud.baidu.com/product/hbase.html
+          - listitem:
+            - link "爱速搭低代码平台" [ref=e405] [cursor=pointer]:
+              - /url: https://cloud.baidu.com/product/isuda.html
+          - listitem:
+            - link "智能边缘" [ref=e406] [cursor=pointer]:
+              - /url: https://cloud.baidu.com/product/bie.html
+          - listitem:
+            - link "私有网络" [ref=e407] [cursor=pointer]:
+              - /url: https://cloud.baidu.com/product/vpc.html
+          - listitem:
+            - link "应用引擎" [ref=e408] [cursor=pointer]:
+              - /url: https://cloud.baidu.com/product/bae.html
+          - listitem:
+            - link "文件存储" [ref=e409] [cursor=pointer]:
+              - /url: https://cloud.baidu.com/product/cfs.html
+          - listitem:
+            - link "智能云解析" [ref=e410] [cursor=pointer]:
+              - /url: https://cloud.baidu.com/product/dns.html
+          - listitem:
+            - link "MapReduce" [ref=e411] [cursor=pointer]:
+              - /url: https://cloud.baidu.com/product/bmr.html
+          - listitem:
+            - link "简单消息服务" [ref=e412] [cursor=pointer]:
+              - /url: https://cloud.baidu.com/product/sms.html
+          - listitem:
+            - link "轻量应用服务器" [ref=e413] [cursor=pointer]:
+              - /url: https://cloud.baidu.com/product/lightserver.html
+          - listitem:
+            - link "智能视联网平台" [ref=e414] [cursor=pointer]:
+              - /url: https://cloud.baidu.com/product/evs.html
+          - listitem:
+            - link "云数据库GaiaDB-X" [ref=e415] [cursor=pointer]:
+              - /url: https://cloud.baidu.com/product/drds.html
+          - listitem:
+            - link "日志服务" [ref=e416] [cursor=pointer]:
+              - /url: https://cloud.baidu.com/product/bls.html
+          - listitem:
+            - link "消息服务" [ref=e417] [cursor=pointer]:
+              - /url: https://cloud.baidu.com/product/kafka.html
+          - listitem:
+            - link "负载均衡" [ref=e418] [cursor=pointer]:
+              - /url: https://cloud.baidu.com/product/blb.html
+          - listitem:
+            - link "对象存储" [ref=e419] [cursor=pointer]:
+              - /url: https://cloud.baidu.com/product/bos.html
+          - listitem:
+            - link "云虚拟主机" [ref=e420] [cursor=pointer]:
+              - /url: https://cloud.baidu.com/product/bch.html
+          - listitem:
+            - link "数据仓库Palo" [ref=e421] [cursor=pointer]:
+              - /url: https://cloud.baidu.com/product/palo.html
+          - listitem:
+            - link "容器镜像服务" [ref=e422] [cursor=pointer]:
+              - /url: https://cloud.baidu.com/product/ccr.html
+          - listitem:
+            - link "云数据库DocDB" [ref=e423] [cursor=pointer]:
+              - /url: https://cloud.baidu.com/product/mongodb.html
+          - listitem:
+            - link "超级链BaaS平台" [ref=e424] [cursor=pointer]:
+              - /url: https://cloud.baidu.com/product/bbe.html
+          - listitem:
+            - link "云原生微服务应用平台" [ref=e425] [cursor=pointer]:
+              - /url: https://cloud.baidu.com/product/cnap.html
+      - listitem:
+        - heading "解决方案" [level=3]
+        - list:
+          - listitem:
+            - link "智慧城市" [ref=e426] [cursor=pointer]:
+              - /url: https://cloud.baidu.com/solution/city/index.html
+          - listitem:
+            - link "智慧金融" [ref=e427] [cursor=pointer]:
+              - /url: https://cloud.baidu.com/solution/finance/fintech.html
+          - listitem:
+            - link "智能制造" [ref=e428] [cursor=pointer]:
+              - /url: https://cloud.baidu.com/solution/manufacture/index.html
+          - listitem:
+            - link "智慧能源" [ref=e429] [cursor=pointer]:
+              - /url: https://cloud.baidu.com/solution/energy/index.html
+          - listitem:
+            - link "智慧媒体" [ref=e430] [cursor=pointer]:
+              - /url: https://cloud.baidu.com/solution/media.html
+          - listitem:
+            - link "智慧水务" [ref=e431] [cursor=pointer]:
+              - /url: https://cloud.baidu.com/solution/water/index.html
+          - listitem:
+            - link "智能图云" [ref=e432] [cursor=pointer]:
+              - /url: https://cloud.baidu.com/solution/metamap.html
+          - listitem:
+            - link "企业上云" [ref=e433] [cursor=pointer]:
+              - /url: https://cloud.baidu.com/solution/cloud.html
+          - listitem:
+            - link "区块链" [ref=e434] [cursor=pointer]:
+              - /url: https://cloud.baidu.com/solution/blockchain.html
+          - listitem:
+            - link "物联网" [ref=e435] [cursor=pointer]:
+              - /url: https://cloud.baidu.com/solution/iot/index.html
+      - listitem:
+        - heading "热门搜索" [level=3]
+        - list:
+          - listitem:
+            - link "数字人" [ref=e436] [cursor=pointer]:
+              - /url: https://xiling.cloud.baidu.com/
+          - listitem:
+            - link "云手机" [ref=e437] [cursor=pointer]:
+              - /url: https://cloud.baidu.com/product/bac.html
+          - listitem:
+            - link "智能创作" [ref=e438] [cursor=pointer]:
+              - /url: https://yinian.cloud.baidu.com/home
+          - listitem:
+            - link "数据分析" [ref=e439] [cursor=pointer]:
+              - /url: https://cloud.baidu.com/product/edap.html
+          - listitem:
+            - link "边缘计算" [ref=e440] [cursor=pointer]:
+              - /url: https://cloud.baidu.com/product/bec.html
+          - listitem:
+            - link "域名解析" [ref=e441] [cursor=pointer]:
+              - /url: https://cloud.baidu.com/product/httpdns.html
+          - listitem:
+            - link "数据可视化" [ref=e442] [cursor=pointer]:
+              - /url: https://cloud.baidu.com/product/sugar.html
+          - listitem:
+            - link "自然语言处理" [ref=e443] [cursor=pointer]:
+              - /url: https://cloud.baidu.com/product/nlp_private
+          - listitem:
+            - link "数据采集" [ref=e444] [cursor=pointer]:
+              - /url: https://cloud.baidu.com/product/dc.html
+          - listitem:
+            - link "虚拟主机" [ref=e445] [cursor=pointer]:
+              - /url: https://cloud.baidu.com/product/bch.html
+      - listitem:
+        - heading "快速链接" [level=3]
+        - list:
+          - listitem:
+            - link "百度搜索" [ref=e446] [cursor=pointer]:
+              - /url: https://www.baidu.com/
+          - listitem:
+            - link "百度大脑" [ref=e447] [cursor=pointer]:
+              - /url: http://ai.baidu.com/index/
+          - listitem:
+            - link "百度VR" [ref=e448] [cursor=pointer]:
+              - /url: https://vr.baidu.com/
+          - listitem:
+            - link "百度AI市场" [ref=e449] [cursor=pointer]:
+              - /url: https://aim.baidu.com/
+          - listitem:
+            - link "百度统计" [ref=e450] [cursor=pointer]:
+              - /url: https://tongji.baidu.com/
+          - listitem:
+            - link "百度指数" [ref=e451] [cursor=pointer]:
+              - /url: https://index.baidu.com/v2/index.html#/
+          - listitem:
+            - link "百度云加速" [ref=e452] [cursor=pointer]:
+              - /url: http://su.baidu.com/
+          - listitem:
+            - link "百度阿波罗" [ref=e453] [cursor=pointer]:
+              - /url: https://www.apollo.auto/
+          - listitem:
+            - link "百度地图慧眼" [ref=e454] [cursor=pointer]:
+              - /url: https://huiyan.baidu.com/
+          - listitem:
+            - link "百度翻译开放平台" [ref=e455] [cursor=pointer]:
+              - /url: https://api.fanyi.baidu.com/
+          - listitem:
+            - link "百度营销" [ref=e456] [cursor=pointer]:
+              - /url: http://e.baidu.com/ebaidu/lpapply/?refer=1246
+          - listitem:
+            - link "百度如流" [ref=e457] [cursor=pointer]:
+              - /url: http://infoflow.baidu.com/#/
+          - listitem:
+            - link "百度安全" [ref=e458] [cursor=pointer]:
+              - /url: http://anquan.baidu.com/
+          - listitem:
+            - link "百度短网址" [ref=e459] [cursor=pointer]:
+              - /url: https://dwz.cn/
+          - listitem:
+            - link "百度有驾" [ref=e460] [cursor=pointer]:
+              - /url: https://www.yoojia.com/
+          - listitem:
+            - link "百度联盟" [ref=e461] [cursor=pointer]:
+              - /url: https://union.baidu.com/bqt/#/
+          - listitem:
+            - link "百度超级链" [ref=e462] [cursor=pointer]:
+              - /url: https://xuper.baidu.com/
+          - listitem:
+            - link "百度数据众包" [ref=e463] [cursor=pointer]:
+              - /url: http://zhongbao.baidu.com/
+          - listitem:
+            - link "百度网盘企业版" [ref=e464] [cursor=pointer]:
+              - /url: https://pan.baidu.com/disk/cert/?from=cloud
+          - listitem:
+            - link "百度搜索资源平台" [ref=e465] [cursor=pointer]:
+              - /url: http://zhanzhang.baidu.com/
+  - generic [ref=e466]:
+    - generic [ref=e471] [cursor=pointer]: 618咨询
+    - generic [ref=e472]:
+      - generic [ref=e473] [cursor=pointer]:
+        - img [ref=e474]
+        - generic [ref=e475]: 入群有礼
+      - generic [ref=e476] [cursor=pointer]:
+        - img [ref=e477]
+        - generic [ref=e478]: 咨询
+      - generic [ref=e479] [cursor=pointer]:
+        - img [ref=e480]
+        - generic [ref=e481]: 权益
+      - generic [ref=e482] [cursor=pointer]:
+        - img [ref=e483]
+        - generic [ref=e484]: 调研
+  - generic [ref=e485]:
+    - textbox "搜索文档关键词" [ref=e488]
+    - generic [ref=e490]:
+      - paragraph [ref=e491]: 推荐文档
+      - generic [ref=e492]:
+        - link "云服务器" [ref=e493] [cursor=pointer]:
+          - /url: https://cloud.baidu.com/doc/BCC/index.html
+        - link "千帆大模型平台" [ref=e494] [cursor=pointer]:
+          - /url: https://cloud.baidu.com/doc/WENXINWORKSHOP/s/Slfmc9dds
+        - link "文字识别" [ref=e495] [cursor=pointer]:
+          - /url: https://cloud.baidu.com/doc/OCR/index.html
+        - link "人脸识别" [ref=e496] [cursor=pointer]:
+          - /url: https://cloud.baidu.com/doc/FACE/index.html
+        - link "实名认证介绍" [ref=e497] [cursor=pointer]:
+          - /url: https://cloud.baidu.com/doc/UserGuide/s/8jwvy3c96
+        - link "备案介绍" [ref=e498] [cursor=pointer]:
+          - /url: https://cloud.baidu.com/doc/BeiAn/s/dkipmvxlr
+        - link "财务功能概述" [ref=e499] [cursor=pointer]:
+          - /url: https://cloud.baidu.com/doc/Finance/s/ekps2o2mj
+  - generic:
+    - generic:
+      - generic:
+        - button:
+          - img
+    - generic:
+      - generic:
+        - generic:
+          - generic:
+            - img
+          - generic:
+            - generic:
+              - generic:
+                - generic:
+                  - generic:
+                    - generic: 百度智能云AI助手
+                    - generic: 百度智能云的任何问题找我就对了！
+                  - generic:
+                    - button "注册"
+                    - button "登录"
+              - generic:
+                - generic:
+                  - generic:
+                    - generic:
+                      - generic:
+                        - generic:
+                          - generic:
+                            - generic:
+                              - generic:
+                                - generic: 618年中盛惠狂欢购
+                              - img "icon_arrow_black"
+                            - generic: 上云福利享不停，快来了解吧！
+                - generic:
+                  - generic:
+                    - generic:
+                      - paragraph: 为你推荐：
+                      - button "换一换":
+                        - generic: 换一换
+                        - img
+    - generic:
+      - generic:
+        - generic:
+          - generic:
+            - img

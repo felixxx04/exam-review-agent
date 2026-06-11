@@ -1,0 +1,7 @@
+[    1779ms] [WARNING] document.domain mutation is ignored because the surrounding agent cluster is origin-keyed. @ https://console.bce.baidu.com/asset/monitor/bce_monitor_session.html:43
+[    2013ms] [INFO] seriously version: chroma @ https://bce.bdstatic.com/fe-static/baidu/bce-portal/portal-common/1.0.2309.1/525.load.js:1
+[    2013ms] [INFO] seriously version: chroma_obs @ https://bce.bdstatic.com/fe-static/baidu/bce-portal/portal-common/1.0.2309.1/525.load.js:1
+[    2013ms] [INFO] seriously version: chroma_post @ https://bce.bdstatic.com/fe-static/baidu/bce-portal/portal-common/1.0.2309.1/525.load.js:1
+[    2284ms] [WARNING] Swiper Loop Warning: The number of slides is not enough for loop mode, it will be disabled or not function properly. You need to add more slides (or make duplicates) or lower the values of slidesPerView and slidesPerGroup parameters @ https://bce.bdstatic.com/fe-static/baidu/bce-portal/portal-common/1.0.2309.1/525.load.js:1
+[    7286ms] [WARNING] Swiper Loop Warning: The number of slides is not enough for loop mode, it will be disabled or not function properly. You need to add more slides (or make duplicates) or lower the values of slidesPerView and slidesPerGroup parameters @ https://bce.bdstatic.com/fe-static/baidu/bce-portal/portal-common/1.0.2309.1/525.load.js:1
+[   13666ms] [LOG] SW registered:  ServiceWorkerRegistration @ https://bce.bdstatic.com/fe-static/baidu/bce-portal/portal-common/load.online.js:1

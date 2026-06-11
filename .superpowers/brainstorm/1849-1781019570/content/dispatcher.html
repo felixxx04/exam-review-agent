@@ -1,0 +1,41 @@
+<h2>调度器工作模式 — 你选哪种？</h2>
+<p class="subtitle">调度器决定用户请求如何路由到对应的 Agent</p>
+
+<div class="options">
+  <div class="option" data-choice="a" onclick="toggleSelect(this)">
+    <div class="letter">A</div>
+    <div class="content">
+      <h3>自动意图识别</h3>
+      <p>用户随便说，调度器用 LLM 自动判断意图 → 路由到对应 Agent</p>
+      <p style="font-size:12px; color:#888;">例："导数是啥" → 问答Agent | "出5道题" → 出题Agent | "我哪些不会" → 诊断Agent</p>
+      <div class="pros-cons">
+        <div class="pros"><h4>Pros</h4><ul><li>用户体验最自然</li><li>不需要学命令</li></ul></div>
+        <div class="cons"><h4>Cons</h4><ul><li>意图判断可能出错</li><li>边界模糊时难处理</li></ul></div>
+      </div>
+    </div>
+  </div>
+  <div class="option" data-choice="b" onclick="toggleSelect(this)">
+    <div class="letter">B</div>
+    <div class="content">
+      <h3>显式模式切换</h3>
+      <p>用户主动选择当前模式：问答模式 / 出题模式 / 诊断模式</p>
+      <p style="font-size:12px; color:#888;">例：点击"出题模式"按钮 → 之后所有对话都按出题处理</p>
+      <div class="pros-cons">
+        <div class="pros"><h4>Pros</h4><ul><li>不会误判</li><li>用户明确知道在做什么</li></ul></div>
+        <div class="cons"><h4>Cons</h4><ul><li>多一步操作</li><li>用户可能忘记切换</li></ul></div>
+      </div>
+    </div>
+  </div>
+  <div class="option" data-choice="c" onclick="toggleSelect(this)">
+    <div class="letter">C</div>
+    <div class="content">
+      <h3>混合模式（推荐）</h3>
+      <p>默认自动意图识别，但也提供手动切换按钮作为兜底</p>
+      <p style="font-size:12px; color:#888;">自动识别置信度高 → 直接路由 | 置信度低 → 弹出选项让用户确认</p>
+      <div class="pros-cons">
+        <div class="pros"><h4>Pros</h4><ul><li>兼顾流畅性和准确性</li><li>低置信度时不会做错事</li></ul></div>
+        <div class="cons"><h4>Cons</h4><ul><li>实现稍复杂</li><li>需要定义置信度阈值</li></ul></div>
+      </div>
+    </div>
+  </div>
+</div>

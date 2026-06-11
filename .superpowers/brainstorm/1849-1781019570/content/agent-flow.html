@@ -1,0 +1,62 @@
+<h2>多意图场景：串行 vs 并行</h2>
+<p class="subtitle">当用户一句话包含多个意图时，Agent 怎么协作？</p>
+
+<div class="section">
+  <h3>示例场景</h3>
+  <div class="mock-content" style="padding:12px 20px; font-size:14px;">
+    "帮我出5道第三章的题，顺便分析下我哪些地方薄弱"
+  </div>
+  <p style="margin-top:8px; color:#888;">→ 包含两个意图：出题 + 诊断</p>
+</div>
+
+<div class="options">
+  <div class="option" data-choice="a" onclick="toggleSelect(this)">
+    <div class="letter">A</div>
+    <div class="content">
+      <h3>串行 — 排队处理</h3>
+      <p>调度器拆成两个任务，排队执行，用户逐步看到结果</p>
+      <div style="background:#f8f8f8;padding:10px;border-radius:6px;font-size:13px;">
+        1️⃣ 出题 Agent 先生成5道题<br>
+        2️⃣ 诊断 Agent 再分析薄弱点<br>
+        3️⃣ 汇总展示
+      </div>
+      <div class="pros-cons">
+        <div class="pros"><h4>Pros</h4><ul><li>实现简单</li><li>结果不会互相干扰</li></ul></div>
+        <div class="cons"><h4>Cons</h4><ul><li>用户等待时间长</li><li>两个结果之间没有联动</li></ul></div>
+      </div>
+    </div>
+  </div>
+  <div class="option" data-choice="b" onclick="toggleSelect(this)">
+    <div class="letter">B</div>
+    <div class="content">
+      <h3>并行 — 同时执行（推荐）</h3>
+      <p>出题和诊断同时跑，结果汇总后一起展示</p>
+      <div style="background:#f8f8f8;padding:10px;border-radius:6px;font-size:13px;">
+        ⚡ 出题 Agent + 诊断 Agent 同时启动<br>
+        ⚡ 各自独立执行<br>
+        ⚡ 汇总后统一返回
+      </div>
+      <div class="pros-cons">
+        <div class="pros"><h4>Pros</h4><ul><li>响应快（只等最慢的那个）</li><li>可以联动（诊断结果影响出题难度）</li></ul></div>
+        <div class="cons"><h4>Cons</h4><ul><li>LLM 并发调用成本高</li><li>结果汇总逻辑复杂</li></ul></div>
+      </div>
+    </div>
+  </div>
+  <div class="option" data-choice="c" onclick="toggleSelect(this)">
+    <div class="letter">C</div>
+    <div class="content">
+      <h3>智能选择</h3>
+      <p>简单意图串行，独立意图并行，依赖意图先跑前置再跑后置</p>
+      <div style="background:#f8f8f8;padding:10px;border-radius:6px;font-size:13px;">
+        🧠 调度器判断：<br>
+        • 独立意图（出题+诊断）→ 并行<br>
+        • 依赖意图（出题→根据错题诊断）→ 串行<br>
+        • 单意图 → 直接执行
+      </div>
+      <div class="pros-cons">
+        <div class="pros"><h4>Pros</h4><ul><li>最优体验</li><li>灵活适应各种场景</li></ul></div>
+        <div class="cons"><h4>Cons</h4><ul><li>实现最复杂</li><li>依赖判断可能出错</li></ul></div>
+      </div>
+    </div>
+  </div>
+</div>
