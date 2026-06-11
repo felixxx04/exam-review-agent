@@ -2,6 +2,7 @@ import datetime
 import enum
 
 from sqlalchemy import JSON, Boolean, DateTime, Float, ForeignKey, Integer, String, Text
+from sqlalchemy import Enum as SAEnum
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
 
@@ -70,7 +71,7 @@ class Conversation(Base):
         Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True
     )
     title: Mapped[str] = mapped_column(String(255), nullable=False, default="New Conversation")
-    mode: Mapped[str] = mapped_column(String(20), nullable=False, default="ask")
+    mode: Mapped[str] = mapped_column(SAEnum(ConversationMode), default=ConversationMode.ASK, nullable=False)
     material_scope: Mapped[list | None] = mapped_column(JSON, nullable=True)
     created_at: Mapped[datetime.datetime] = mapped_column(
         DateTime, default=_utcnow, nullable=False
@@ -94,11 +95,11 @@ class Material(Base):
     )
     filename: Mapped[str] = mapped_column(String(500), nullable=False)
     original_filename: Mapped[str] = mapped_column(String(500), nullable=False)
-    file_type: Mapped[str] = mapped_column(String(20), nullable=False)
+    file_type: Mapped[str] = mapped_column(SAEnum(FileType), nullable=False)
     file_size: Mapped[int] = mapped_column(Integer, nullable=False)
     page_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     processing_status: Mapped[str] = mapped_column(
-        String(20), default="pending", nullable=False
+        SAEnum(ProcessingStatus), default=ProcessingStatus.PENDING, nullable=False
     )
     error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
     chunk_count: Mapped[int | None] = mapped_column(Integer, nullable=True)
@@ -120,7 +121,7 @@ class QuizSession(Base):
     question_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     correct_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     total_time_seconds: Mapped[float] = mapped_column(Float, default=0.0, nullable=False)
-    difficulty: Mapped[str] = mapped_column(String(20), default="medium", nullable=False)
+    difficulty: Mapped[str] = mapped_column(SAEnum(Difficulty), default=Difficulty.MEDIUM, nullable=False)
     created_at: Mapped[datetime.datetime] = mapped_column(
         DateTime, default=_utcnow, nullable=False
     )
@@ -140,11 +141,11 @@ class Question(Base):
         index=True,
     )
     question_text: Mapped[str] = mapped_column(Text, nullable=False)
-    question_type: Mapped[str] = mapped_column(String(30), nullable=False)
+    question_type: Mapped[str] = mapped_column(SAEnum(QuestionType), nullable=False)
     options: Mapped[list | None] = mapped_column(JSON, nullable=True)
     correct_answer: Mapped[str] = mapped_column(Text, nullable=False)
     explanation: Mapped[str | None] = mapped_column(Text, nullable=True)
-    difficulty: Mapped[str] = mapped_column(String(20), default="medium", nullable=False)
+    difficulty: Mapped[str] = mapped_column(SAEnum(Difficulty), default=Difficulty.MEDIUM, nullable=False)
     topic: Mapped[str | None] = mapped_column(String(100), nullable=True)
     concept: Mapped[str | None] = mapped_column(String(100), nullable=True)
     source_chunk_ids: Mapped[list | None] = mapped_column(JSON, nullable=True)
