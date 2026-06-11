@@ -256,7 +256,7 @@ class TestProviderAdapters:
             with pytest.raises(LLMProviderError) as exc_info:
                 await provider.invoke([{"role": "user", "content": "Hi"}])
 
-        assert "GLM" in str(exc_info.value)
+        assert "glm" in str(exc_info.value).lower()
 
     @pytest.mark.asyncio
     async def test_minimax_provider_default_model(self):

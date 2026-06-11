@@ -191,19 +191,28 @@ def get_default_llm_service() -> LLMService:
     """Factory that builds an LLMService from application settings.
 
     This is the recommended way to obtain a pre-configured instance.
+    A shared ``httpx.AsyncClient`` is used across all providers for
+    connection pooling.
     """
+    import httpx
+
+    shared_client = httpx.AsyncClient(timeout=60.0)
+
     providers = {
         "deepseek": DeepSeekProvider(
             api_key=settings.deepseek_api_key,
             base_url=settings.deepseek_base_url,
+            client=shared_client,
         ),
         "glm": GLMProvider(
             api_key=settings.glm_api_key,
             base_url=settings.glm_base_url,
+            client=shared_client,
         ),
         "minimax": MiniMaxProvider(
             api_key=settings.minimax_api_key,
             base_url=settings.minimax_base_url,
+            client=shared_client,
         ),
     }
     return LLMService(
