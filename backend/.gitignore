@@ -12,3 +12,4 @@ chroma_data/
 .env
 venv/
 .venv/
+*.bak
