@@ -1,6 +1,7 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from app.api.materials import router as materials_router
 from app.core.config import settings
 from app.core.middleware import RateLimitMiddleware
 
@@ -14,6 +15,8 @@ app.add_middleware(
     allow_headers=["*"],
 )
 app.add_middleware(RateLimitMiddleware)
+
+app.include_router(materials_router)
 
 
 @app.get("/api/health")
