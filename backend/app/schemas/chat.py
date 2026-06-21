@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-from typing import Optional
-
 from pydantic import BaseModel
 
 
@@ -10,8 +8,8 @@ class ChatRequest(BaseModel):
     material_scope: list[str] | None = None
 
 
-class ChatEvent:
-    content: str
+class SSEMessage(BaseModel):
     event: str
+    data: str = ""
     citations: list[dict] | None = None
     error: str | None = None

@@ -1,6 +1,7 @@
 import pytest
 from httpx import ASGITransport, AsyncClient
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
+from unittest.mock import AsyncMock
 
 from app.db.database import get_db
 from app.db.models import Base
@@ -40,3 +41,33 @@ async def client_with_db(db_session):
         yield c
 
     app.dependency_overrides.clear()
+
+
+@pytest.fixture
+def mock_llm_service():
+    """Mock LLMService that returns safe dummy responses."""
+    mock = AsyncMock()
+    mock.invoke = AsyncMock(return_value=(
+        '[{"question":"测试问题",'
+        '"options":["A. 选项1","B. 选项2","C. 选项3","D. 选项4"],'
+        '"correct":"B",'
+        '"explanation":"测试解释",'
+        '"source_chunk_ids":["chunk-1"]}]'
+    ))
+    return mock
+
+
+@pytest.fixture
+def mock_retrieval_service():
+    """Mock RetrievalService that returns fake search results."""
+    from app.services.retrieval_service import SearchResult
+
+    mock = AsyncMock()
+    mock.search = AsyncMock(return_value=[
+        SearchResult(
+            text="测试内容",
+            score=0.9,
+            metadata={"source": "test.pdf", "page": 1},
+        )
+    ])
+    return mock

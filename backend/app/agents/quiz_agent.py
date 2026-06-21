@@ -31,6 +31,7 @@ class QuizAgent:
         difficulty: float = 0.5,
         count: int = 5,
         material_scope: list[str] | None = None,
+        adaptive: bool = False,
     ) -> QuizResponse:
         """Generate a quiz by retrieving content and creating questions.
 
@@ -40,6 +41,9 @@ class QuizAgent:
             difficulty: Target difficulty (0.0-1.0).
             count: Number of questions.
             material_scope: Optional list of source filenames to restrict to.
+            adaptive: When True, fetch adaptive difficulty signal from
+                TrackerAgent based on the user's mistake history for the
+                given topic.
         """
         metadata_filter = None
         if material_scope:
@@ -55,10 +59,16 @@ class QuizAgent:
         if not chunks:
             return QuizResponse(questions=[], topic=topic)
 
+        # Get adaptive difficulty signal if enabled
+        difficulty_signal = None
+        if adaptive and self.tracker:
+            difficulty_signal = await self.tracker.get_adaptive_difficulty(user_id, topic)
+
         questions = await self.generator.generate(
             chunks=chunks,
-            difficulty=difficulty,
+            difficulty=difficulty_signal or difficulty,
             count=min(count, questions_allowance(chunks)),
+            difficulty_signal=difficulty_signal,
         )
 
         return QuizResponse(questions=questions, topic=topic)

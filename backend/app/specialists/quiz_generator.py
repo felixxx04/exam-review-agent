@@ -22,6 +22,7 @@ class QuizGenerator:
         chunks: list,
         difficulty: float = 0.5,
         count: int = 5,
+        difficulty_signal: float | None = None,
     ) -> list[Question]:
         """Generate quiz questions from source chunks.
 
@@ -29,11 +30,15 @@ class QuizGenerator:
             chunks: Source material chunks with .id and .text attributes.
             difficulty: Target difficulty (0.0 = easy, 1.0 = hard).
             count: Number of questions to generate.
+            difficulty_signal: Optional adaptive difficulty override from
+                TrackerAgent.  When provided, this value replaces
+                ``difficulty`` in the prompt.
 
         Returns:
             List of Question objects with source citations.
         """
-        prompt = self._build_prompt(chunks, difficulty, count)
+        effective_difficulty = difficulty_signal if difficulty_signal is not None else difficulty
+        prompt = self._build_prompt(chunks, effective_difficulty, count)
         response = await self.llm_service.invoke([
             {"role": "user", "content": prompt}
         ])

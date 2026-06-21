@@ -358,3 +358,26 @@ class TestScoreResultDataclass:
         sr = ScoreResult(is_correct=True, mistake_recorded=False, score=1.0)
         with pytest.raises(Exception):
             sr.is_correct = False  # type: ignore[misc]
+
+
+class TestAdaptiveDifficulty:
+
+    @pytest.mark.asyncio
+    async def test_adaptive_difficulty_easy_after_many_wrong(self):
+        """3+ wrong answers on a concept should produce easy difficulty."""
+        tracker = TrackerAgent(db=AsyncMock(), llm_service=AsyncMock())
+        tracker.db.query = AsyncMock(return_value=[
+            {"concept": "特征值", "topic": "线性代数"},
+            {"concept": "特征值", "topic": "线性代数"},
+            {"concept": "特征值", "topic": "线性代数"},
+        ])
+        signal = await tracker.get_adaptive_difficulty("test-user", "特征值")
+        assert signal <= 0.3
+
+    @pytest.mark.asyncio
+    async def test_adaptive_difficulty_hard_when_no_mistakes(self):
+        """0 wrong answers should produce hard difficulty."""
+        tracker = TrackerAgent(db=AsyncMock(), llm_service=AsyncMock())
+        tracker.db.query = AsyncMock(return_value=[])
+        signal = await tracker.get_adaptive_difficulty("test-user", "量子力学")
+        assert signal >= 0.7
