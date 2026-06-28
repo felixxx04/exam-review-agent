@@ -6,12 +6,13 @@ import uuid
 from pathlib import Path
 
 from fastapi import APIRouter, Depends, HTTPException, UploadFile
-from sqlalchemy import select, func
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
 from app.db.database import get_db
 from app.db.models import FileType, Material, ProcessingStatus
+from app.schemas.common import ApiResponse
 from app.schemas.materials import MaterialListResponse, MaterialResponse
 
 router = APIRouter(prefix="/api/materials", tags=["materials"])
@@ -39,7 +40,7 @@ def _check_file_type(filename: str) -> FileType:
     )
 
 
-@router.post("", response_model=MaterialResponse)
+@router.post("")
 async def upload_material(
     file: UploadFile,
     db: AsyncSession = Depends(get_db),
@@ -74,10 +75,44 @@ async def upload_material(
     await db.commit()
     await db.refresh(material)
 
-    return material
+    # Inline processing (async workers are not available without Redis)
+    try:
+        material.processing_status = ProcessingStatus.PROCESSING
+        await db.commit()
+
+        from app.services.parser_service import ParserService
+
+        parser = ParserService()
+        result = await parser.parse(
+            str(file_path),
+            file_type=file_type.value if hasattr(file_type, "value") else file_type,
+        )
+
+        # Index chunks
+        from dataclasses import asdict
+
+        from app.services.retrieval_service import RetrievalService
+
+        retrieval = RetrievalService()
+        await retrieval.index_chunks(
+            user_id="default",
+            chunks=[asdict(c) for c in result.chunks],
+        )
+
+        material.processing_status = ProcessingStatus.READY
+        material.chunk_count = len(result.chunks)
+        material.page_count = result.page_count
+    except Exception as exc:
+        material.processing_status = ProcessingStatus.FAILED
+        material.error_message = str(exc)[:200]
+    finally:
+        await db.commit()
+        await db.refresh(material)
+
+    return ApiResponse.ok(data=MaterialResponse.model_validate(material))
 
 
-@router.get("", response_model=MaterialListResponse)
+@router.get("")
 async def list_materials(
     db: AsyncSession = Depends(get_db),
 ):
@@ -85,13 +120,14 @@ async def list_materials(
         select(Material).order_by(Material.created_at.desc())
     )
     materials = result.scalars().all()
-    return MaterialListResponse(
+    response = MaterialListResponse(
         materials=list(materials),
         total=len(materials),
     )
+    return ApiResponse.ok(data=response, meta={"total": len(materials)})
 
 
-@router.get("/{material_id}", response_model=MaterialResponse)
+@router.get("/{material_id}")
 async def get_material(
     material_id: int,
     db: AsyncSession = Depends(get_db),
@@ -99,7 +135,7 @@ async def get_material(
     material = await db.get(Material, material_id)
     if material is None:
         raise HTTPException(status_code=404, detail="材料不存在")
-    return material
+    return ApiResponse.ok(data=MaterialResponse.model_validate(material))
 
 
 @router.delete("/{material_id}")
@@ -118,10 +154,10 @@ async def delete_material(
     await db.delete(material)
     await db.commit()
 
-    return {"detail": "已删除"}
+    return ApiResponse.ok(data={"detail": "已删除"})
 
 
-@router.post("/{material_id}/reprocess", response_model=MaterialResponse)
+@router.post("/{material_id}/reprocess")
 async def reprocess_material(
     material_id: int,
     db: AsyncSession = Depends(get_db),
@@ -135,4 +171,4 @@ async def reprocess_material(
     await db.commit()
     await db.refresh(material)
 
-    return material
+    return ApiResponse.ok(data=MaterialResponse.model_validate(material))

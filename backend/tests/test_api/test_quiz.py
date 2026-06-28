@@ -38,7 +38,7 @@ class TestQuizSubmit:
             },
         )
         assert response.status_code == 200
-        data = response.json()
+        data = response.json()["data"]
         assert data["is_correct"] is True
 
     @pytest.mark.asyncio
@@ -53,7 +53,7 @@ class TestQuizSubmit:
             },
         )
         assert response.status_code == 200
-        data = response.json()
+        data = response.json()["data"]
         assert data["is_correct"] is False
 
     @pytest.mark.asyncio
@@ -68,5 +68,5 @@ class TestQuizSubmit:
             },
         )
         assert response.status_code == 200
-        data = response.json()
+        data = response.json()["data"]
         assert data["is_correct"] is True

@@ -12,8 +12,8 @@ export function useMaterials() {
     try {
       const res = await fetch(`${API_BASE}/api/materials`);
       if (res.ok) {
-        const data = await res.json();
-        setMaterials(data.materials);
+        const body = await res.json();
+        setMaterials(body.data?.materials ?? []);
       }
     } finally {
       setLoading(false);

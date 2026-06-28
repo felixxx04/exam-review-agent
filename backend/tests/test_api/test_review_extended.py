@@ -12,7 +12,7 @@ class TestStudyPlan:
             json={"exam_date": "2026-07-01", "days_before_exam": 7},
         )
         assert response.status_code == 200
-        data = response.json()
+        data = response.json()["data"]
         assert "plan" in data
         assert "message" in data
 

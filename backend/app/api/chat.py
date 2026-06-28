@@ -2,17 +2,24 @@ from __future__ import annotations
 
 import json
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import StreamingResponse
 
+from app.core.middleware import PromptInjectionGuard
 from app.orchestrator.graph import run_orchestrator
 from app.schemas.chat import ChatRequest
 
 router = APIRouter(prefix="/api/chat", tags=["chat"])
 
 
+def _guard_prompt(request: ChatRequest) -> ChatRequest:
+    if not PromptInjectionGuard.check(request.message):
+        raise HTTPException(status_code=400, detail="Suspicious input detected")
+    return request
+
+
 @router.post("")
-async def chat(request: ChatRequest):
+async def chat(request: ChatRequest = Depends(_guard_prompt)):
     async def event_stream():
         try:
             result = await run_orchestrator(

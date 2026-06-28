@@ -1,4 +1,7 @@
+import os
 from typing import Optional
+
+from app.core.config import settings
 
 
 class EmbeddingService:
@@ -14,6 +17,9 @@ class EmbeddingService:
     @classmethod
     def _ensure_model(cls) -> None:
         if cls._model is None:
+            if settings.hf_endpoint and not os.environ.get("HF_ENDPOINT"):
+                os.environ["HF_ENDPOINT"] = settings.hf_endpoint
+
             from sentence_transformers import SentenceTransformer
 
             cls._model = SentenceTransformer(cls._model_name)

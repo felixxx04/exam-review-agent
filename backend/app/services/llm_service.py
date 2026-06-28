@@ -11,6 +11,7 @@ from app.core.exceptions import LLMProviderError
 from app.services.llm_providers.deepseek import DeepSeekProvider
 from app.services.llm_providers.glm import GLMProvider
 from app.services.llm_providers.minimax import MiniMaxProvider
+from app.services.llm_providers.volcengine import VolcengineProvider
 
 logger = logging.getLogger(__name__)
 
@@ -212,6 +213,11 @@ def get_default_llm_service() -> LLMService:
         "minimax": MiniMaxProvider(
             api_key=settings.minimax_api_key,
             base_url=settings.minimax_base_url,
+            client=shared_client,
+        ),
+        "volcengine": VolcengineProvider(
+            api_key=settings.volcengine_api_key,
+            base_url=settings.volcengine_base_url,
             client=shared_client,
         ),
     }

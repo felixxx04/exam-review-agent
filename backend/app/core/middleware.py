@@ -16,9 +16,17 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
     - All other: 100 requests/minute
     """
 
+    _instance: "RateLimitMiddleware | None" = None
+
     def __init__(self, app):
         super().__init__(app)
         self._requests: dict[str, list[float]] = defaultdict(list)
+        RateLimitMiddleware._instance = self
+
+    @classmethod
+    def reset(cls) -> None:
+        if cls._instance is not None:
+            cls._instance._requests.clear()
 
     async def dispatch(self, request: Request, call_next):
         client_ip = request.client.host if request.client else "unknown"

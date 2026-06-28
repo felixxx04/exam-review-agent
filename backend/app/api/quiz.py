@@ -1,11 +1,11 @@
 from __future__ import annotations
 
-from collections.abc import Callable
-
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter
 
 from app.agents.quiz_agent import QuizAgent
 from app.agents.tracker_agent import TrackerAgent
+from app.core.store import DictStore
+from app.schemas.common import ApiResponse
 from app.schemas.quiz import QuizRequest
 from app.services.llm_service import get_default_llm_service
 from app.services.retrieval_service import RetrievalService
@@ -31,9 +31,7 @@ async def generate_quiz(request: QuizRequest):
         count=request.count,
         material_scope=request.material_scope,
     )
-    if not response.questions:
-        raise HTTPException(status_code=404, detail="未找到相关内容生成题目")
-    return response
+    return ApiResponse.ok(data=response)
 
 
 @router.post("/submit")
@@ -46,7 +44,7 @@ async def submit_answer(
     topic: str = "",
 ):
     llm = get_default_llm_service()
-    tracker = TrackerAgent(db=_SimpleDictDB(), llm_service=llm)
+    tracker = TrackerAgent(db=DictStore(), llm_service=llm)
     result = await tracker.score_answer(
         user_id="default",
         question_id=question_id,
@@ -56,26 +54,11 @@ async def submit_answer(
         concept=concept,
         topic=topic,
     )
-    return {
+    return ApiResponse.ok(data={
         "is_correct": result.is_correct,
         "mistake_recorded": result.mistake_recorded,
         "score": result.score,
         "feedback": result.feedback,
-    }
+    })
 
 
-class _SimpleDictDB:
-    """In-memory dict store used as a lightweight persistence
-    stub when no real database is wired into the tracker."""
-
-    def __init__(self) -> None:
-        self._records: list[dict] = []
-
-    async def add(self, record: dict) -> None:
-        self._records.append(record)
-
-    async def query(self, filters: dict) -> list[dict]:
-        return [
-            r for r in self._records
-            if all(r.get(k) == v for k, v in filters.items())
-        ]
