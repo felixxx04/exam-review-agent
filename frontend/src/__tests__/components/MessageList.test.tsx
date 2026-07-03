@@ -14,9 +14,9 @@ describe("MessageList", () => {
     });
   });
 
-  it("shows empty state when no messages", () => {
-    render(<MessageList />);
-    expect(screen.getByText(/开始你的复习之旅/)).toBeInTheDocument();
+  it("renders nothing when no messages", () => {
+    const { container } = render(<MessageList />);
+    expect(container).toBeEmptyDOMElement();
   });
 
   it("renders a user message", () => {

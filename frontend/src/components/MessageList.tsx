@@ -1,66 +1,16 @@
 "use client";
 
 import { useChatStore } from "@/stores/chatStore";
-import { BookOpen } from "lucide-react";
 
 export function MessageList() {
   const { messages, isStreaming } = useChatStore();
 
   if (messages.length === 0) {
-    return (
-      <div className="flex-1 flex items-center justify-center px-5">
-        <div
-          className="text-center"
-          style={{
-            padding: "var(--space-5)",
-          }}
-        >
-          <div
-            className="mx-auto flex items-center justify-center"
-            style={{
-              width: "72px",
-              height: "72px",
-              borderRadius: "var(--radius-xl)",
-              background: "var(--color-primary-subtle)",
-              marginBottom: "var(--space-6)",
-            }}
-          >
-            <BookOpen
-              size={36}
-              strokeWidth={1.2}
-              style={{ color: "var(--color-primary)" }}
-            />
-          </div>
-          <h2
-            style={{
-              fontFamily: "var(--font-prose)",
-              fontSize: "var(--text-xl)",
-              fontWeight: 600,
-              color: "var(--color-ink)",
-              lineHeight: "var(--leading-tight)",
-              marginBottom: "var(--space-2)",
-            }}
-          >
-            开始你的复习之旅
-          </h2>
-          <p
-            className="mx-auto"
-            style={{
-              color: "var(--color-muted)",
-              fontSize: "var(--text-base)",
-              lineHeight: "var(--leading-prose)",
-              maxWidth: "360px",
-            }}
-          >
-            上传复习资料，然后直接提问、生成测验，或者查看薄弱知识点
-          </p>
-        </div>
-      </div>
-    );
+    return null;
   }
 
   return (
-    <div className="flex-1 overflow-y-auto px-5 py-4">
+    <div className="message-list px-5 py-5">
       <div
         className="mx-auto space-y-4"
         style={{ maxWidth: "var(--content-max)" }}

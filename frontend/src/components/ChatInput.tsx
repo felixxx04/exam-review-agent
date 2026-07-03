@@ -38,18 +38,8 @@ export function ChatInput() {
   const isEmpty = !text.trim();
 
   return (
-    <div
-      className="border-t sticky bottom-0"
-      style={{
-        borderColor: "var(--color-border)",
-        background: "var(--color-bg)",
-        padding: "var(--space-4) var(--space-5)",
-      }}
-    >
-      <div
-        className="mx-auto flex gap-3 items-end"
-        style={{ maxWidth: "var(--content-max)" }}
-      >
+    <div className="chat-input-dock">
+      <div className="chat-input-shell">
         <textarea
           ref={textareaRef}
           value={text}
@@ -58,49 +48,18 @@ export function ChatInput() {
           placeholder={isStreaming ? "等待回复..." : "输入你的问题..."}
           disabled={isDisabled}
           rows={1}
-          className="flex-1 px-4 py-3 transition-colors resize-none"
+          className="chat-textarea"
           style={{
-            borderRadius: "var(--radius-lg)",
-            border: "1px solid var(--color-border)",
-            background: "var(--color-surface)",
-            color: "var(--color-ink)",
-            fontFamily: "var(--font-prose)",
-            fontSize: "var(--text-base)",
-            lineHeight: "1.6",
             opacity: isDisabled ? 0.5 : 1,
-            outline: "none",
-            minHeight: "48px",
-            maxHeight: "160px",
-          }}
-          onFocus={(e) => {
-            e.currentTarget.style.borderColor = "var(--color-primary)";
-          }}
-          onBlur={(e) => {
-            e.currentTarget.style.borderColor = "var(--color-border)";
           }}
           aria-label="输入问题"
         />
         <button
           onClick={isStreaming ? abort : handleSubmit}
           disabled={!isStreaming && isEmpty}
-          className="flex items-center justify-center transition-colors shrink-0"
-          style={{
-            width: "48px",
-            height: "48px",
-            borderRadius: "var(--radius-lg)",
-            background: isStreaming
-              ? "var(--color-error)"
-              : isEmpty
-              ? "var(--color-surface)"
-              : "var(--color-primary)",
-            color: isStreaming
-              ? "oklch(1 0 0)"
-              : isEmpty
-              ? "var(--color-muted)"
-              : "oklch(1 0 0)",
-            cursor: !isStreaming && isEmpty ? "not-allowed" : "pointer",
-            border: "none",
-          }}
+          className="chat-send-button"
+          data-streaming={isStreaming}
+          data-empty={isEmpty}
           aria-label={isStreaming ? "停止生成" : "发送"}
         >
           {isStreaming ? <Square size={18} /> : <Send size={18} />}
