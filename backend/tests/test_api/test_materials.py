@@ -3,6 +3,9 @@
 from __future__ import annotations
 
 import pytest
+from sqlalchemy import select
+
+from app.db.models import Material, MaterialChunk
 
 
 def _data(response):
@@ -42,6 +45,20 @@ class TestMaterialsUpload:
             files={"file": ("", b"content", "application/pdf")},
         )
         assert response.status_code in (400, 422)
+
+    @pytest.mark.asyncio
+    async def test_upload_stores_material_metadata(self, client_with_db, db_session):
+        response = await client_with_db.post(
+            "/api/materials",
+            files={"file": ("test.pdf", b"fake pdf content", "application/pdf")},
+        )
+        assert response.status_code == 200
+        material_id = _data(response)["id"]
+
+        material = await db_session.get(Material, material_id)
+        assert material.storage_path is not None
+        assert material.mime_type == "application/pdf"
+        assert material.hash is not None
 
 
 class TestMaterialsList:
@@ -108,6 +125,31 @@ class TestMaterialsDelete:
     async def test_delete_nonexistent_material(self, client_with_db):
         response = await client_with_db.delete("/api/materials/999")
         assert response.status_code == 404
+
+    @pytest.mark.asyncio
+    async def test_delete_material_removes_chunk_rows(self, client_with_db, db_session):
+        upload_resp = await client_with_db.post(
+            "/api/materials",
+            files={"file": ("test.pdf", b"fake pdf", "application/pdf")},
+        )
+        material_id = _data(upload_resp)["id"]
+        db_session.add(
+            MaterialChunk(
+                material_id=material_id,
+                chunk_id="chunk-delete-test",
+                text_preview="preview",
+                page_number=1,
+                token_count=3,
+                embedding_id="chunk-delete-test",
+            )
+        )
+        await db_session.commit()
+
+        response = await client_with_db.delete(f"/api/materials/{material_id}")
+        assert response.status_code == 200
+
+        rows = (await db_session.execute(select(MaterialChunk))).scalars().all()
+        assert rows == []
 
 
 class TestMaterialsReprocess:

@@ -2,16 +2,18 @@
 
 from __future__ import annotations
 
+import datetime
+import hashlib
 import uuid
 from pathlib import Path
 
 from fastapi import APIRouter, Depends, HTTPException, UploadFile
-from sqlalchemy import select
+from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
 from app.db.database import get_db
-from app.db.models import FileType, Material, ProcessingStatus
+from app.db.models import FileType, Material, MaterialChunk, ProcessingStatus
 from app.schemas.common import ApiResponse
 from app.schemas.materials import MaterialListResponse, MaterialResponse
 
@@ -51,6 +53,7 @@ async def upload_material(
     file_type = _check_file_type(file.filename)
     content = await file.read()
     file_size = len(content)
+    file_hash = hashlib.sha256(content).hexdigest()
 
     if file_size > settings.max_upload_size_mb * 1024 * 1024:
         raise HTTPException(
@@ -69,6 +72,9 @@ async def upload_material(
         original_filename=file.filename,
         file_type=file_type,
         file_size=file_size,
+        storage_path=str(file_path),
+        mime_type=file.content_type,
+        hash=file_hash,
         processing_status=ProcessingStatus.PENDING,
     )
     db.add(material)
@@ -94,17 +100,32 @@ async def upload_material(
         from app.services.retrieval_service import RetrievalService
 
         retrieval = RetrievalService()
-        await retrieval.index_chunks(
+        chunk_payloads = [asdict(c) for c in result.chunks]
+        chunk_ids = await retrieval.index_chunks(
             user_id="default",
-            chunks=[asdict(c) for c in result.chunks],
+            chunks=chunk_payloads,
         )
+        for chunk_id, chunk in zip(chunk_ids, chunk_payloads, strict=False):
+            metadata = chunk.get("metadata", {}) or {}
+            db.add(
+                MaterialChunk(
+                    material_id=material.id,
+                    chunk_id=chunk_id,
+                    text_preview=(chunk.get("text") or "")[:300],
+                    page_number=metadata.get("page"),
+                    token_count=len(chunk.get("text") or ""),
+                    embedding_id=chunk_id,
+                )
+            )
 
         material.processing_status = ProcessingStatus.READY
         material.chunk_count = len(result.chunks)
         material.page_count = result.page_count
+        material.processed_at = datetime.datetime.now(datetime.UTC)
     except Exception as exc:
         material.processing_status = ProcessingStatus.FAILED
         material.error_message = str(exc)[:200]
+        material.parse_error = str(exc)[:500]
     finally:
         await db.commit()
         await db.refresh(material)
@@ -151,6 +172,7 @@ async def delete_material(
     if file_path.exists():
         file_path.unlink()
 
+    await db.execute(delete(MaterialChunk).where(MaterialChunk.material_id == material_id))
     await db.delete(material)
     await db.commit()
 

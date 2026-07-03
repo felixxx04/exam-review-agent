@@ -15,6 +15,11 @@ class MaterialResponse(BaseModel):
     processing_status: str
     chunk_count: int | None = None
     error_message: str | None = None
+    storage_path: str | None = None
+    mime_type: str | None = None
+    hash: str | None = None
+    processed_at: datetime | None = None
+    parse_error: str | None = None
     created_at: datetime
 
     model_config = {"from_attributes": True}
