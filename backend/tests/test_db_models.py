@@ -11,9 +11,14 @@ from app.db.models import (
     Concept,
     ConceptDependency,
     Conversation,
+    ConversationMessage,
+    FileType,
+    LearningProfile,
     Material,
+    MaterialChunk,
     MistakeRecord,
     Question,
+    QuestionType,
     QuizSession,
     User,
 )
@@ -336,3 +341,144 @@ async def test_material_processing_status_transition(session):
 
     assert mat.processing_status == "ready"
     assert mat.chunk_count == 15
+
+
+@pytest.mark.asyncio
+async def test_conversation_message_model(session):
+    user = User(
+        email="memory@example.com",
+        hashed_password="hashed",
+        display_name="Memory User",
+    )
+    session.add(user)
+    await session.flush()
+
+    conversation = Conversation(user_id=user.id, title="复习数据库")
+    session.add(conversation)
+    await session.flush()
+
+    message = ConversationMessage(
+        conversation_id=conversation.id,
+        role="user",
+        content="刚才那个概念再举个例子",
+        material_scope=["database.pdf"],
+        message_metadata={"mode": "ask", "intent": "qa"},
+    )
+    session.add(message)
+    await session.commit()
+    await session.refresh(message)
+
+    assert message.id is not None
+    assert message.conversation_id == conversation.id
+    assert message.material_scope == ["database.pdf"]
+    assert message.message_metadata["intent"] == "qa"
+
+
+@pytest.mark.asyncio
+async def test_learning_profile_model(session):
+    user = User(
+        email="profile@example.com",
+        hashed_password="hashed",
+        display_name="Profile User",
+    )
+    session.add(user)
+    await session.flush()
+
+    profile = LearningProfile(
+        user_id=user.id,
+        current_subject="数据库系统",
+        review_goal="理解事务隔离级别",
+        weak_concepts=["幻读"],
+        frequent_questions=["隔离级别区别"],
+        active_materials=["database.pdf"],
+        preferences={"answer_style": "examples"},
+    )
+    session.add(profile)
+    await session.commit()
+    await session.refresh(profile)
+
+    assert profile.current_subject == "数据库系统"
+    assert profile.weak_concepts == ["幻读"]
+    assert profile.preferences["answer_style"] == "examples"
+
+
+@pytest.mark.asyncio
+async def test_material_chunk_and_extended_fields(session):
+    user = User(
+        email="chunk@example.com",
+        hashed_password="hashed",
+        display_name="Chunk User",
+    )
+    session.add(user)
+    await session.flush()
+
+    material = Material(
+        user_id=user.id,
+        filename="stored.pdf",
+        original_filename="database.pdf",
+        file_type=FileType.PDF,
+        file_size=128,
+        storage_path="uploads/stored.pdf",
+        mime_type="application/pdf",
+        hash="abc123",
+        processed_at=datetime.datetime.now(datetime.UTC),
+    )
+    session.add(material)
+    await session.flush()
+
+    chunk = MaterialChunk(
+        material_id=material.id,
+        chunk_id="chunk-1",
+        text_preview="事务隔离级别",
+        page_number=3,
+        token_count=42,
+        embedding_id="chunk-1",
+    )
+    session.add(chunk)
+    await session.commit()
+    await session.refresh(chunk)
+
+    assert chunk.material_id == material.id
+    assert chunk.page_number == 3
+    assert material.storage_path == "uploads/stored.pdf"
+
+
+@pytest.mark.asyncio
+async def test_answer_record_extended_fields(session):
+    user = User(
+        email="answer@example.com",
+        hashed_password="hashed",
+        display_name="Answer User",
+    )
+    session.add(user)
+    await session.flush()
+
+    quiz = QuizSession(user_id=user.id, question_count=1)
+    session.add(quiz)
+    await session.flush()
+
+    question = Question(
+        quiz_session_id=quiz.id,
+        question_text="事务的 I 代表什么？",
+        question_type=QuestionType.FILL_BLANK,
+        correct_answer="Isolation",
+    )
+    session.add(question)
+    await session.flush()
+
+    record = AnswerRecord(
+        question_id=question.id,
+        quiz_session_id=quiz.id,
+        user_id=user.id,
+        student_answer="Isolation",
+        is_correct=True,
+        feedback="回答正确",
+        score=1.0,
+    )
+    session.add(record)
+    await session.commit()
+    await session.refresh(record)
+
+    assert record.quiz_session_id == quiz.id
+    assert record.feedback == "回答正确"
+    assert record.score == 1.0

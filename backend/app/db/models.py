@@ -45,6 +45,12 @@ class Difficulty(str, enum.Enum):
     HARD = "hard"
 
 
+class MessageRole(str, enum.Enum):
+    USER = "user"
+    ASSISTANT = "assistant"
+    SYSTEM = "system"
+
+
 class User(Base):
     __tablename__ = "users"
 
@@ -61,6 +67,34 @@ class User(Base):
     quiz_sessions = relationship("QuizSession", back_populates="user", cascade="all, delete-orphan")
     answer_records = relationship("AnswerRecord", back_populates="user", cascade="all, delete-orphan")
     mistake_records = relationship("MistakeRecord", back_populates="user", cascade="all, delete-orphan")
+    learning_profiles = relationship("LearningProfile", back_populates="user", cascade="all, delete-orphan")
+
+
+class LearningProfile(Base):
+    __tablename__ = "learning_profiles"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    user_id: Mapped[int] = mapped_column(
+        Integer,
+        ForeignKey("users.id", ondelete="CASCADE"),
+        nullable=False,
+        unique=True,
+        index=True,
+    )
+    current_subject: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    review_goal: Mapped[str | None] = mapped_column(Text, nullable=True)
+    weak_concepts: Mapped[list] = mapped_column(JSON, default=list, nullable=False)
+    frequent_questions: Mapped[list] = mapped_column(JSON, default=list, nullable=False)
+    active_materials: Mapped[list] = mapped_column(JSON, default=list, nullable=False)
+    preferences: Mapped[dict] = mapped_column(JSON, default=dict, nullable=False)
+    updated_at: Mapped[datetime.datetime] = mapped_column(
+        DateTime,
+        default=_utcnow,
+        onupdate=_utcnow,
+        nullable=False,
+    )
+
+    user = relationship("User", back_populates="learning_profiles")
 
 
 class Conversation(Base):
@@ -73,6 +107,10 @@ class Conversation(Base):
     title: Mapped[str] = mapped_column(String(255), nullable=False, default="New Conversation")
     mode: Mapped[str] = mapped_column(SAEnum(ConversationMode), default=ConversationMode.ASK, nullable=False)
     material_scope: Mapped[list | None] = mapped_column(JSON, nullable=True)
+    summary: Mapped[str | None] = mapped_column(Text, nullable=True)
+    message_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    last_message_at: Mapped[datetime.datetime | None] = mapped_column(DateTime, nullable=True)
+    last_memory_updated_at: Mapped[datetime.datetime | None] = mapped_column(DateTime, nullable=True)
     created_at: Mapped[datetime.datetime] = mapped_column(
         DateTime, default=_utcnow, nullable=False
     )
@@ -84,6 +122,26 @@ class Conversation(Base):
     )
 
     user = relationship("User", back_populates="conversations")
+    messages = relationship("ConversationMessage", back_populates="conversation", cascade="all, delete-orphan")
+
+
+class ConversationMessage(Base):
+    __tablename__ = "conversation_messages"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    conversation_id: Mapped[int] = mapped_column(
+        Integer,
+        ForeignKey("conversations.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    role: Mapped[str] = mapped_column(SAEnum(MessageRole), nullable=False)
+    content: Mapped[str] = mapped_column(Text, nullable=False)
+    material_scope: Mapped[list | None] = mapped_column(JSON, nullable=True)
+    message_metadata: Mapped[dict | None] = mapped_column("metadata", JSON, nullable=True)
+    created_at: Mapped[datetime.datetime] = mapped_column(DateTime, default=_utcnow, nullable=False)
+
+    conversation = relationship("Conversation", back_populates="messages")
 
 
 class Material(Base):
@@ -103,11 +161,37 @@ class Material(Base):
     )
     error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
     chunk_count: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    storage_path: Mapped[str | None] = mapped_column(String(1000), nullable=True)
+    mime_type: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    hash: Mapped[str | None] = mapped_column(String(128), nullable=True, index=True)
+    processed_at: Mapped[datetime.datetime | None] = mapped_column(DateTime, nullable=True)
+    parse_error: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime.datetime] = mapped_column(
         DateTime, default=_utcnow, nullable=False
     )
 
     user = relationship("User", back_populates="materials")
+    chunks = relationship("MaterialChunk", back_populates="material", cascade="all, delete-orphan")
+
+
+class MaterialChunk(Base):
+    __tablename__ = "material_chunks"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    material_id: Mapped[int] = mapped_column(
+        Integer,
+        ForeignKey("materials.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    chunk_id: Mapped[str] = mapped_column(String(100), unique=True, nullable=False, index=True)
+    text_preview: Mapped[str | None] = mapped_column(Text, nullable=True)
+    page_number: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    token_count: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    embedding_id: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    created_at: Mapped[datetime.datetime] = mapped_column(DateTime, default=_utcnow, nullable=False)
+
+    material = relationship("Material", back_populates="chunks")
 
 
 class QuizSession(Base):
@@ -165,12 +249,20 @@ class AnswerRecord(Base):
         nullable=False,
         index=True,
     )
+    quiz_session_id: Mapped[int | None] = mapped_column(
+        Integer,
+        ForeignKey("quiz_sessions.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
     user_id: Mapped[int] = mapped_column(
         Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True
     )
     student_answer: Mapped[str] = mapped_column(Text, nullable=False)
     is_correct: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     time_spent_seconds: Mapped[float] = mapped_column(Float, default=0.0, nullable=False)
+    feedback: Mapped[str | None] = mapped_column(Text, nullable=True)
+    score: Mapped[float | None] = mapped_column(Float, nullable=True)
     created_at: Mapped[datetime.datetime] = mapped_column(
         DateTime, default=_utcnow, nullable=False
     )
