@@ -20,7 +20,7 @@ class Settings(BaseSettings):
     default_llm_provider: str = "deepseek"
     jwt_secret: str = "change-me-in-production"
     max_upload_size_mb: int = 50
-    cors_origins: str = "http://localhost:3000"
+    cors_origins: str = "http://localhost:3000,http://127.0.0.1:3000"
 
     model_config = {"env_file": ".env", "env_file_encoding": "utf-8"}
 
