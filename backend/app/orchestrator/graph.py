@@ -213,11 +213,16 @@ async def run_orchestrator(message: str, user_id: str, **kwargs: Any) -> dict[st
     Returns:
         The final state dict after the graph has executed.
     """
+    memory_context = kwargs.pop("memory_context", None)
     initial_state: dict[str, Any] = {
         "messages": [HumanMessage(content=message)],
         "intent": "",
         "user_id": user_id,
     }
+    if memory_context is not None:
+        initial_state["memory_context"] = memory_context
     initial_state.update(kwargs)
     result = await orchestrator.ainvoke(initial_state)
+    if memory_context is not None and "memory_context" not in result:
+        result["memory_context"] = memory_context
     return result

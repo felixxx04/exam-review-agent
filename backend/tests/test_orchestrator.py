@@ -119,3 +119,29 @@ async def test_orchestrator_passes_extra_kwargs(monkeypatch):
 
     result = await run_orchestrator("什么是薛定谔方程", "user-1", material_scope=["chapter-3"])
     assert result.get("material_scope") == ["chapter-3"]
+
+
+@pytest.mark.asyncio
+async def test_orchestrator_accepts_memory_context(monkeypatch):
+    mock_agent = AsyncMock()
+    mock_agent.answer = AsyncMock(return_value=AgentResponse(content="继续解释幻读"))
+    monkeypatch.setattr("app.orchestrator.graph._build_rag_agent", lambda: mock_agent)
+
+    result = await run_orchestrator(
+        message="继续讲刚才的概念",
+        user_id="default",
+        memory_context={
+            "summary": "用户前面在学习数据库事务隔离级别。",
+            "recent_messages": [
+                {"role": "user", "content": "什么是幻读？"},
+                {"role": "assistant", "content": "幻读是再次查询时出现新增行。"},
+            ],
+            "learning_profile": {
+                "current_subject": "数据库系统",
+                "weak_concepts": ["幻读"],
+            },
+        },
+    )
+
+    assert result["memory_context"]["learning_profile"]["current_subject"] == "数据库系统"
+    assert any("继续解释幻读" in message.content for message in result["messages"])
