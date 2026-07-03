@@ -3,6 +3,7 @@ import { useChatStore } from "@/stores/chatStore";
 
 const initialState = {
   messages: [],
+  conversationId: null,
   mode: "ask" as const,
   isStreaming: false,
   materialScope: [] as string[],
@@ -64,5 +65,23 @@ describe("chatStore", () => {
     const msgs = useChatStore.getState().messages;
     expect(msgs).toHaveLength(1);
     expect(msgs[0].content).toBe("QA handling in progress");
+  });
+
+  it("stores conversation id and replaces restored messages", () => {
+    useChatStore.getState().clearMessages();
+
+    useChatStore.getState().setConversationId(42);
+    useChatStore.getState().setMessages([
+      {
+        id: "m1",
+        role: "user",
+        content: "什么是幻读？",
+        timestamp: 1,
+      },
+    ]);
+
+    expect(useChatStore.getState().conversationId).toBe(42);
+    expect(useChatStore.getState().messages).toHaveLength(1);
+    expect(useChatStore.getState().messages[0].content).toBe("什么是幻读？");
   });
 });

@@ -42,7 +42,42 @@ export interface Material {
   processing_status: "pending" | "processing" | "ready" | "failed";
   chunk_count: number | null;
   error_message: string | null;
+  storage_path?: string | null;
+  mime_type?: string | null;
+  hash?: string | null;
+  processed_at?: string | null;
+  parse_error?: string | null;
   created_at: string;
+}
+
+export interface Conversation {
+  id: number;
+  title: string;
+  summary: string | null;
+  message_count: number;
+  last_message_at: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ConversationMessage {
+  id: number;
+  conversation_id: number;
+  role: "user" | "assistant" | "system";
+  content: string;
+  material_scope: string[] | null;
+  metadata: Record<string, unknown>;
+  created_at: string;
+}
+
+export interface LearningProfile {
+  current_subject: string | null;
+  review_goal: string | null;
+  weak_concepts: string[];
+  frequent_questions: string[];
+  active_materials: string[];
+  preferences: Record<string, unknown>;
+  updated_at: string;
 }
 
 export interface WeakConcept {

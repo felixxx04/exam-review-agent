@@ -10,7 +10,14 @@ import type { Message } from "@/types";
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 
 export function useChatStream() {
-  const { addMessage, setStreaming, materialScope, setMode } = useChatStore();
+  const {
+    addMessage,
+    conversationId,
+    setConversationId,
+    setStreaming,
+    materialScope,
+    setMode,
+  } = useChatStore();
   const { setQuestions } = useQuizStore();
   const abortRef = useRef<AbortController | null>(null);
 
@@ -27,9 +34,11 @@ export function useChatStream() {
       const assistantMsg: Message = {
         id: crypto.randomUUID(),
         role: "assistant",
-        content: "",
+        content: "正在根据资料整理回答...",
         timestamp: Date.now(),
       };
+      addMessage(assistantMsg);
+      let hasReceivedToken = false;
 
       setStreaming(true);
       const controller = new AbortController();
@@ -41,6 +50,7 @@ export function useChatStream() {
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             message: content,
+            conversation_id: conversationId ?? undefined,
             material_scope:
               materialScope.length > 0 ? materialScope : undefined,
           }),
@@ -59,7 +69,13 @@ export function useChatStream() {
           onmessage(ev) {
             try {
               const data = JSON.parse(ev.data);
-              if (data.event === "token") {
+              if (data.event === "conversation") {
+                setConversationId(data.data.id);
+              } else if (data.event === "token") {
+                if (!hasReceivedToken) {
+                  assistantMsg.content = "";
+                  hasReceivedToken = true;
+                }
                 assistantMsg.content += data.data;
                 addMessage({ ...assistantMsg });
               } else if (data.event === "done") {
@@ -76,17 +92,27 @@ export function useChatStream() {
             }
           },
           onerror(err) {
-            setStreaming(false);
             throw err;
           },
         });
       } catch {
-        // aborted or network error
+        assistantMsg.content = controller.signal.aborted
+          ? "已停止生成。"
+          : "请求失败，请稍后再试。";
+        addMessage({ ...assistantMsg });
       } finally {
         setStreaming(false);
       }
     },
-    [addMessage, setStreaming, materialScope, setMode, setQuestions]
+    [
+      addMessage,
+      conversationId,
+      setConversationId,
+      setStreaming,
+      materialScope,
+      setMode,
+      setQuestions,
+    ]
   );
 
   const abort = useCallback(() => {

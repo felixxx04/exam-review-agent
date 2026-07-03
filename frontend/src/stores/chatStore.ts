@@ -3,10 +3,13 @@ import type { AppMode, Message } from "@/types";
 
 interface ChatState {
   messages: Message[];
+  conversationId: number | null;
   mode: AppMode;
   isStreaming: boolean;
   materialScope: string[];
   addMessage: (msg: Message) => void;
+  setMessages: (messages: Message[]) => void;
+  setConversationId: (id: number | null) => void;
   setMode: (mode: AppMode) => void;
   setStreaming: (v: boolean) => void;
   setMaterialScope: (scope: string[]) => void;
@@ -15,6 +18,7 @@ interface ChatState {
 
 export const useChatStore = create<ChatState>((set) => ({
   messages: [],
+  conversationId: null,
   mode: "ask",
   isStreaming: false,
   materialScope: [],
@@ -29,6 +33,8 @@ export const useChatStore = create<ChatState>((set) => ({
       messages[existingIndex] = msg;
       return { messages };
     }),
+  setMessages: (messages) => set({ messages }),
+  setConversationId: (id) => set({ conversationId: id }),
   setMode: (mode) => set({ mode }),
   setStreaming: (v) => set({ isStreaming: v }),
   setMaterialScope: (scope) => set({ materialScope: scope }),

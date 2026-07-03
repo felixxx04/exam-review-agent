@@ -1,8 +1,21 @@
-import type { DashboardData, Material, QuizData, ScoreResult } from "@/types";
+import type {
+  Conversation,
+  ConversationMessage,
+  DashboardData,
+  LearningProfile,
+  Material,
+  QuizData,
+  ScoreResult,
+} from "@/types";
 
 interface MaterialListData {
   materials: Material[];
   total: number;
+}
+
+interface ConversationMessagesData {
+  conversation_id: number;
+  messages: ConversationMessage[];
 }
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
@@ -23,6 +36,18 @@ async function unwrap<T>(response: Response): Promise<T> {
 }
 
 export const api = {
+  conversations: {
+    active: () =>
+      fetch(`${API_BASE}/api/conversations/active`).then((r) =>
+        unwrap<Conversation>(r),
+      ),
+
+    messages: (id: number) =>
+      fetch(`${API_BASE}/api/conversations/${id}/messages`).then((r) =>
+        unwrap<ConversationMessagesData>(r),
+      ),
+  },
+
   materials: {
     list: () =>
       fetch(`${API_BASE}/api/materials`).then((r) => unwrap<MaterialListData>(r)),
@@ -70,5 +95,12 @@ export const api = {
   review: {
     weakPoints: () =>
       fetch(`${API_BASE}/api/review/weak-points`).then((r) => unwrap<DashboardData>(r)),
+  },
+
+  memory: {
+    profile: () =>
+      fetch(`${API_BASE}/api/memory/profile`).then((r) =>
+        unwrap<LearningProfile>(r),
+      ),
   },
 };
