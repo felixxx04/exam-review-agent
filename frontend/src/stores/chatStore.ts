@@ -14,6 +14,7 @@ interface ChatState {
   setStreaming: (v: boolean) => void;
   setMaterialScope: (scope: string[]) => void;
   clearMessages: () => void;
+  startNewConversation: (id: number) => void;
 }
 
 export const useChatStore = create<ChatState>((set) => ({
@@ -39,4 +40,12 @@ export const useChatStore = create<ChatState>((set) => ({
   setStreaming: (v) => set({ isStreaming: v }),
   setMaterialScope: (scope) => set({ materialScope: scope }),
   clearMessages: () => set({ messages: [] }),
+  startNewConversation: (id) =>
+    set({
+      conversationId: id,
+      messages: [],
+      mode: "ask",
+      isStreaming: false,
+      materialScope: [],
+    }),
 }));

@@ -158,6 +158,32 @@ async def test_quiz_agent_empty_retrieval_returns_empty_quiz():
 
 
 @pytest.mark.asyncio
+async def test_quiz_agent_falls_back_to_scoped_material_when_topic_is_generic():
+    """Scoped quiz requests should still use selected material if topic search is too generic."""
+    agent = QuizAgent(
+        retrieval_service=AsyncMock(),
+        quiz_generator=AsyncMock(),
+    )
+    fallback_chunks = [
+        SearchResult(text="MQ 消息队列可以用于解耦、异步和削峰", score=0.1, metadata={"source": "MQ.docx"}),
+    ]
+    agent.retrieval.search = AsyncMock(side_effect=[[], fallback_chunks])
+    agent.generator.generate = AsyncMock(return_value=[])
+
+    await agent.generate_quiz(
+        user_id="test-user",
+        topic="核心概念 重点知识",
+        material_scope=["MQ.docx"],
+    )
+
+    assert agent.retrieval.search.await_count == 2
+    fallback_call = agent.retrieval.search.await_args_list[1].kwargs
+    assert fallback_call["metadata_filter"] == {"source": {"$in": ["MQ.docx"]}}
+    assert fallback_call["apply_quality_gate"] is False
+    agent.generator.generate.assert_awaited_once()
+
+
+@pytest.mark.asyncio
 async def test_quiz_agent_passes_material_scope():
     """Material scope should be converted to metadata filter."""
     agent = QuizAgent(

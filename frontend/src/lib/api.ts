@@ -1,5 +1,6 @@
 import type {
   Conversation,
+  ConversationListData,
   ConversationMessage,
   DashboardData,
   LearningProfile,
@@ -40,6 +41,21 @@ export const api = {
     active: () =>
       fetch(`${API_BASE}/api/conversations/active`).then((r) =>
         unwrap<Conversation>(r),
+      ),
+
+    list: () =>
+      fetch(`${API_BASE}/api/conversations`).then((r) =>
+        unwrap<ConversationListData>(r),
+      ),
+
+    create: () =>
+      fetch(`${API_BASE}/api/conversations`, { method: "POST" }).then((r) =>
+        unwrap<Conversation>(r),
+      ),
+
+    delete: (id: number) =>
+      fetch(`${API_BASE}/api/conversations/${id}`, { method: "DELETE" }).then((r) =>
+        unwrap<unknown>(r),
       ),
 
     messages: (id: number) =>

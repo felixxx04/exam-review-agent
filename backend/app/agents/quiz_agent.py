@@ -55,6 +55,14 @@ class QuizAgent:
             top_k=count,
             metadata_filter=metadata_filter,
         )
+        if not chunks and material_scope:
+            chunks = await self.retrieval.search(
+                user_id=user_id,
+                query=topic,
+                top_k=count,
+                metadata_filter=metadata_filter,
+                apply_quality_gate=False,
+            )
 
         if not chunks:
             return QuizResponse(questions=[], topic=topic)

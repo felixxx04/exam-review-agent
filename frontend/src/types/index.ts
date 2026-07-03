@@ -60,6 +60,11 @@ export interface Conversation {
   updated_at: string;
 }
 
+export interface ConversationListData {
+  conversations: Conversation[];
+  total: number;
+}
+
 export interface ConversationMessage {
   id: number;
   conversation_id: number;

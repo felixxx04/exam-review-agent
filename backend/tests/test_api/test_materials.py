@@ -3,8 +3,11 @@
 from __future__ import annotations
 
 import pytest
+from unittest.mock import AsyncMock
+
 from sqlalchemy import select
 
+from app.core.middleware import RateLimitMiddleware
 from app.db.models import Material, MaterialChunk
 
 
@@ -13,6 +16,13 @@ def _data(response):
     body = response.json()
     assert body["success"] is True
     return body["data"]
+
+
+@pytest.fixture(autouse=True)
+def reset_rate_limit():
+    RateLimitMiddleware.reset()
+    yield
+    RateLimitMiddleware.reset()
 
 
 class TestMaterialsUpload:
@@ -59,6 +69,49 @@ class TestMaterialsUpload:
         assert material.storage_path is not None
         assert material.mime_type == "application/pdf"
         assert material.hash is not None
+
+    @pytest.mark.asyncio
+    async def test_upload_indexes_chunks_with_original_filename_metadata(
+        self, client_with_db, monkeypatch
+    ):
+        class ParserStub:
+            async def parse(self, file_path, file_type=None):
+                from app.services.parser_service import Chunk, ParseResult
+
+                return ParseResult(
+                    chunks=[
+                        Chunk(
+                            text="MQ content",
+                            metadata={"source": "stored_MQ.docx", "file_type": "docx"},
+                        )
+                    ],
+                    page_count=1,
+                )
+
+        retrieval = AsyncMock()
+        retrieval.index_chunks = AsyncMock(return_value=["chunk-1"])
+
+        monkeypatch.setattr("app.services.parser_service.ParserService", lambda: ParserStub())
+        monkeypatch.setattr("app.services.retrieval_service.RetrievalService", lambda: retrieval)
+
+        response = await client_with_db.post(
+            "/api/materials",
+            files={
+                "file": (
+                    "MQ.docx",
+                    b"fake docx content",
+                    "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                )
+            },
+        )
+
+        assert response.status_code == 200
+        indexed_chunks = retrieval.index_chunks.call_args.kwargs["chunks"]
+        metadata = indexed_chunks[0]["metadata"]
+        assert metadata["source"] == "MQ.docx"
+        assert metadata["original_filename"] == "MQ.docx"
+        assert metadata["storage_filename"].endswith("_MQ.docx")
+        assert metadata["material_id"] == _data(response)["id"]
 
 
 class TestMaterialsList:
@@ -150,6 +203,39 @@ class TestMaterialsDelete:
 
         rows = (await db_session.execute(select(MaterialChunk))).scalars().all()
         assert rows == []
+
+    @pytest.mark.asyncio
+    async def test_delete_material_removes_vector_chunks(
+        self, client_with_db, db_session, monkeypatch
+    ):
+        upload_resp = await client_with_db.post(
+            "/api/materials",
+            files={"file": ("test.pdf", b"fake pdf", "application/pdf")},
+        )
+        material_id = _data(upload_resp)["id"]
+        db_session.add(
+            MaterialChunk(
+                material_id=material_id,
+                chunk_id="chunk-vector-delete-test",
+                text_preview="preview",
+                page_number=1,
+                token_count=3,
+                embedding_id="chunk-vector-delete-test",
+            )
+        )
+        await db_session.commit()
+
+        retrieval = AsyncMock()
+        retrieval.delete_chunks = AsyncMock()
+        monkeypatch.setattr("app.services.retrieval_service.RetrievalService", lambda: retrieval)
+
+        response = await client_with_db.delete(f"/api/materials/{material_id}")
+
+        assert response.status_code == 200
+        retrieval.delete_chunks.assert_awaited_once_with(
+            user_id="default",
+            chunk_ids=["chunk-vector-delete-test"],
+        )
 
 
 class TestMaterialsReprocess:

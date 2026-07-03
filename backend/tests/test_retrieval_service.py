@@ -2,6 +2,55 @@ import pytest
 from app.services.retrieval_service import RetrievalService, SearchResult
 
 
+class _FakeVectorStore:
+    def __init__(self):
+        self.documents = []
+
+    def add(self, user_id, embeddings, documents, metadatas, ids=None):
+        self.documents.extend(
+            {
+                "id": doc_id,
+                "document": document,
+                "metadata": metadata,
+                "distance": 0.1,
+            }
+            for doc_id, document, metadata in zip(ids, documents, metadatas, strict=False)
+        )
+        return ids
+
+    def search(self, user_id, query_embedding, top_k=10, metadata_filter=None):
+        results = self.documents
+        if metadata_filter:
+            for key, expected in metadata_filter.items():
+                if isinstance(expected, dict) and "$in" in expected:
+                    results = [
+                        item for item in results
+                        if item["metadata"].get(key) in expected["$in"]
+                    ]
+                else:
+                    results = [
+                        item for item in results
+                        if item["metadata"].get(key) == expected
+                    ]
+        return results[:top_k]
+
+    def delete(self, user_id, ids):
+        self.documents = [item for item in self.documents if item["id"] not in ids]
+
+
+class _FakeEmbeddingService:
+    def embed_documents(self, texts):
+        return [[1.0, 0.0] for _ in texts]
+
+    def embed_query(self, text):
+        return [1.0, 0.0]
+
+
+class _FakeCrossEncoder:
+    def predict(self, pairs, show_progress_bar=False):
+        return [0.9 for _ in pairs]
+
+
 @pytest.mark.asyncio
 async def test_hybrid_search_returns_ranked_results():
     service = RetrievalService()
@@ -68,6 +117,33 @@ async def test_metadata_filtering_in_search():
     assert len(results) >= 1
     for r in results:
         assert r.metadata.get("source") == "linalg.pdf"
+
+
+@pytest.mark.asyncio
+async def test_metadata_filtering_applies_to_bm25_results(monkeypatch):
+    monkeypatch.setattr(
+        RetrievalService,
+        "_get_cross_encoder",
+        classmethod(lambda cls: _FakeCrossEncoder()),
+    )
+    service = RetrievalService(
+        vector_store=_FakeVectorStore(),
+        embedding_service=_FakeEmbeddingService(),
+    )
+    await service.index_chunks("test-user-bm25-filter", [
+        {"text": "公共主题 当前资料内容", "metadata": {"source": "current.pdf"}},
+        {"text": "公共主题 旧资料内容", "metadata": {"source": "old.pdf"}},
+    ])
+
+    results = await service.search(
+        "test-user-bm25-filter",
+        "公共主题",
+        top_k=5,
+        metadata_filter={"source": {"$in": ["current.pdf"]}},
+    )
+
+    assert len(results) >= 1
+    assert {r.metadata.get("source") for r in results} == {"current.pdf"}
 
 
 @pytest.mark.asyncio

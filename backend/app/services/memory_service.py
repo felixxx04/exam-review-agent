@@ -57,6 +57,18 @@ class MemoryService:
         await self.db.refresh(conversation)
         return conversation
 
+    async def create_conversation(
+        self,
+        user_id: str = "default",
+        title: str = "新的复习会话",
+    ) -> Conversation:
+        user = await self.get_or_create_default_user(user_id)
+        conversation = Conversation(user_id=user.id, title=title)
+        self.db.add(conversation)
+        await self.db.commit()
+        await self.db.refresh(conversation)
+        return conversation
+
     async def get_or_create_learning_profile(
         self, user_id: str = "default"
     ) -> LearningProfile:
@@ -101,6 +113,7 @@ class MemoryService:
             conversation.message_count = (conversation.message_count or 0) + 1
             conversation.last_message_at = now
             conversation.updated_at = now
+            conversation.material_scope = material_scope
         self.db.add(message)
         await self.db.commit()
         await self.db.refresh(message)

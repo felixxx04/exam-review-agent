@@ -100,7 +100,18 @@ async def upload_material(
         from app.services.retrieval_service import RetrievalService
 
         retrieval = RetrievalService()
-        chunk_payloads = [asdict(c) for c in result.chunks]
+        chunk_payloads = []
+        for chunk in result.chunks:
+            payload = asdict(chunk)
+            metadata = payload.get("metadata", {}) or {}
+            payload["metadata"] = {
+                **metadata,
+                "source": material.original_filename,
+                "original_filename": material.original_filename,
+                "storage_filename": material.filename,
+                "material_id": material.id,
+            }
+            chunk_payloads.append(payload)
         chunk_ids = await retrieval.index_chunks(
             user_id="default",
             chunks=chunk_payloads,
@@ -171,6 +182,15 @@ async def delete_material(
     file_path = UPLOAD_DIR / material.filename
     if file_path.exists():
         file_path.unlink()
+
+    chunk_rows = await db.execute(
+        select(MaterialChunk.chunk_id).where(MaterialChunk.material_id == material_id)
+    )
+    chunk_ids = list(chunk_rows.scalars().all())
+    if chunk_ids:
+        from app.services.retrieval_service import RetrievalService
+
+        await RetrievalService().delete_chunks(user_id="default", chunk_ids=chunk_ids)
 
     await db.execute(delete(MaterialChunk).where(MaterialChunk.material_id == material_id))
     await db.delete(material)

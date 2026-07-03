@@ -120,7 +120,7 @@ class RetrievalService:
     ) -> list[SearchResult]:
         """Hybrid search: BM25 + dense vector search + RRF fusion + rerank + quality gate."""
         # 1. Dual retrieval
-        bm25_results = self._bm25_search(user_id, query, top_k * 2)
+        bm25_results = self._bm25_search(user_id, query, top_k * 2, metadata_filter)
         dense_results = self._dense_search(user_id, query, top_k * 2, metadata_filter)
 
         # 2. Reciprocal rank fusion (RRF)
@@ -179,7 +179,11 @@ class RetrievalService:
         return tokens
 
     def _bm25_search(
-        self, user_id: str, query: str, top_k: int
+        self,
+        user_id: str,
+        query: str,
+        top_k: int,
+        metadata_filter: Optional[dict] = None,
     ) -> list[dict]:
         """BM25 keyword search."""
         if user_id not in self._bm25_indices:
@@ -190,7 +194,7 @@ class RetrievalService:
         top_indices = np.argsort(scores)[::-1][:top_k]
         results = []
         for idx in top_indices:
-            if scores[idx] > 0:
+            if scores[idx] > 0 and self._metadata_matches(metas[idx], metadata_filter):
                 results.append({
                     "text": texts[idx],
                     "metadata": metas[idx],
@@ -199,6 +203,21 @@ class RetrievalService:
                     "source": "bm25",
                 })
         return results
+
+    @staticmethod
+    def _metadata_matches(metadata: dict, metadata_filter: Optional[dict]) -> bool:
+        """Apply the Chroma-style filters used by the app to BM25 results too."""
+        if not metadata_filter:
+            return True
+
+        for key, expected in metadata_filter.items():
+            actual = metadata.get(key)
+            if isinstance(expected, dict):
+                if "$in" in expected and actual not in expected["$in"]:
+                    return False
+            elif actual != expected:
+                return False
+        return True
 
     def _dense_search(
         self, user_id: str, query: str, top_k: int, metadata_filter: Optional[dict] = None

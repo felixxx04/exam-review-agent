@@ -18,6 +18,11 @@ class ConversationResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
 
+class ConversationListResponse(BaseModel):
+    conversations: list[ConversationResponse]
+    total: int
+
+
 class ConversationMessageResponse(BaseModel):
     id: int
     conversation_id: int

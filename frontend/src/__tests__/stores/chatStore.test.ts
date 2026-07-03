@@ -84,4 +84,22 @@ describe("chatStore", () => {
     expect(useChatStore.getState().messages).toHaveLength(1);
     expect(useChatStore.getState().messages[0].content).toBe("什么是幻读？");
   });
+
+  it("starts a new conversation with empty ask-mode state", () => {
+    useChatStore.setState({
+      messages: [{ id: "old", role: "assistant", content: "旧消息", timestamp: 0 }],
+      conversationId: 1,
+      mode: "quiz",
+      isStreaming: true,
+      materialScope: ["MQ.docx"],
+    });
+
+    useChatStore.getState().startNewConversation(2);
+
+    expect(useChatStore.getState().conversationId).toBe(2);
+    expect(useChatStore.getState().messages).toEqual([]);
+    expect(useChatStore.getState().mode).toBe("ask");
+    expect(useChatStore.getState().isStreaming).toBe(false);
+    expect(useChatStore.getState().materialScope).toEqual([]);
+  });
 });
