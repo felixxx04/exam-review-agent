@@ -114,7 +114,7 @@ class MemoryService:
         result = await self.db.execute(
             select(ConversationMessage)
             .where(ConversationMessage.conversation_id == conversation_id)
-            .order_by(ConversationMessage.created_at.desc())
+            .order_by(ConversationMessage.created_at.desc(), ConversationMessage.id.desc())
             .limit(limit)
         )
         return list(reversed(result.scalars().all()))

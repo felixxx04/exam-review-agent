@@ -6,6 +6,7 @@ from pydantic import BaseModel
 class ChatRequest(BaseModel):
     message: str
     material_scope: list[str] | None = None
+    conversation_id: int | None = None
 
 
 class SSEMessage(BaseModel):
