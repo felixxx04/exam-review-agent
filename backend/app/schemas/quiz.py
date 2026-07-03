@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from typing import Any
 
 
 @dataclass
@@ -36,3 +37,27 @@ class QuizResponse:
 
     def __post_init__(self) -> None:
         self.total = len(self.questions)
+
+
+def to_quiz_payload(response: QuizResponse, difficulty: float = 0.5) -> dict[str, Any]:
+    questions = []
+    for index, question in enumerate(response.questions, start=1):
+        questions.append(
+            {
+                "id": f"q-{index}",
+                "question": question.question,
+                "question_type": "multiple_choice" if question.options else "fill_blank",
+                "options": question.options,
+                "correct": question.correct,
+                "explanation": question.explanation,
+                "difficulty": difficulty,
+                "topic": response.topic,
+                "source_chunk_ids": question.source_chunk_ids,
+            }
+        )
+
+    return {
+        "questions": questions,
+        "topic": response.topic,
+        "total": len(questions),
+    }

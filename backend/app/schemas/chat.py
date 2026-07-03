@@ -12,4 +12,5 @@ class SSEMessage(BaseModel):
     event: str
     data: str = ""
     citations: list[dict] | None = None
+    quiz: dict | None = None
     error: str | None = None

@@ -4,12 +4,14 @@ import {
   EventStreamContentType,
 } from "@microsoft/fetch-event-source";
 import { useChatStore } from "@/stores/chatStore";
+import { useQuizStore } from "@/stores/quizStore";
 import type { Message } from "@/types";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 
 export function useChatStream() {
-  const { addMessage, setStreaming, materialScope } = useChatStore();
+  const { addMessage, setStreaming, materialScope, setMode } = useChatStore();
+  const { setQuestions } = useQuizStore();
   const abortRef = useRef<AbortController | null>(null);
 
   const sendMessage = useCallback(
@@ -62,6 +64,12 @@ export function useChatStream() {
                 addMessage({ ...assistantMsg });
               } else if (data.event === "done") {
                 assistantMsg.content = data.data || assistantMsg.content;
+                assistantMsg.citations = data.citations || assistantMsg.citations;
+                addMessage({ ...assistantMsg });
+                if (data.quiz?.questions?.length) {
+                  setQuestions(data.quiz.questions, data.quiz.topic || "");
+                  setMode("quiz");
+                }
               }
             } catch {
               // ignore parse errors
@@ -78,7 +86,7 @@ export function useChatStream() {
         setStreaming(false);
       }
     },
-    [addMessage, setStreaming, materialScope]
+    [addMessage, setStreaming, materialScope, setMode, setQuestions]
   );
 
   const abort = useCallback(() => {

@@ -3,7 +3,7 @@ from __future__ import annotations
 from fastapi import APIRouter
 
 from app.agents.tracker_agent import TrackerAgent
-from app.core.store import DictStore
+from app.core.store import get_shared_store
 from app.schemas.common import ApiResponse
 from app.schemas.review import MistakeListResponse, MistakeRecord, StudyDay, StudyPlanRequest, StudyPlanResponse, WeakConcept, WeakPointsResponse
 from app.services.llm_service import get_default_llm_service
@@ -13,7 +13,7 @@ router = APIRouter(prefix="/api/review", tags=["review"])
 
 def _build_tracker() -> TrackerAgent:
     llm = get_default_llm_service()
-    return TrackerAgent(db=DictStore(), llm_service=llm)
+    return TrackerAgent(db=get_shared_store(), llm_service=llm)
 
 
 @router.get("/weak-points")
@@ -52,5 +52,4 @@ async def generate_study_plan(request: StudyPlanRequest):
         ],
         message=result.get("message", ""),
     ))
-
 

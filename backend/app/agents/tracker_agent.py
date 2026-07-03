@@ -76,6 +76,7 @@ class TrackerAgent:
         if not is_correct:
             await self.db.add(
                 {
+                    "type": "mistake_records",
                     "user_id": user_id,
                     "question_id": question_id,
                     "concept": concept,

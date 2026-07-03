@@ -4,7 +4,7 @@ from app.services.llm_providers.base import OpenAICompatibleProvider
 
 
 class VolcengineProvider(OpenAICompatibleProvider):
-    _chat_path: str = "/v1/chat/completions"
+    _chat_path: str = "/chat/completions"
     _provider_name: str = "volcengine"
 
     def __init__(

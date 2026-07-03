@@ -188,6 +188,13 @@ class LLMService:
         return None, None  # Unreachable, but satisfies type checker
 
 
+def _has_usable_api_key(api_key: str) -> bool:
+    key = api_key.strip()
+    if not key:
+        return False
+    return "placeholder" not in key.lower()
+
+
 def get_default_llm_service() -> LLMService:
     """Factory that builds an LLMService from application settings.
 
@@ -199,29 +206,45 @@ def get_default_llm_service() -> LLMService:
 
     shared_client = httpx.AsyncClient(timeout=60.0)
 
-    providers = {
-        "deepseek": DeepSeekProvider(
+    providers = {}
+    if _has_usable_api_key(settings.deepseek_api_key):
+        providers["deepseek"] = DeepSeekProvider(
             api_key=settings.deepseek_api_key,
             base_url=settings.deepseek_base_url,
             client=shared_client,
-        ),
-        "glm": GLMProvider(
+        )
+    if _has_usable_api_key(settings.glm_api_key):
+        providers["glm"] = GLMProvider(
             api_key=settings.glm_api_key,
             base_url=settings.glm_base_url,
             client=shared_client,
-        ),
-        "minimax": MiniMaxProvider(
+        )
+    if _has_usable_api_key(settings.minimax_api_key):
+        providers["minimax"] = MiniMaxProvider(
             api_key=settings.minimax_api_key,
             base_url=settings.minimax_base_url,
             client=shared_client,
-        ),
-        "volcengine": VolcengineProvider(
+        )
+    if _has_usable_api_key(settings.volcengine_api_key):
+        providers["volcengine"] = VolcengineProvider(
             api_key=settings.volcengine_api_key,
             base_url=settings.volcengine_base_url,
             client=shared_client,
-        ),
-    }
+        )
+
+    if not providers:
+        raise LLMProviderError(
+            "config",
+            "No usable LLM providers are configured.",
+        )
+
+    default_provider = settings.default_llm_provider
+    if default_provider not in providers:
+        default_provider = next(iter(providers))
+
+    fallback_chain = [name for name in providers if name != default_provider]
     return LLMService(
         providers=providers,
-        default_provider=settings.default_llm_provider,
+        default_provider=default_provider,
+        fallback_chain=fallback_chain,
     )

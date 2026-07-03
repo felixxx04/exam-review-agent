@@ -12,3 +12,5 @@ class AgentState(TypedDict):
     user_id: str
     material_scope: NotRequired[list[str] | None]
     active_session: NotRequired[dict | None]
+    citations: NotRequired[list[dict]]
+    quiz: NotRequired[dict | None]

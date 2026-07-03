@@ -15,3 +15,10 @@ class DictStore:
             r for r in self._records
             if all(r.get(k) == v for k, v in filters.items())
         ]
+
+
+_shared_store = DictStore()
+
+
+def get_shared_store() -> DictStore:
+    return _shared_store

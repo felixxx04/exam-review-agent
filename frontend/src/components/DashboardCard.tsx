@@ -9,7 +9,7 @@ import { BarChart3, RefreshCw } from "lucide-react";
 
 export function DashboardCard() {
   const { mode, setMode } = useChatStore();
-  const { setGenerating } = useQuizStore();
+  const { setGenerating, setQuestions } = useQuizStore();
   const [weakConcepts, setWeakConcepts] = useState<WeakConcept[]>([]);
   const [loading, setLoading] = useState(false);
 
@@ -28,8 +28,12 @@ export function DashboardCard() {
   const startReQuiz = async (concept: string) => {
     setGenerating(true);
     setMode("quiz");
-    await api.quiz.generate(concept, 0.3, 3);
-    setGenerating(false);
+    try {
+      const quiz = await api.quiz.generate(concept, 0.3, 3);
+      setQuestions(quiz.questions, quiz.topic);
+    } finally {
+      setGenerating(false);
+    }
   };
 
   const total = weakConcepts.length;

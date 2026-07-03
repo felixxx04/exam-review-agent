@@ -4,9 +4,9 @@ from fastapi import APIRouter
 
 from app.agents.quiz_agent import QuizAgent
 from app.agents.tracker_agent import TrackerAgent
-from app.core.store import DictStore
+from app.core.store import get_shared_store
 from app.schemas.common import ApiResponse
-from app.schemas.quiz import QuizRequest
+from app.schemas.quiz import QuizRequest, to_quiz_payload
 from app.services.llm_service import get_default_llm_service
 from app.services.retrieval_service import RetrievalService
 from app.specialists.quiz_generator import QuizGenerator
@@ -31,7 +31,7 @@ async def generate_quiz(request: QuizRequest):
         count=request.count,
         material_scope=request.material_scope,
     )
-    return ApiResponse.ok(data=response)
+    return ApiResponse.ok(data=to_quiz_payload(response, difficulty=request.difficulty))
 
 
 @router.post("/submit")
@@ -44,7 +44,7 @@ async def submit_answer(
     topic: str = "",
 ):
     llm = get_default_llm_service()
-    tracker = TrackerAgent(db=DictStore(), llm_service=llm)
+    tracker = TrackerAgent(db=get_shared_store(), llm_service=llm)
     result = await tracker.score_answer(
         user_id="default",
         question_id=question_id,
@@ -60,5 +60,4 @@ async def submit_answer(
         "score": result.score,
         "feedback": result.feedback,
     })
-
 

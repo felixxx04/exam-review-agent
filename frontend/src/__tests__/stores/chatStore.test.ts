@@ -51,4 +51,18 @@ describe("chatStore", () => {
     useChatStore.getState().addMessage({ id: "b", role: "assistant", content: "second", timestamp: 1 });
     expect(useChatStore.getState().messages).toHaveLength(2);
   });
+
+  it("updates an existing message when ids match", () => {
+    useChatStore.getState().addMessage({ id: "stream-1", role: "assistant", content: "QA", timestamp: 0 });
+    useChatStore.getState().addMessage({
+      id: "stream-1",
+      role: "assistant",
+      content: "QA handling in progress",
+      timestamp: 0,
+    });
+
+    const msgs = useChatStore.getState().messages;
+    expect(msgs).toHaveLength(1);
+    expect(msgs[0].content).toBe("QA handling in progress");
+  });
 });

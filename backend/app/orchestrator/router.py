@@ -1,3 +1,5 @@
+import re
+
 INTENT_KEYWORDS: dict[str, list[str]] = {
     "quiz": [
         "出题",
@@ -28,6 +30,8 @@ def classify_intent(message: str) -> str:
     Prioritizes quiz over review. Falls back to "qa" if no keywords match.
     """
     lower = message.lower()
+    if re.search(r"出.*([一二两三四五六七八九十\d几多]+)\s*道题", lower):
+        return "quiz"
     for intent in ("quiz", "review"):
         for kw in INTENT_KEYWORDS[intent]:
             if kw in lower:

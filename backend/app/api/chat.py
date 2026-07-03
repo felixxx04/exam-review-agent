@@ -28,6 +28,8 @@ async def chat(request: ChatRequest = Depends(_guard_prompt)):
                 material_scope=request.material_scope,
             )
             messages = result.get("messages", [])
+            citations = result.get("citations")
+            quiz = result.get("quiz")
             for msg in messages:
                 if hasattr(msg, "content"):
                     content = msg.content
@@ -37,7 +39,7 @@ async def chat(request: ChatRequest = Depends(_guard_prompt)):
                                 {"event": "token", "data": char}, ensure_ascii=False
                             )
                             yield f"data: {chunk}\n\n"
-                        yield f"data: {json.dumps({'event': 'done', 'data': content}, ensure_ascii=False)}\n\n"
+                        yield f"data: {json.dumps({'event': 'done', 'data': content, 'citations': citations, 'quiz': quiz}, ensure_ascii=False)}\n\n"
                     else:
                         yield f"data: {json.dumps({'event': 'message', 'data': content}, ensure_ascii=False)}\n\n"
         except Exception as e:

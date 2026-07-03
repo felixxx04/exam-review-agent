@@ -1,7 +1,10 @@
 import pytest
+from unittest.mock import AsyncMock
 
+from app.agents.rag_agent import AgentResponse
 from app.orchestrator.graph import run_orchestrator
 from app.orchestrator.router import classify_intent
+from app.schemas.quiz import Question, QuizResponse
 
 
 # ---------------------------------------------------------------------------
@@ -11,6 +14,10 @@ from app.orchestrator.router import classify_intent
 
 def test_classify_quiz_intent():
     assert classify_intent("基于第三章出5道选择题") == "quiz"
+
+
+def test_classify_quiz_intent_with_generic_count():
+    assert classify_intent("给我出五道题") == "quiz"
 
 
 def test_classify_qa_intent():
@@ -48,28 +55,67 @@ def test_classify_weak_point_analysis():
 
 
 @pytest.mark.asyncio
-async def test_orchestrator_routes_to_qa():
+async def test_orchestrator_routes_to_qa(monkeypatch):
+    mock_agent = AsyncMock()
+    mock_agent.answer = AsyncMock(
+        return_value=AgentResponse(
+            content="薛定谔方程描述量子态的时间演化",
+            citations=[{"source": "quantum.pdf", "page": 23}],
+        )
+    )
+    monkeypatch.setattr("app.orchestrator.graph._build_rag_agent", lambda: mock_agent)
+
     result = await run_orchestrator("什么是薛定谔方程", "user-1")
     assert result["intent"] == "qa"
     assert result["user_id"] == "user-1"
-    assert any("QA handling" in m.content for m in result["messages"])
+    assert any("薛定谔方程" in m.content for m in result["messages"])
+    assert result["citations"][0]["source"] == "quantum.pdf"
 
 
 @pytest.mark.asyncio
-async def test_orchestrator_routes_to_quiz():
+async def test_orchestrator_routes_to_quiz(monkeypatch):
+    mock_agent = AsyncMock()
+    mock_agent.generate_quiz = AsyncMock(
+        return_value=QuizResponse(
+            questions=[
+                Question(
+                    question="以下哪个是量子力学核心概念？",
+                    options=["A. 速度", "B. 波函数", "C. 温度", "D. 电流"],
+                    correct="B",
+                    explanation="波函数是量子力学核心概念",
+                    source_chunk_ids=["chunk-1"],
+                )
+            ],
+            topic="量子力学",
+        )
+    )
+    monkeypatch.setattr("app.orchestrator.graph._build_quiz_agent", lambda: mock_agent)
+
     result = await run_orchestrator("基于第三章出5道选择题", "user-1")
     assert result["intent"] == "quiz"
-    assert any("Quiz generation" in m.content for m in result["messages"])
+    assert any("已根据当前资料生成" in m.content for m in result["messages"])
+    assert result["quiz"]["total"] == 1
+    assert result["quiz"]["questions"][0]["correct"] == "B"
 
 
 @pytest.mark.asyncio
-async def test_orchestrator_routes_to_review():
+async def test_orchestrator_routes_to_review(monkeypatch):
+    mock_tracker = AsyncMock()
+    mock_tracker.get_weak_concepts = AsyncMock(
+        return_value=[{"concept": "事务隔离级别", "topic": "数据库", "accuracy": 0.0, "attempt_count": 2}]
+    )
+    monkeypatch.setattr("app.orchestrator.graph._build_tracker_agent", lambda: mock_tracker)
+
     result = await run_orchestrator("查看我的错题", "user-1")
     assert result["intent"] == "review"
-    assert any("Review handling" in m.content for m in result["messages"])
+    assert any("事务隔离级别" in m.content for m in result["messages"])
 
 
 @pytest.mark.asyncio
-async def test_orchestrator_passes_extra_kwargs():
+async def test_orchestrator_passes_extra_kwargs(monkeypatch):
+    mock_agent = AsyncMock()
+    mock_agent.answer = AsyncMock(return_value=AgentResponse(content="测试回答"))
+    monkeypatch.setattr("app.orchestrator.graph._build_rag_agent", lambda: mock_agent)
+
     result = await run_orchestrator("什么是薛定谔方程", "user-1", material_scope=["chapter-3"])
     assert result.get("material_scope") == ["chapter-3"]
