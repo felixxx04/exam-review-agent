@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import pytest
 from httpx import ASGITransport, AsyncClient
+from langchain_core.messages import AIMessage
 
 from app.core.middleware import PromptInjectionGuard, RateLimitMiddleware
 from app.main import app
@@ -42,16 +43,18 @@ class TestPromptInjectionGuard:
 class TestRateLimitMiddleware:
 
     @pytest.mark.asyncio
-    async def test_chat_endpoint_rate_limits_after_30_requests(self):
-        RateLimitMiddleware.reset()
-        transport = ASGITransport(app=app)
-        async with AsyncClient(transport=transport, base_url="http://test") as client:
-            for _ in range(30):
-                r = await client.post("/api/chat", json={"message": "ping"})
-                assert r.status_code != 429, "Should not rate limit before 30"
+    async def test_chat_endpoint_rate_limits_after_30_requests(self, client_with_db, monkeypatch):
+        async def fake_run_orchestrator(*args, **kwargs):
+            return {"messages": [AIMessage(content="pong")]}
 
-            r = await client.post("/api/chat", json={"message": "ping"})
-            assert r.status_code == 429, "Should rate limit at request 31"
+        monkeypatch.setattr("app.api.chat.run_orchestrator", fake_run_orchestrator)
+        RateLimitMiddleware.reset()
+        for _ in range(30):
+            r = await client_with_db.post("/api/chat", json={"message": "ping"})
+            assert r.status_code != 429, "Should not rate limit before 30"
+
+        r = await client_with_db.post("/api/chat", json={"message": "ping"})
+        assert r.status_code == 429, "Should rate limit at request 31"
 
     @pytest.mark.asyncio
     async def test_health_endpoint_allows_many_requests(self):
@@ -64,11 +67,13 @@ class TestRateLimitMiddleware:
                 assert r.status_code == 200
 
     @pytest.mark.asyncio
-    async def test_rate_limit_response_is_chinese(self):
+    async def test_rate_limit_response_is_chinese(self, client_with_db, monkeypatch):
+        async def fake_run_orchestrator(*args, **kwargs):
+            return {"messages": [AIMessage(content="pong")]}
+
+        monkeypatch.setattr("app.api.chat.run_orchestrator", fake_run_orchestrator)
         RateLimitMiddleware.reset()
-        transport = ASGITransport(app=app)
-        async with AsyncClient(transport=transport, base_url="http://test") as client:
-            for _ in range(31):
-                r = await client.post("/api/chat", json={"message": "ping"})
-            assert r.status_code == 429
-            assert "频繁" in r.json()["detail"]
+        for _ in range(31):
+            r = await client_with_db.post("/api/chat", json={"message": "ping"})
+        assert r.status_code == 429
+        assert "频繁" in r.json()["detail"]
