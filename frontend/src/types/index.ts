@@ -10,8 +10,8 @@ export interface Message {
 
 export interface Citation {
   source: string;
-  page: number;
-  chunk_id: string;
+  page?: number;
+  chunk_id?: string;
 }
 
 export interface QuizQuestion {

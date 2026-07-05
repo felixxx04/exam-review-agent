@@ -8,7 +8,7 @@ from unittest.mock import AsyncMock
 from sqlalchemy import select
 
 from app.core.middleware import RateLimitMiddleware
-from app.db.models import Material, MaterialChunk
+from app.db.models import Material, MaterialChunk, User
 
 
 def _data(response):
@@ -69,6 +69,18 @@ class TestMaterialsUpload:
         assert material.storage_path is not None
         assert material.mime_type == "application/pdf"
         assert material.hash is not None
+
+    @pytest.mark.asyncio
+    async def test_upload_creates_default_user_when_missing(self, client_with_db, db_session):
+        response = await client_with_db.post(
+            "/api/materials",
+            files={"file": ("test.pdf", b"fake pdf content", "application/pdf")},
+        )
+
+        assert response.status_code == 200
+        users = (await db_session.execute(select(User))).scalars().all()
+        assert len(users) == 1
+        assert users[0].email == "default@example.local"
 
     @pytest.mark.asyncio
     async def test_upload_indexes_chunks_with_original_filename_metadata(

@@ -34,6 +34,7 @@ class RAGAgent:
         question: str,
         user_id: str,
         material_scope: list[str] | None = None,
+        memory_context: dict | None = None,
     ) -> AgentResponse:
         """Answer a question using RAG with the user's materials."""
         metadata_filter = None
@@ -48,33 +49,14 @@ class RAGAgent:
         )
 
         if not chunks:
-            response = await self.llm.invoke([
-                {"role": "user", "content": question}
-            ])
+            response = await self.llm.invoke(
+                [{"role": "user", "content": self._build_prompt(question, [], memory_context)}]
+            )
             return AgentResponse(content=response)
 
-        context_parts = []
-        for i, chunk in enumerate(chunks):
-            source = chunk.metadata.get("source", "unknown")
-            page = chunk.metadata.get("page", "")
-            ref = f"【来源: {source}"
-            if page:
-                ref += f" P.{page}"
-            ref += "】"
-            context_parts.append(f"[{i + 1}] {chunk.text} {ref}")
-
-        context = "\n\n".join(context_parts)
-        prompt = (
-            f"请根据以下参考资料回答用户的问题。"
-            f"在回答中引用来源时，请使用【来源: 文件名 P.页码】的格式。\n\n"
-            f"参考资料:\n{context}\n\n"
-            f"用户问题: {question}\n\n"
-            f"回答:"
+        response = await self.llm.invoke(
+            [{"role": "user", "content": self._build_prompt(question, chunks, memory_context)}]
         )
-
-        response = await self.llm.invoke([
-            {"role": "user", "content": prompt}
-        ])
 
         citations = self._extract_citations(response, chunks)
 
@@ -83,6 +65,76 @@ class RAGAgent:
             citations=citations,
             retrieved_chunks=chunks,
         )
+
+    def _build_prompt(
+        self,
+        question: str,
+        chunks: list[SearchResult],
+        memory_context: dict | None,
+    ) -> str:
+        prompt_parts = [
+            "请优先依据参考资料回答用户问题。",
+            "如果问题明显在追问上文，请结合会话记忆保持指代一致。",
+            "在回答中引用来源时，请使用【来源: 文件名 P.页码】的格式。",
+        ]
+
+        memory_block = self._format_memory_context(memory_context)
+        if memory_block:
+            prompt_parts.append(f"会话记忆:\n{memory_block}")
+
+        if chunks:
+            context_parts = []
+            for i, chunk in enumerate(chunks):
+                source = chunk.metadata.get("source", "unknown")
+                page = chunk.metadata.get("page", "")
+                ref = f"【来源: {source}"
+                if page:
+                    ref += f" P.{page}"
+                ref += "】"
+                context_parts.append(f"[{i + 1}] {chunk.text} {ref}")
+            context = "\n\n".join(context_parts)
+            prompt_parts.append(f"参考资料:\n{context}")
+        else:
+            prompt_parts.append("参考资料:\n当前没有检索到直接相关的资料片段，请仅在会话记忆足够时延续回答，否则明确说明资料不足。")
+
+        prompt_parts.append(f"用户问题: {question}")
+        prompt_parts.append("回答:")
+        return "\n\n".join(prompt_parts)
+
+    @staticmethod
+    def _format_memory_context(memory_context: dict | None) -> str:
+        if not memory_context:
+            return ""
+
+        sections: list[str] = []
+        learning_profile = memory_context.get("learning_profile") or {}
+        summary = memory_context.get("summary")
+        recent_messages = memory_context.get("recent_messages") or []
+
+        profile_lines = []
+        if learning_profile.get("current_subject"):
+            profile_lines.append(f"当前科目: {learning_profile['current_subject']}")
+        if learning_profile.get("review_goal"):
+            profile_lines.append(f"复习目标: {learning_profile['review_goal']}")
+        weak_concepts = learning_profile.get("weak_concepts") or []
+        if weak_concepts:
+            profile_lines.append(f"薄弱点: {', '.join(weak_concepts)}")
+        if profile_lines:
+            sections.append("学习画像:\n" + "\n".join(profile_lines))
+
+        if summary:
+            sections.append(f"会话摘要:\n{summary}")
+
+        transcript = []
+        for item in recent_messages[-4:]:
+            role = item.get("role")
+            content = item.get("content")
+            if role and content:
+                transcript.append(f"{role}: {content}")
+        if transcript:
+            sections.append("最近对话:\n" + "\n".join(transcript))
+
+        return "\n\n".join(sections)
 
     def _extract_citations(
         self, response: str, chunks: list[SearchResult]

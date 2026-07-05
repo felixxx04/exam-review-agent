@@ -1,0 +1,16 @@
+.agents/
+.codegraph/
+.codex/
+.playwright-mcp/*.log
+.playwright-mcp/*.yml
+AGENTS.md
+SKILL.md
+backend/.coverage
+backend/*.log
+chroma_data/
+docs/__pycache__/
+docs/codegraph-starmap.html
+frontend/*.log
+frontend/test-results/
+impeccable-*.png
+uploads/

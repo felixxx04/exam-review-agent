@@ -145,3 +145,7 @@ async def test_orchestrator_accepts_memory_context(monkeypatch):
 
     assert result["memory_context"]["learning_profile"]["current_subject"] == "数据库系统"
     assert any("继续解释幻读" in message.content for message in result["messages"])
+    mock_agent.answer.assert_awaited_once()
+    assert mock_agent.answer.await_args.kwargs["memory_context"]["summary"] == (
+        "用户前面在学习数据库事务隔离级别。"
+    )

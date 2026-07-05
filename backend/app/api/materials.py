@@ -16,6 +16,7 @@ from app.db.database import get_db
 from app.db.models import FileType, Material, MaterialChunk, ProcessingStatus
 from app.schemas.common import ApiResponse
 from app.schemas.materials import MaterialListResponse, MaterialResponse
+from app.services.memory_service import MemoryService
 
 router = APIRouter(prefix="/api/materials", tags=["materials"])
 
@@ -50,6 +51,8 @@ async def upload_material(
     if file.filename is None:
         raise HTTPException(status_code=400, detail="文件名不能为空")
 
+    memory = MemoryService(db)
+    user = await memory.get_or_create_default_user(user_id="default")
     file_type = _check_file_type(file.filename)
     content = await file.read()
     file_size = len(content)
@@ -67,7 +70,7 @@ async def upload_material(
     file_path.write_bytes(content)
 
     material = Material(
-        user_id=1,
+        user_id=user.id,
         filename=storage_name,
         original_filename=file.filename,
         file_type=file_type,

@@ -136,6 +136,7 @@ async def handle_qa_node(state: AgentState) -> dict[str, Any]:
         question=question,
         user_id=state["user_id"],
         material_scope=state.get("material_scope"),
+        memory_context=state.get("memory_context"),
     )
     return {
         "messages": [AIMessage(content=response.content)],

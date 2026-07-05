@@ -47,13 +47,18 @@ export default function Home() {
 
       setConversationId(conversation.id);
       setMessages(history.messages.flatMap(toMessage));
+      const lastScope = [...history.messages]
+        .reverse()
+        .find((message) => message.material_scope && message.material_scope.length > 0)
+        ?.material_scope;
+      setMaterialScope(lastScope ?? []);
     }
 
     loadConversation().catch(() => undefined);
     return () => {
       cancelled = true;
     };
-  }, [setConversationId, setMessages]);
+  }, [setConversationId, setMaterialScope, setMessages]);
 
   useEffect(() => {
     const hasPending = materials.some(
@@ -270,11 +275,27 @@ function toMessage(message: ConversationMessage): Message[] {
     return [];
   }
 
+  const citations = Array.isArray(message.metadata?.citations)
+    ? message.metadata.citations
+        .filter(
+          (citation): citation is { source: string; page?: number; chunk_id?: string } =>
+            typeof citation === "object" &&
+            citation !== null &&
+            typeof citation.source === "string",
+        )
+        .map((citation) => ({
+          source: citation.source,
+          page: typeof citation.page === "number" ? citation.page : undefined,
+          chunk_id: typeof citation.chunk_id === "string" ? citation.chunk_id : undefined,
+        }))
+    : undefined;
+
   return [
     {
       id: String(message.id),
       role: message.role,
       content: message.content,
+      citations: citations && citations.length > 0 ? citations : undefined,
       timestamp: new Date(message.created_at).getTime(),
     },
   ];

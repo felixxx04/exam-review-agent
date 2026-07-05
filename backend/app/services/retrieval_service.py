@@ -33,7 +33,7 @@ class RetrievalService:
         self._quality_threshold = quality_threshold
         self._rrf_k = rrf_k
         self._vector_store = vector_store or VectorStore()
-        self._embedding_service = embedding_service or EmbeddingService()
+        self._embedding_service = embedding_service
         self._bm25_indices: dict[str, tuple[BM25Okapi, list[str], list[dict], list[str]]] = {}
 
     # ------------------------------------------------------------------
@@ -66,7 +66,7 @@ class RetrievalService:
         metadatas = [chunk.get("metadata", {}) for chunk in chunks]
 
         # Generate embeddings
-        embeddings = self._embedding_service.embed_documents(texts)
+        embeddings = self._get_embedding_service().embed_documents(texts)
 
         # Add embedding chunk_id to metadata for tracking
         chunk_ids = [str(uuid.uuid4()) for _ in chunks]
@@ -166,6 +166,11 @@ class RetrievalService:
     # Internal helpers
     # ------------------------------------------------------------------
 
+    def _get_embedding_service(self) -> EmbeddingService:
+        if self._embedding_service is None:
+            self._embedding_service = EmbeddingService()
+        return self._embedding_service
+
     @staticmethod
     def _tokenize(text: str) -> list[str]:
         """Simple character-level tokenization for Chinese text."""
@@ -223,7 +228,7 @@ class RetrievalService:
         self, user_id: str, query: str, top_k: int, metadata_filter: Optional[dict] = None
     ) -> list[dict]:
         """Dense vector search via ChromaDB."""
-        query_embedding = self._embedding_service.embed_query(query)
+        query_embedding = self._get_embedding_service().embed_query(query)
         raw_results = self._vector_store.search(
             user_id, query_embedding, top_k, metadata_filter
         )

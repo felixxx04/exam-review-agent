@@ -90,6 +90,17 @@ describe("AppSidebar", () => {
           metadata: {},
           created_at: new Date(1).toISOString(),
         },
+        {
+          id: 11,
+          conversation_id: 2,
+          role: "assistant",
+          content: "这是回答",
+          material_scope: ["MQ.docx"],
+          metadata: {
+            citations: [{ source: "MQ.docx", page: 3 }],
+          },
+          created_at: new Date(2).toISOString(),
+        },
       ],
     });
     vi.mocked(api.conversations.delete).mockResolvedValue({});
@@ -120,6 +131,9 @@ describe("AppSidebar", () => {
 
     expect(useChatStore.getState().conversationId).toBe(2);
     expect(useChatStore.getState().messages[0].content).toBe("历史问题");
+    expect(useChatStore.getState().messages[1].citations).toEqual([
+      { source: "MQ.docx", page: 3, chunk_id: undefined },
+    ]);
     expect(useChatStore.getState().materialScope).toEqual(["MQ.docx"]);
   });
 

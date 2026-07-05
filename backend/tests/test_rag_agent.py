@@ -82,6 +82,36 @@ async def test_rag_agent_passes_material_scope_as_metadata_filter():
 
 
 @pytest.mark.asyncio
+async def test_rag_agent_includes_memory_context_in_prompt():
+    """The prompt should carry recent memory so follow-up questions have context."""
+    agent = RAGAgent(llm_service=AsyncMock(), retrieval_service=AsyncMock())
+
+    agent.retrieval.search = AsyncMock(return_value=[])
+    agent.llm.invoke = AsyncMock(return_value="幻读是事务中再次查询看到新增行。")
+
+    await agent.answer(
+        "继续解释刚才的概念",
+        user_id="test",
+        memory_context={
+            "summary": "用户正在复习数据库事务隔离级别。",
+            "recent_messages": [
+                {"role": "user", "content": "什么是幻读？"},
+                {"role": "assistant", "content": "幻读是再次查询出现新增行。"},
+            ],
+            "learning_profile": {
+                "current_subject": "数据库系统",
+                "weak_concepts": ["幻读"],
+            },
+        },
+    )
+
+    prompt = agent.llm.invoke.await_args.args[0][0]["content"]
+    assert "会话记忆" in prompt
+    assert "什么是幻读？" in prompt
+    assert "数据库系统" in prompt
+
+
+@pytest.mark.asyncio
 async def test_extract_citations_finds_source_references():
     """_extract_citations should detect source mentions in the response."""
     agent = RAGAgent(llm_service=AsyncMock(), retrieval_service=AsyncMock())
