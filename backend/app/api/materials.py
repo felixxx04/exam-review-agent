@@ -100,11 +100,13 @@ async def upload_material(
         # Index chunks
         from dataclasses import asdict
 
+        from app.services.chunking_service import ChunkingService
         from app.services.retrieval_service import RetrievalService
 
         retrieval = RetrievalService()
+        normalized_chunks = ChunkingService().normalize(result.chunks)
         chunk_payloads = []
-        for chunk in result.chunks:
+        for chunk in normalized_chunks:
             payload = asdict(chunk)
             metadata = payload.get("metadata", {}) or {}
             payload["metadata"] = {
@@ -133,7 +135,7 @@ async def upload_material(
             )
 
         material.processing_status = ProcessingStatus.READY
-        material.chunk_count = len(result.chunks)
+        material.chunk_count = len(normalized_chunks)
         material.page_count = result.page_count
         material.processed_at = datetime.datetime.now(datetime.UTC)
     except Exception as exc:

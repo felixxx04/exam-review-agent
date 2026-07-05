@@ -2,6 +2,8 @@
 
 import { useState, useEffect } from "react";
 import { api } from "@/lib/api";
+import { getAccuracyColor } from "@/lib/accuracy";
+import { EmptyState } from "@/components/EmptyState";
 import { useChatStore } from "@/stores/chatStore";
 import { useQuizStore } from "@/stores/quizStore";
 import type { WeakConcept } from "@/types";
@@ -16,10 +18,13 @@ export function DashboardCard() {
   useEffect(() => {
     if (mode === "review") {
       setLoading(true);
-      api.review.weakPoints().then((data) => {
-        setWeakConcepts(data.weak_concepts || []);
-        setLoading(false);
-      }).catch(() => setLoading(false));
+      api.review
+        .weakPoints()
+        .then((data) => {
+          setWeakConcepts(data.weak_concepts || []);
+          setLoading(false);
+        })
+        .catch(() => setLoading(false));
     }
   }, [mode]);
 
@@ -58,7 +63,10 @@ export function DashboardCard() {
           <div className="flex items-center gap-2">
             <BarChart3 size={16} style={{ color: "var(--color-primary)" }} />
             <span style={{ color: "var(--color-muted)" }}>薄弱知识点</span>
-            <span className="font-semibold" style={{ color: "var(--color-ink)" }}>
+            <span
+              className="font-semibold"
+              style={{ color: "var(--color-ink)" }}
+            >
               {total}
             </span>
           </div>
@@ -73,13 +81,7 @@ export function DashboardCard() {
             <span style={{ color: "var(--color-muted)" }}>平均正确率</span>
             <span
               className="font-semibold"
-              style={{
-                color: avgAccuracy >= 0.6
-                  ? "var(--color-success)"
-                  : avgAccuracy >= 0.4
-                  ? "var(--color-accent)"
-                  : "var(--color-error)",
-              }}
+              style={{ color: getAccuracyColor(avgAccuracy) }}
             >
               {Math.round(avgAccuracy * 100)}%
             </span>
@@ -90,63 +92,29 @@ export function DashboardCard() {
         {loading && (
           <div className="space-y-2">
             {[1, 2, 3].map((i) => (
-              <div
-                key={i}
-                className="skeleton"
-                style={{ height: "52px" }}
-              />
+              <div key={i} className="skeleton" style={{ height: "52px" }} />
             ))}
           </div>
         )}
 
         {/* Empty state */}
         {!loading && total === 0 && (
-          <div
-            className="text-center"
-            style={{
-              padding: "var(--space-10) var(--space-5)",
-            }}
-          >
-            <div
-              className="mx-auto flex items-center justify-center"
-              style={{
-                width: "72px",
-                height: "72px",
-                borderRadius: "var(--radius-xl)",
-                background: "var(--color-primary-subtle)",
-                marginBottom: "var(--space-5)",
-              }}
-            >
+          <EmptyState
+            icon={
               <BarChart3
                 size={36}
                 strokeWidth={1.2}
                 style={{ color: "var(--color-primary)" }}
               />
-            </div>
-            <h3
-              style={{
-                fontFamily: "var(--font-prose)",
-                fontSize: "var(--text-lg)",
-                fontWeight: 600,
-                color: "var(--color-ink)",
-                lineHeight: "var(--leading-tight)",
-                marginBottom: "var(--space-2)",
-              }}
-            >
-              暂无薄弱知识点
-            </h3>
-            <p
-              className="mx-auto"
-              style={{
-                color: "var(--color-muted)",
-                fontSize: "var(--text-base)",
-                lineHeight: "var(--leading-prose)",
-                maxWidth: "320px",
-              }}
-            >
-              完成一些测验后再来查看，系统会自动记录你的薄弱环节
-            </p>
-          </div>
+            }
+            title="暂无薄弱知识点"
+            description="完成一些测验后再来查看，系统会自动记录你的薄弱环节"
+            headingLevel={3}
+            padding="var(--space-10) var(--space-5)"
+            iconMarginBottom="var(--space-5)"
+            titleFontSize="var(--text-lg)"
+            maxWidth="320px"
+          />
         )}
 
         {/* Weak concepts list */}
@@ -190,12 +158,7 @@ export function DashboardCard() {
                         className="accuracy-bar-fill"
                         style={{
                           width: `${c.accuracy * 100}%`,
-                          background:
-                            c.accuracy >= 0.6
-                              ? "var(--color-success)"
-                              : c.accuracy >= 0.4
-                              ? "var(--color-accent)"
-                              : "var(--color-error)",
+                          background: getAccuracyColor(c.accuracy),
                         }}
                       />
                     </div>
@@ -205,14 +168,7 @@ export function DashboardCard() {
                 <div className="flex items-center gap-3 shrink-0">
                   <span
                     className="text-sm font-medium tabular-nums"
-                    style={{
-                      color:
-                        c.accuracy >= 0.6
-                          ? "var(--color-success)"
-                          : c.accuracy >= 0.4
-                          ? "var(--color-accent)"
-                          : "var(--color-error)",
-                    }}
+                    style={{ color: getAccuracyColor(c.accuracy) }}
                   >
                     {Math.round(c.accuracy * 100)}%
                   </span>
@@ -227,7 +183,8 @@ export function DashboardCard() {
                       border: "none",
                     }}
                     onMouseEnter={(e) => {
-                      e.currentTarget.style.background = "var(--color-primary-hover)";
+                      e.currentTarget.style.background =
+                        "var(--color-primary-hover)";
                     }}
                     onMouseLeave={(e) => {
                       e.currentTarget.style.background = "var(--color-primary)";

@@ -3,7 +3,15 @@
 import { useQuizStore } from "@/stores/quizStore";
 import { useChatStore } from "@/stores/chatStore";
 import { api } from "@/lib/api";
-import { CheckCircle2, XCircle, ChevronRight, ChevronLeft, BookOpen } from "lucide-react";
+import { getQuizOptionState } from "@/lib/quizOptionState";
+import { EmptyState } from "@/components/EmptyState";
+import {
+  CheckCircle2,
+  XCircle,
+  ChevronRight,
+  ChevronLeft,
+  BookOpen,
+} from "lucide-react";
 import type { ScoreResult } from "@/types";
 
 export function QuizCard() {
@@ -24,47 +32,19 @@ export function QuizCard() {
   if (questions.length === 0) {
     return (
       <div className="flex-1 flex items-center justify-center px-5">
-        <div className="text-center" style={{ padding: "var(--space-5)" }}>
-          <div
-            className="mx-auto flex items-center justify-center"
-            style={{
-              width: "72px",
-              height: "72px",
-              borderRadius: "var(--radius-xl)",
-              background: "var(--color-primary-subtle)",
-              marginBottom: "var(--space-6)",
-            }}
-          >
+        <EmptyState
+          icon={
             <BookOpen
               size={36}
               strokeWidth={1.2}
               style={{ color: "var(--color-primary)" }}
             />
-          </div>
-          <h2
-            style={{
-              fontFamily: "var(--font-prose)",
-              fontSize: "var(--text-xl)",
-              fontWeight: 600,
-              color: "var(--color-ink)",
-              lineHeight: "var(--leading-tight)",
-              marginBottom: "var(--space-2)",
-            }}
-          >
-            开始一次测验
-          </h2>
-          <p
-            className="mx-auto"
-            style={{
-              color: "var(--color-muted)",
-              fontSize: "var(--text-base)",
-              lineHeight: "var(--leading-prose)",
-              maxWidth: "360px",
-            }}
-          >
-            在问答模式下输入"开始测验"来生成题目，然后检验你的掌握程度
-          </p>
-        </div>
+          }
+          title="开始一次测验"
+          description='在问答模式下输入"开始测验"来生成题目，然后检验你的掌握程度'
+          headingLevel={2}
+          maxWidth="360px"
+        />
       </div>
     );
   }
@@ -81,7 +61,7 @@ export function QuizCard() {
       q.id,
       q.correct,
       selected,
-      q.question_type
+      q.question_type,
     );
     answerQuestion(q.id, selected);
     recordScore(q.id, result);
@@ -91,10 +71,7 @@ export function QuizCard() {
     <div className="flex-1 overflow-y-auto px-5 py-4">
       <div className="mx-auto" style={{ maxWidth: "var(--content-max)" }}>
         {/* Progress bar */}
-        <div
-          className="accuracy-bar mb-4"
-          style={{ height: "3px" }}
-        >
+        <div className="accuracy-bar mb-4" style={{ height: "3px" }}>
           <div
             className="accuracy-bar-fill"
             style={{
@@ -150,59 +127,57 @@ export function QuizCard() {
           {q.question_type === "multiple_choice" && q.options && (
             <div className="space-y-2">
               {q.options.map((opt, i) => {
-                const letter = opt.charAt(0);
-                const isSelected = selected === letter;
-                const isCorrect = isSubmitted && letter === q.correct;
-                const isWrong = isSubmitted && isSelected && letter !== q.correct;
-
-                let bg = "transparent";
-                let border = "var(--color-border)";
-                let textColor = "var(--color-ink)";
-
-                if (isCorrect) {
-                  bg = "var(--color-success-subtle)";
-                  border = "var(--color-success)";
-                  textColor = "var(--color-success)";
-                } else if (isWrong) {
-                  bg = "var(--color-error-subtle)";
-                  border = "var(--color-error)";
-                  textColor = "var(--color-error)";
-                } else if (isSelected) {
-                  bg = "var(--color-primary-subtle)";
-                  border = "var(--color-primary)";
-                  textColor = "var(--color-primary)";
-                }
+                const optionState = getQuizOptionState({
+                  option: opt,
+                  selected,
+                  correct: q.correct,
+                  isSubmitted,
+                });
 
                 return (
                   <button
                     key={i}
-                    onClick={() => !isSubmitted && answerQuestion(q.id, letter)}
+                    onClick={() =>
+                      !isSubmitted && answerQuestion(q.id, optionState.letter)
+                    }
                     disabled={isSubmitted}
                     className="w-full px-4 py-3 text-sm text-left transition-colors"
                     style={{
                       borderRadius: "var(--radius-lg)",
-                      background: bg,
-                      border: `1px solid ${border}`,
-                      color: textColor,
+                      background: optionState.background,
+                      border: `1px solid ${optionState.border}`,
+                      color: optionState.textColor,
                       cursor: isSubmitted ? "default" : "pointer",
                       fontFamily: "var(--font-prose)",
                       lineHeight: "var(--leading-ui)",
                     }}
                     onMouseEnter={(e) => {
-                      if (!isSubmitted && !isSelected) {
-                        e.currentTarget.style.background = "var(--color-surface-hover)";
+                      if (!isSubmitted && !optionState.isSelected) {
+                        e.currentTarget.style.background =
+                          "var(--color-surface-hover)";
                       }
                     }}
                     onMouseLeave={(e) => {
-                      if (!isSubmitted && !isSelected) {
-                        e.currentTarget.style.background = bg;
+                      if (!isSubmitted && !optionState.isSelected) {
+                        e.currentTarget.style.background =
+                          optionState.background;
                       }
                     }}
                   >
                     <span className="flex items-center justify-between">
                       {opt}
-                      {isCorrect && <CheckCircle2 size={16} style={{ color: "var(--color-success)" }} />}
-                      {isWrong && <XCircle size={16} style={{ color: "var(--color-error)" }} />}
+                      {optionState.isCorrect && (
+                        <CheckCircle2
+                          size={16}
+                          style={{ color: "var(--color-success)" }}
+                        />
+                      )}
+                      {optionState.isWrong && (
+                        <XCircle
+                          size={16}
+                          style={{ color: "var(--color-error)" }}
+                        />
+                      )}
                     </span>
                   </button>
                 );
@@ -222,7 +197,10 @@ export function QuizCard() {
                 lineHeight: "var(--leading-prose)",
               }}
             >
-              <p className="font-medium mb-1" style={{ color: "var(--color-ink)" }}>
+              <p
+                className="font-medium mb-1"
+                style={{ color: "var(--color-ink)" }}
+              >
                 解析
               </p>
               <p style={{ color: "var(--color-muted)" }}>{q.explanation}</p>
@@ -285,7 +263,10 @@ export function QuizCard() {
             disabled={currentIndex === questions.length - 1}
             className="flex items-center gap-1 px-3 py-2 text-sm transition-colors"
             style={{
-              cursor: currentIndex === questions.length - 1 ? "not-allowed" : "pointer",
+              cursor:
+                currentIndex === questions.length - 1
+                  ? "not-allowed"
+                  : "pointer",
               opacity: currentIndex === questions.length - 1 ? 0.3 : 1,
               background: "transparent",
               border: "none",

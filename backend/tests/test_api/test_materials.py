@@ -125,6 +125,96 @@ class TestMaterialsUpload:
         assert metadata["storage_filename"].endswith("_MQ.docx")
         assert metadata["material_id"] == _data(response)["id"]
 
+    @pytest.mark.asyncio
+    async def test_upload_indexes_normalized_chunks(
+        self, client_with_db, db_session, monkeypatch
+    ):
+        from app.services.parser_service import Chunk, ParseResult
+
+        class ParserStub:
+            async def parse(self, file_path, file_type=None):
+                return ParseResult(
+                    chunks=[
+                        Chunk(
+                            text="original long section",
+                            metadata={
+                                "source": "stored_Redis.docx",
+                                "file_type": "docx",
+                            },
+                            chunk_index=0,
+                        )
+                    ],
+                    page_count=1,
+                )
+
+        class ChunkingStub:
+            def normalize(self, chunks):
+                return [
+                    Chunk(
+                        text="normalized window one",
+                        metadata={
+                            **chunks[0].metadata,
+                            "chunking": "overlap_window",
+                            "parent_chunk_index": 0,
+                            "window_index": 0,
+                        },
+                        chunk_index=0,
+                    ),
+                    Chunk(
+                        text="normalized window two",
+                        metadata={
+                            **chunks[0].metadata,
+                            "chunking": "overlap_window",
+                            "parent_chunk_index": 0,
+                            "window_index": 1,
+                        },
+                        chunk_index=1,
+                    ),
+                ]
+
+        retrieval = AsyncMock()
+        retrieval.index_chunks = AsyncMock(return_value=["chunk-1", "chunk-2"])
+
+        monkeypatch.setattr(
+            "app.services.parser_service.ParserService", lambda: ParserStub()
+        )
+        monkeypatch.setattr(
+            "app.services.chunking_service.ChunkingService", lambda: ChunkingStub()
+        )
+        monkeypatch.setattr(
+            "app.services.retrieval_service.RetrievalService", lambda: retrieval
+        )
+
+        response = await client_with_db.post(
+            "/api/materials",
+            files={
+                "file": (
+                    "Redis.docx",
+                    b"fake docx content",
+                    "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                )
+            },
+        )
+
+        assert response.status_code == 200
+        data = _data(response)
+        assert data["chunk_count"] == 2
+
+        indexed_chunks = retrieval.index_chunks.call_args.kwargs["chunks"]
+        assert [chunk["text"] for chunk in indexed_chunks] == [
+            "normalized window one",
+            "normalized window two",
+        ]
+        rows = (
+            await db_session.execute(
+                select(MaterialChunk).order_by(MaterialChunk.chunk_id.asc())
+            )
+        ).scalars().all()
+        assert [row.text_preview for row in rows] == [
+            "normalized window one",
+            "normalized window two",
+        ]
+
 
 class TestMaterialsList:
 

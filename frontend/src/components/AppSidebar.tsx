@@ -2,17 +2,24 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { api } from "@/lib/api";
-import { useChatStore } from "@/stores/chatStore";
-import type { Conversation, ConversationMessage, Material, Message } from "@/types";
+import { MATERIAL_FILE_ACCEPT } from "@/lib/config";
+import { conversationMessageToMessages } from "@/lib/conversationMessages";
+import { getNextReadyMaterialScope, sameStringList } from "@/lib/materialScope";
 import {
-  AlertCircle,
+  getMaterialStatusIcon,
+  materialStatusLabel,
+} from "@/lib/materialStatus";
+import { useCreateConversation } from "@/hooks/useCreateConversation";
+import { useChatStore } from "@/stores/chatStore";
+import type { Conversation, Material } from "@/types";
+import {
   FileText,
   History,
-  Loader2,
   Plus,
   Trash2,
   Upload,
   X,
+  Loader2,
 } from "lucide-react";
 
 interface AppSidebarProps {
@@ -24,20 +31,6 @@ interface AppSidebarProps {
   onDeleteMaterial: (id: number) => Promise<void>;
   onConversationChange: () => void;
 }
-
-const statusIcon: Record<Material["processing_status"], React.ReactNode> = {
-  pending: <Loader2 size={14} className="animate-spin" />,
-  processing: <Loader2 size={14} className="animate-spin" />,
-  ready: null,
-  failed: <AlertCircle size={14} />,
-};
-
-const statusLabel: Record<Material["processing_status"], string> = {
-  pending: "等待处理",
-  processing: "处理中",
-  ready: "可使用",
-  failed: "处理失败",
-};
 
 export function AppSidebar({
   conversationsVersion,
@@ -61,6 +54,8 @@ export function AppSidebar({
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [loadingConversations, setLoadingConversations] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
+  const previousReadyNamesRef = useRef<Set<string> | null>(null);
+  const handleNewConversation = useCreateConversation(onConversationChange);
 
   const loadConversations = useCallback(async () => {
     setLoadingConversations(true);
@@ -76,20 +71,32 @@ export function AppSidebar({
     loadConversations().catch(() => undefined);
   }, [loadConversations, conversationsVersion]);
 
-  async function handleNewConversation() {
-    if (isStreaming) return;
-    const conversation = await api.conversations.create();
-    startNewConversation(conversation.id);
-    onConversationChange();
-  }
+  useEffect(() => {
+    if (materialsLoading && materials.length === 0) return;
+
+    const { nextScope, readyNames } = getNextReadyMaterialScope({
+      materials,
+      currentScope: materialScope,
+      previousReadyNames: previousReadyNamesRef.current,
+    });
+
+    previousReadyNamesRef.current = readyNames;
+    if (!sameStringList(nextScope, materialScope)) {
+      setMaterialScope(nextScope);
+    }
+  }, [materials, materialsLoading, materialScope, setMaterialScope]);
 
   async function switchConversation(id: number) {
     const history = await api.conversations.messages(id);
-    const restoredMessages = history.messages.flatMap(toMessage);
+    const restoredMessages = history.messages.flatMap(
+      conversationMessageToMessages,
+    );
     const lastScope = [...history.messages]
       .reverse()
-      .find((message) => message.material_scope && message.material_scope.length > 0)
-      ?.material_scope;
+      .find(
+        (message) =>
+          message.material_scope && message.material_scope.length > 0,
+      )?.material_scope;
 
     setConversationId(id);
     setMessages(restoredMessages);
@@ -160,7 +167,9 @@ export function AppSidebar({
                   className="sidebar-row-main"
                   onClick={() => switchConversation(conversation.id)}
                 >
-                  <span className="truncate font-medium">{conversation.title}</span>
+                  <span className="truncate font-medium">
+                    {conversation.title}
+                  </span>
                   <span className="text-xs text-[color:var(--color-muted)]">
                     {conversation.message_count} 条消息
                   </span>
@@ -190,14 +199,18 @@ export function AppSidebar({
           onClick={() => !uploading && inputRef.current?.click()}
           disabled={uploading}
         >
-          {uploading ? <Loader2 size={15} className="animate-spin" /> : <Upload size={15} />}
+          {uploading ? (
+            <Loader2 size={15} className="animate-spin" />
+          ) : (
+            <Upload size={15} />
+          )}
           上传资料
         </button>
         <input
           ref={inputRef}
           type="file"
           multiple
-          accept=".pdf,.docx,.pptx"
+          accept={MATERIAL_FILE_ACCEPT}
           className="hidden"
           onChange={async (event) => {
             await onUpload(event.target.files);
@@ -230,15 +243,25 @@ export function AppSidebar({
                   <span className="min-w-0 flex-1 truncate">
                     {material.original_filename}
                   </span>
-                  <span className="material-status" title={statusLabel[material.processing_status]}>
-                    {statusIcon[material.processing_status]}
+                  <span
+                    className="material-status"
+                    title={materialStatusLabel[material.processing_status]}
+                  >
+                    {getMaterialStatusIcon(material.processing_status)}
                   </span>
                 </button>
                 <button
                   type="button"
                   aria-label={`删除 ${material.original_filename}`}
                   className="sidebar-icon-button"
-                  onClick={() => onDeleteMaterial(material.id)}
+                  onClick={() => {
+                    setMaterialScope(
+                      materialScope.filter(
+                        (filename) => filename !== material.original_filename,
+                      ),
+                    );
+                    onDeleteMaterial(material.id);
+                  }}
                 >
                   <X size={14} />
                 </button>
@@ -249,35 +272,4 @@ export function AppSidebar({
       </section>
     </aside>
   );
-}
-
-function toMessage(message: ConversationMessage): Message[] {
-  if (message.role !== "user" && message.role !== "assistant") {
-    return [];
-  }
-
-  const citations = Array.isArray(message.metadata?.citations)
-    ? message.metadata.citations
-        .filter(
-          (citation): citation is { source: string; page?: number; chunk_id?: string } =>
-            typeof citation === "object" &&
-            citation !== null &&
-            typeof citation.source === "string",
-        )
-        .map((citation) => ({
-          source: citation.source,
-          page: typeof citation.page === "number" ? citation.page : undefined,
-          chunk_id: typeof citation.chunk_id === "string" ? citation.chunk_id : undefined,
-        }))
-    : undefined;
-
-  return [
-    {
-      id: String(message.id),
-      role: message.role,
-      content: message.content,
-      citations: citations && citations.length > 0 ? citations : undefined,
-      timestamp: new Date(message.created_at).getTime(),
-    },
-  ];
 }
