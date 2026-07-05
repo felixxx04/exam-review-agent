@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
+import { api } from "@/lib/api";
 import type { Material } from "@/types";
-
-const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 
 export function useMaterials() {
   const [materials, setMaterials] = useState<Material[]>([]);
@@ -10,11 +9,8 @@ export function useMaterials() {
   const fetchMaterials = useCallback(async () => {
     setLoading(true);
     try {
-      const res = await fetch(`${API_BASE}/api/materials`);
-      if (res.ok) {
-        const body = await res.json();
-        setMaterials(body.data?.materials ?? []);
-      }
+      const data = await api.materials.list();
+      setMaterials(data.materials);
     } finally {
       setLoading(false);
     }
@@ -22,31 +18,30 @@ export function useMaterials() {
 
   const uploadMaterial = useCallback(
     async (file: File) => {
-      const formData = new FormData();
-      formData.append("file", file);
-      const res = await fetch(`${API_BASE}/api/materials`, {
-        method: "POST",
-        body: formData,
-      });
-      if (res.ok) {
-        await fetchMaterials();
-      }
-      return res;
+      const material = await api.materials.upload(file);
+      await fetchMaterials();
+      return material;
     },
-    [fetchMaterials]
+    [fetchMaterials],
   );
 
   const deleteMaterial = useCallback(
     async (id: number) => {
-      await fetch(`${API_BASE}/api/materials/${id}`, { method: "DELETE" });
+      await api.materials.delete(id);
       await fetchMaterials();
     },
-    [fetchMaterials]
+    [fetchMaterials],
   );
 
   useEffect(() => {
     fetchMaterials();
   }, [fetchMaterials]);
 
-  return { materials, loading, uploadMaterial, deleteMaterial, refetch: fetchMaterials };
+  return {
+    materials,
+    loading,
+    uploadMaterial,
+    deleteMaterial,
+    refetch: fetchMaterials,
+  };
 }

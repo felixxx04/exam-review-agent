@@ -8,6 +8,7 @@ import type {
   QuizData,
   ScoreResult,
 } from "@/types";
+import { API_BASE } from "@/lib/config";
 
 interface MaterialListData {
   materials: Material[];
@@ -18,8 +19,6 @@ interface ConversationMessagesData {
   conversation_id: number;
   messages: ConversationMessage[];
 }
-
-const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 
 interface ApiEnvelope<T> {
   success: boolean;
@@ -54,8 +53,8 @@ export const api = {
       ),
 
     delete: (id: number) =>
-      fetch(`${API_BASE}/api/conversations/${id}`, { method: "DELETE" }).then((r) =>
-        unwrap<unknown>(r),
+      fetch(`${API_BASE}/api/conversations/${id}`, { method: "DELETE" }).then(
+        (r) => unwrap<unknown>(r),
       ),
 
     messages: (id: number) =>
@@ -66,7 +65,9 @@ export const api = {
 
   materials: {
     list: () =>
-      fetch(`${API_BASE}/api/materials`).then((r) => unwrap<MaterialListData>(r)),
+      fetch(`${API_BASE}/api/materials`).then((r) =>
+        unwrap<MaterialListData>(r),
+      ),
 
     upload: (file: File) => {
       const fd = new FormData();
@@ -110,7 +111,9 @@ export const api = {
 
   review: {
     weakPoints: () =>
-      fetch(`${API_BASE}/api/review/weak-points`).then((r) => unwrap<DashboardData>(r)),
+      fetch(`${API_BASE}/api/review/weak-points`).then((r) =>
+        unwrap<DashboardData>(r),
+      ),
   },
 
   memory: {

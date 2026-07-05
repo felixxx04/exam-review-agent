@@ -1,7 +1,7 @@
 "use client";
 
 import { useChatStore } from "@/stores/chatStore";
-import { api } from "@/lib/api";
+import { useCreateConversation } from "@/hooks/useCreateConversation";
 import { BarChart3, BookOpen, MessageCircle, Plus } from "lucide-react";
 import type { AppMode } from "@/types";
 
@@ -16,14 +16,8 @@ interface HeaderProps {
 }
 
 export function Header({ onConversationChange }: HeaderProps) {
-  const { mode, isStreaming, setMode, startNewConversation } = useChatStore();
-
-  async function handleNewConversation() {
-    if (isStreaming) return;
-    const conversation = await api.conversations.create();
-    startNewConversation(conversation.id);
-    onConversationChange?.();
-  }
+  const { mode, isStreaming, setMode } = useChatStore();
+  const handleNewConversation = useCreateConversation(onConversationChange);
 
   return (
     <header className="app-header">
@@ -43,7 +37,11 @@ export function Header({ onConversationChange }: HeaderProps) {
         </div>
 
         <div className="flex items-center gap-3">
-          <nav className="mode-pill-nav" role="tablist" aria-label="功能模式切换">
+          <nav
+            className="mode-pill-nav"
+            role="tablist"
+            aria-label="功能模式切换"
+          >
             {modes.map((m, i) => {
               const active = mode === m.key;
               return (
@@ -60,7 +58,8 @@ export function Header({ onConversationChange }: HeaderProps) {
                     };
                     if (dirs[e.key] !== undefined) {
                       e.preventDefault();
-                      const next = (i + dirs[e.key] + modes.length) % modes.length;
+                      const next =
+                        (i + dirs[e.key] + modes.length) % modes.length;
                       setMode(modes[next].key);
                     }
                   }}

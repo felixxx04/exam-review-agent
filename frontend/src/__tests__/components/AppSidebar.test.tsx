@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
-import { render, screen } from "@testing-library/react";
+import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { AppSidebar } from "@/components/AppSidebar";
 import { api } from "@/lib/api";
@@ -51,7 +51,24 @@ const material: Material = {
   created_at: new Date().toISOString(),
 };
 
-function renderSidebar() {
+const redisMaterial: Material = {
+  ...material,
+  id: 8,
+  filename: "stored-redis.docx",
+  original_filename: "Redis.docx",
+};
+
+const processingMaterial: Material = {
+  ...material,
+  id: 9,
+  filename: "stored-processing.docx",
+  original_filename: "Draft.docx",
+  processing_status: "processing",
+};
+
+function renderSidebar(
+  props?: Partial<React.ComponentProps<typeof AppSidebar>>,
+) {
   return render(
     <AppSidebar
       conversationsVersion={0}
@@ -61,6 +78,7 @@ function renderSidebar() {
       onUpload={vi.fn()}
       onDeleteMaterial={vi.fn()}
       onConversationChange={vi.fn()}
+      {...props}
     />,
   );
 }
@@ -139,11 +157,72 @@ describe("AppSidebar", () => {
 
   it("selects a document for material scope", async () => {
     const user = userEvent.setup();
-    renderSidebar();
+    renderSidebar({ materials: [material, redisMaterial] });
 
     await user.click(screen.getByRole("button", { name: "MQ.docx" }));
 
     expect(useChatStore.getState().materialScope).toEqual(["MQ.docx"]);
+  });
+
+  it("auto-selects the only ready material when no scope is selected", async () => {
+    renderSidebar();
+
+    await waitFor(() => {
+      expect(useChatStore.getState().materialScope).toEqual(["MQ.docx"]);
+    });
+  });
+
+  it("does not auto-select multiple ready materials on initial load", async () => {
+    renderSidebar({ materials: [material, redisMaterial] });
+
+    await waitFor(() => {
+      expect(useChatStore.getState().materialScope).toEqual([]);
+    });
+  });
+
+  it("adds newly ready materials to the current scope", async () => {
+    useChatStore.setState({ materialScope: ["MQ.docx"] });
+    const { rerender } = renderSidebar({ materials: [material] });
+
+    rerender(
+      <AppSidebar
+        conversationsVersion={0}
+        materials={[material, redisMaterial]}
+        materialsLoading={false}
+        uploading={false}
+        onUpload={vi.fn()}
+        onDeleteMaterial={vi.fn()}
+        onConversationChange={vi.fn()}
+      />,
+    );
+
+    await waitFor(() => {
+      expect(useChatStore.getState().materialScope).toEqual([
+        "MQ.docx",
+        "Redis.docx",
+      ]);
+    });
+  });
+
+  it("removes selected materials that are not ready", async () => {
+    useChatStore.setState({ materialScope: ["MQ.docx", "Draft.docx"] });
+    renderSidebar({ materials: [material, processingMaterial] });
+
+    await waitFor(() => {
+      expect(useChatStore.getState().materialScope).toEqual(["MQ.docx"]);
+    });
+  });
+
+  it("removes a deleted material from the current scope", async () => {
+    const user = userEvent.setup();
+    const onDeleteMaterial = vi.fn().mockResolvedValue(undefined);
+    useChatStore.setState({ materialScope: ["MQ.docx"] });
+    renderSidebar({ onDeleteMaterial });
+
+    await user.click(screen.getByRole("button", { name: "删除 MQ.docx" }));
+
+    expect(useChatStore.getState().materialScope).toEqual([]);
+    expect(onDeleteMaterial).toHaveBeenCalledWith(7);
   });
 
   it("deletes a conversation from the sidebar", async () => {

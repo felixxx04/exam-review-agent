@@ -155,6 +155,27 @@ async def test_quiz_agent_empty_retrieval_returns_empty_quiz():
 
     assert len(result.questions) == 0
     assert result.topic == "不存在的话题"
+    agent.retrieval.search.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_quiz_agent_does_not_fallback_without_material_scope():
+    """Generic quiz requests without selected material should not silently use all files."""
+    agent = QuizAgent(
+        retrieval_service=AsyncMock(),
+        quiz_generator=QuizGenerator(llm_service=AsyncMock()),
+    )
+    agent.retrieval.search = AsyncMock(return_value=[])
+
+    result = await agent.generate_quiz(
+        user_id="test-user",
+        topic="核心概念 重点知识",
+        count=3,
+        material_scope=None,
+    )
+
+    assert len(result.questions) == 0
+    agent.retrieval.search.assert_awaited_once()
 
 
 @pytest.mark.asyncio

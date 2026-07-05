@@ -2,6 +2,8 @@
 
 import { useEffect, useRef, useState } from "react";
 import { api } from "@/lib/api";
+import { MATERIAL_FILE_ACCEPT } from "@/lib/config";
+import { conversationMessageToMessages } from "@/lib/conversationMessages";
 import { useChatStream } from "@/hooks/useChatStream";
 import { useMaterials } from "@/hooks/useMaterials";
 import { useChatStore } from "@/stores/chatStore";
@@ -11,8 +13,14 @@ import { MessageList } from "@/components/MessageList";
 import { ChatInput } from "@/components/ChatInput";
 import { QuizCard } from "@/components/QuizCard";
 import { DashboardCard } from "@/components/DashboardCard";
-import type { ConversationMessage, Material, Message } from "@/types";
-import { BarChart3, FileText, Loader2, MessageCircle, Upload } from "lucide-react";
+import type { Material } from "@/types";
+import {
+  BarChart3,
+  FileText,
+  Loader2,
+  MessageCircle,
+  Upload,
+} from "lucide-react";
 
 export default function Home() {
   const {
@@ -46,11 +54,13 @@ export default function Home() {
       if (cancelled) return;
 
       setConversationId(conversation.id);
-      setMessages(history.messages.flatMap(toMessage));
+      setMessages(history.messages.flatMap(conversationMessageToMessages));
       const lastScope = [...history.messages]
         .reverse()
-        .find((message) => message.material_scope && message.material_scope.length > 0)
-        ?.material_scope;
+        .find(
+          (message) =>
+            message.material_scope && message.material_scope.length > 0,
+        )?.material_scope;
       setMaterialScope(lastScope ?? []);
     }
 
@@ -90,7 +100,9 @@ export default function Home() {
     if (!material) return;
 
     setMaterialScope(
-      materialScope.filter((filename) => filename !== material.original_filename),
+      materialScope.filter(
+        (filename) => filename !== material.original_filename,
+      ),
     );
   }
 
@@ -102,7 +114,9 @@ export default function Home() {
     (material) => material.processing_status === "ready",
   );
   const activeMaterial =
-    materials.find((material) => materialScope.includes(material.original_filename)) ??
+    materials.find((material) =>
+      materialScope.includes(material.original_filename),
+    ) ??
     readyMaterials[0] ??
     materials[0];
 
@@ -142,7 +156,7 @@ export default function Home() {
                 ref={quickUploadRef}
                 type="file"
                 multiple
-                accept=".pdf,.docx,.pptx"
+                accept={MATERIAL_FILE_ACCEPT}
                 className="hidden"
                 onChange={async (event) => {
                   await handleUpload(event.target.files);
@@ -200,7 +214,11 @@ function QuickActions({
       <div className="quick-action-grid">
         <article className="quick-card">
           <div className="quick-card-icon">
-            {uploading ? <Loader2 size={22} className="animate-spin" /> : <Upload size={22} />}
+            {uploading ? (
+              <Loader2 size={22} className="animate-spin" />
+            ) : (
+              <Upload size={22} />
+            )}
           </div>
           <div>
             <h3>上传资料</h3>
@@ -261,42 +279,15 @@ function QuickActions({
             <h3>薄弱知识点复习</h3>
             <p>查看测验后沉淀的薄弱概念，并针对低正确率内容重新练习。</p>
           </div>
-          <button type="button" className="quick-card-button secondary" onClick={onReviewClick}>
+          <button
+            type="button"
+            className="quick-card-button secondary"
+            onClick={onReviewClick}
+          >
             查看复习面板
           </button>
         </article>
       </div>
     </div>
   );
-}
-
-function toMessage(message: ConversationMessage): Message[] {
-  if (message.role !== "user" && message.role !== "assistant") {
-    return [];
-  }
-
-  const citations = Array.isArray(message.metadata?.citations)
-    ? message.metadata.citations
-        .filter(
-          (citation): citation is { source: string; page?: number; chunk_id?: string } =>
-            typeof citation === "object" &&
-            citation !== null &&
-            typeof citation.source === "string",
-        )
-        .map((citation) => ({
-          source: citation.source,
-          page: typeof citation.page === "number" ? citation.page : undefined,
-          chunk_id: typeof citation.chunk_id === "string" ? citation.chunk_id : undefined,
-        }))
-    : undefined;
-
-  return [
-    {
-      id: String(message.id),
-      role: message.role,
-      content: message.content,
-      citations: citations && citations.length > 0 ? citations : undefined,
-      timestamp: new Date(message.created_at).getTime(),
-    },
-  ];
 }
