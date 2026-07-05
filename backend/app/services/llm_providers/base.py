@@ -6,6 +6,7 @@ from typing import Optional
 import httpx
 
 from app.core.exceptions import LLMProviderError
+from app.services.ssl_certificates import ensure_valid_ssl_cert_file
 
 logger = logging.getLogger(__name__)
 
@@ -66,6 +67,7 @@ class OpenAICompatibleProvider:
                     self.chat_url, json=payload, headers=headers
                 )
             else:
+                ensure_valid_ssl_cert_file()
                 async with httpx.AsyncClient(timeout=60.0) as client:
                     response = await client.post(
                         self.chat_url, json=payload, headers=headers

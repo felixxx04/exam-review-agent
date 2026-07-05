@@ -38,21 +38,24 @@ async def chat(
             )
             if conversation is None:
                 conversation = await memory.get_or_create_active_conversation(user_id="default")
+            conversation_id = conversation.id
 
-            yield f"data: {json.dumps({'event': 'conversation', 'data': {'id': conversation.id}}, ensure_ascii=False)}\n\n"
+            yield f"data: {json.dumps({'event': 'conversation', 'data': {'id': conversation_id}}, ensure_ascii=False)}\n\n"
 
             await memory.save_message(
-                conversation_id=conversation.id,
+                conversation_id=conversation_id,
                 role="user",
                 content=request.message,
                 material_scope=request.material_scope,
                 metadata={"mode": "ask"},
             )
             memory_context = await memory.build_memory_context(
-                conversation_id=conversation.id,
+                conversation_id=conversation_id,
                 user_id="default",
                 material_scope=request.material_scope,
             )
+            await db.rollback()
+
             result = await run_orchestrator(
                 message=request.message,
                 user_id="default",
@@ -78,13 +81,17 @@ async def chat(
                         yield f"data: {json.dumps({'event': 'message', 'data': content}, ensure_ascii=False)}\n\n"
             if assistant_content:
                 await memory.save_message(
-                    conversation_id=conversation.id,
+                    conversation_id=conversation_id,
                     role="assistant",
                     content=assistant_content,
                     material_scope=request.material_scope,
                     metadata={"mode": "ask", "citations": citations or []},
                 )
         except Exception as e:
+            try:
+                await db.rollback()
+            except Exception:
+                pass
             yield f"data: {json.dumps({'event': 'error', 'error': str(e)}, ensure_ascii=False)}\n\n"
 
     return StreamingResponse(

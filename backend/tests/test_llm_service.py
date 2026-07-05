@@ -1,12 +1,15 @@
 """Tests for LLM Service with multi-model support, fallback chains, and circuit breaker."""
 
+import os
+from pathlib import Path
 import time
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
 from app.core.exceptions import LLMProviderError
-from app.services.llm_service import CircuitBreaker, LLMService
+from app.core.config import settings
+from app.services.llm_service import CircuitBreaker, LLMService, get_default_llm_service
 
 
 # ---------------------------------------------------------------------------
@@ -184,6 +187,17 @@ class TestLLMService:
 
         with pytest.raises(LLMProviderError):
             await service_no_fallback.invoke([{"role": "user", "content": "Hello"}])
+
+    def test_default_service_repairs_missing_ssl_cert_file(self, monkeypatch):
+        missing_cert = Path("missing-cacert.pem")
+        monkeypatch.setenv("SSL_CERT_FILE", str(missing_cert))
+        monkeypatch.setattr(settings, "volcengine_api_key", "test-key")
+
+        get_default_llm_service()
+
+        repaired_cert_file = Path(os.environ["SSL_CERT_FILE"])
+        assert repaired_cert_file != missing_cert
+        assert repaired_cert_file.exists()
 
 
 # ---------------------------------------------------------------------------

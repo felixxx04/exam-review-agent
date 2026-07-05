@@ -124,3 +124,21 @@ class TestChatSSE:
             event["event"] == "conversation" and event["data"]["id"] > 0
             for event in events
         )
+
+    @pytest.mark.asyncio
+    async def test_chat_releases_db_transaction_before_orchestration(
+        self,
+        client_with_db,
+        db_session,
+        monkeypatch,
+    ):
+        async def fake_run_orchestrator(*args, **kwargs):
+            assert not db_session.in_transaction()
+            return {"messages": [AIMessage(content="测试回复")]}
+
+        monkeypatch.setattr("app.api.chat.run_orchestrator", fake_run_orchestrator)
+
+        response = await client_with_db.post("/api/chat", json={"message": "给我出五道题"})
+
+        assert response.status_code == 200
+        assert '"event": "error"' not in response.text

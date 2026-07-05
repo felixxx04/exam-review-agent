@@ -12,6 +12,7 @@ from app.services.llm_providers.deepseek import DeepSeekProvider
 from app.services.llm_providers.glm import GLMProvider
 from app.services.llm_providers.minimax import MiniMaxProvider
 from app.services.llm_providers.volcengine import VolcengineProvider
+from app.services.ssl_certificates import ensure_valid_ssl_cert_file
 
 logger = logging.getLogger(__name__)
 
@@ -204,6 +205,7 @@ def get_default_llm_service() -> LLMService:
     """
     import httpx
 
+    ensure_valid_ssl_cert_file()
     shared_client = httpx.AsyncClient(timeout=60.0)
 
     providers = {}
