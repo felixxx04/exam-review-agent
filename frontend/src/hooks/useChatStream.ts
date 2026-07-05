@@ -33,7 +33,7 @@ export function useChatStream() {
       const assistantMsg: Message = {
         id: crypto.randomUUID(),
         role: "assistant",
-        content: "正在根据资料整理回答...",
+        content: "",
         timestamp: Date.now(),
       };
       addMessage(assistantMsg);

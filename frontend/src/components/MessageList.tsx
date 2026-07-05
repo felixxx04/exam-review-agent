@@ -1,6 +1,14 @@
 "use client";
 
+import { useEffect, useState } from "react";
 import { useChatStore } from "@/stores/chatStore";
+
+const THINKING_STEPS = [
+  "理解你的问题",
+  "检索相关资料",
+  "组织回答结构",
+  "准备生成答案",
+];
 
 export function MessageList() {
   const { messages, isStreaming } = useChatStore();
@@ -19,6 +27,7 @@ export function MessageList() {
           const isUser = msg.role === "user";
           const isLast = i === messages.length - 1;
           const showCursor = isStreaming && !isUser && isLast;
+          const showThinking = showCursor && msg.content.trim().length === 0;
 
           return (
             <div
@@ -40,17 +49,17 @@ export function MessageList() {
                   background: isUser
                     ? "var(--color-primary)"
                     : "var(--color-surface)",
-                  color: isUser
-                    ? "oklch(1 0 0)"
-                    : "var(--color-ink)",
-                  border: isUser
-                    ? "none"
-                    : "1px solid var(--color-border)",
+                  color: isUser ? "oklch(1 0 0)" : "var(--color-ink)",
+                  border: isUser ? "none" : "1px solid var(--color-border)",
                 }}
               >
-                <div className={showCursor ? "streaming-cursor" : ""}>
-                  {msg.content}
-                </div>
+                {showThinking ? (
+                  <AnswerThinking />
+                ) : (
+                  <div className={showCursor ? "streaming-cursor" : ""}>
+                    {msg.content}
+                  </div>
+                )}
 
                 {msg.citations && msg.citations.length > 0 && (
                   <div
@@ -86,6 +95,35 @@ export function MessageList() {
           );
         })}
       </div>
+    </div>
+  );
+}
+
+function AnswerThinking() {
+  const [stepIndex, setStepIndex] = useState(0);
+  const step = THINKING_STEPS[stepIndex];
+
+  useEffect(() => {
+    const id = window.setInterval(() => {
+      setStepIndex((index) => (index + 1) % THINKING_STEPS.length);
+    }, 1400);
+    return () => window.clearInterval(id);
+  }, []);
+
+  return (
+    <div className="answer-thinking" role="status" aria-live="polite">
+      <span className="thinking-core" aria-hidden="true">
+        <span className="thinking-ring" />
+        <span className="thinking-pulse" />
+      </span>
+      <span className="thinking-copy">
+        <span className="thinking-title">Agent 正在准备回答</span>
+        <span className="thinking-steps">
+          <span className="thinking-step-text" key={step}>
+            {step}
+          </span>
+        </span>
+      </span>
     </div>
   );
 }

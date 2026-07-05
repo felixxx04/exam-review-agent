@@ -141,6 +141,18 @@ button {
     animation-duration: 1s !important;
     animation-iteration-count: infinite !important;
   }
+
+  .thinking-ring {
+    animation: thinking-ring 1.2s linear infinite !important;
+  }
+
+  .thinking-pulse {
+    animation: thinking-pulse 1.8s ease-in-out infinite !important;
+  }
+
+  .thinking-step-text {
+    animation: thinking-step 1.4s ease-in-out infinite !important;
+  }
 }
 
 /* ──────────────────────────────────────────────
@@ -636,6 +648,104 @@ button {
 
 .message-list {
   min-height: 100%;
+}
+
+.answer-thinking {
+  display: inline-flex;
+  max-width: 100%;
+  min-width: min(18rem, 100%);
+  align-items: center;
+  gap: var(--space-3);
+  color: var(--color-muted);
+  font-family: var(--font-ui);
+}
+
+.thinking-core {
+  position: relative;
+  display: inline-flex;
+  width: 2rem;
+  height: 2rem;
+  flex: 0 0 2rem;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--radius-md);
+  background: var(--color-primary-subtle);
+  color: var(--color-primary);
+}
+
+.thinking-ring {
+  width: 1rem;
+  height: 1rem;
+  border: 2px solid currentColor;
+  border-right-color: transparent;
+  border-radius: var(--radius-full);
+  animation: thinking-ring 1.2s linear infinite;
+}
+
+.thinking-pulse {
+  position: absolute;
+  width: 0.45rem;
+  height: 0.45rem;
+  border-radius: var(--radius-full);
+  background: var(--color-accent);
+  animation: thinking-pulse 1.8s ease-in-out infinite;
+}
+
+.thinking-copy {
+  display: grid;
+  min-width: 0;
+  gap: 0.125rem;
+}
+
+.thinking-title {
+  color: var(--color-ink);
+  font-size: var(--text-sm);
+  font-weight: 700;
+  line-height: 1.35;
+}
+
+.thinking-steps {
+  display: inline-flex;
+  min-width: 7.5rem;
+  min-height: 1.35rem;
+  color: var(--color-muted);
+  font-size: var(--text-xs);
+  line-height: 1.35;
+}
+
+.thinking-step-text {
+  display: inline-block;
+  white-space: nowrap;
+  animation: thinking-step 1.4s ease-in-out infinite;
+}
+
+@keyframes thinking-ring {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes thinking-pulse {
+  0%,
+  100% {
+    opacity: 0.35;
+    transform: scale(0.75);
+  }
+  50% {
+    opacity: 1;
+    transform: scale(1.15);
+  }
+}
+
+@keyframes thinking-step {
+  0%,
+  100% {
+    opacity: 0.45;
+  }
+  35%,
+  75% {
+    opacity: 1;
+  }
 }
 
 .chat-input-dock {
