@@ -200,7 +200,7 @@ export function AppSidebar({
           disabled={uploading}
         >
           {uploading ? (
-            <Loader2 size={15} className="animate-spin" />
+            <Loader2 size={15} className="upload-spinner animate-spin" />
           ) : (
             <Upload size={15} />
           )}
@@ -213,8 +213,10 @@ export function AppSidebar({
           accept={MATERIAL_FILE_ACCEPT}
           className="hidden"
           onChange={async (event) => {
-            await onUpload(event.target.files);
-            event.currentTarget.value = "";
+            const input = event.currentTarget;
+            const files = input.files;
+            await onUpload(files);
+            input.value = "";
           }}
           aria-label="上传复习资料"
         />

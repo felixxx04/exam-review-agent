@@ -21,7 +21,7 @@
   --color-accent-subtle: oklch(0.96 0.02 80);
   --color-success: oklch(0.65 0.18 150);
   --color-success-subtle: oklch(0.94 0.04 150);
-  --color-error: oklch(0.50 0.20 25);
+  --color-error: oklch(0.5 0.2 25);
   --color-error-subtle: oklch(0.95 0.03 25);
   --color-border: #dde5ea;
   --color-focus-ring: oklch(0.55 0.14 150);
@@ -135,21 +135,60 @@ button {
     animation-iteration-count: 1 !important;
     transition-duration: 0.01ms !important;
   }
+
+  .upload-spinner {
+    animation: app-spin 1s linear infinite !important;
+    animation-duration: 1s !important;
+    animation-iteration-count: infinite !important;
+  }
 }
 
 /* ──────────────────────────────────────────────
    Utility classes
    ────────────────────────────────────────────── */
 
-.text-primary { color: var(--color-primary); }
-.text-muted { color: var(--color-muted); }
-.text-accent { color: var(--color-accent); }
-.text-error { color: var(--color-error); }
-.text-success { color: var(--color-success); }
+.text-primary {
+  color: var(--color-primary);
+}
+.text-muted {
+  color: var(--color-muted);
+}
+.text-accent {
+  color: var(--color-accent);
+}
+.text-error {
+  color: var(--color-error);
+}
+.text-success {
+  color: var(--color-success);
+}
 
-.bg-surface { background: var(--color-surface); }
-.bg-primary { background: var(--color-primary); }
-.bg-primary-subtle { background: var(--color-primary-subtle); }
+.bg-surface {
+  background: var(--color-surface);
+}
+.bg-primary {
+  background: var(--color-primary);
+}
+.bg-primary-subtle {
+  background: var(--color-primary-subtle);
+}
+
+@keyframes app-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.animate-spin {
+  animation: app-spin 1s linear infinite;
+  transform-origin: center;
+}
+
+.upload-spinner {
+  animation: app-spin 1s linear infinite;
+  transform-box: fill-box;
+  transform-origin: center;
+}
 
 /* App shell */
 .app-shell {
@@ -159,7 +198,7 @@ button {
   max-height: 100dvh;
   overflow: hidden;
   background:
-    radial-gradient(circle at 65% 8%, rgb(35 132 91 / 0.10), transparent 32rem),
+    radial-gradient(circle at 65% 8%, rgb(35 132 91 / 0.1), transparent 32rem),
     linear-gradient(180deg, #f9fafb 0%, #f3f6f8 100%);
 }
 
@@ -315,7 +354,7 @@ button {
 }
 
 .sidebar-icon-button:hover {
-  background: rgb(194 58 47 / 0.10);
+  background: rgb(194 58 47 / 0.1);
   color: var(--color-error);
   opacity: 1;
 }
@@ -437,7 +476,11 @@ button {
   flex: 1;
   overflow-y: auto;
   background:
-    radial-gradient(circle at 50% 108%, rgb(43 119 89 / 0.12), transparent 25rem),
+    radial-gradient(
+      circle at 50% 108%,
+      rgb(43 119 89 / 0.12),
+      transparent 25rem
+    ),
     linear-gradient(180deg, rgb(255 255 255 / 0.36), rgb(249 250 251 / 0));
 }
 
@@ -597,7 +640,11 @@ button {
 
 .chat-input-dock {
   flex: 0 0 auto;
-  background: linear-gradient(180deg, rgb(249 250 251 / 0), var(--color-bg) 34%);
+  background: linear-gradient(
+    180deg,
+    rgb(249 250 251 / 0),
+    var(--color-bg) 34%
+  );
   padding: var(--space-6) var(--space-5) var(--space-5);
 }
 
@@ -666,8 +713,15 @@ button {
 
 /* Spin + pulse animation for upload processing */
 @keyframes processing-pulse {
-  0%, 100% { transform: scale(1); opacity: 0.6; }
-  50% { transform: scale(1.35); opacity: 1; }
+  0%,
+  100% {
+    transform: scale(1);
+    opacity: 0.6;
+  }
+  50% {
+    transform: scale(1.35);
+    opacity: 1;
+  }
 }
 
 .processing-icon {
@@ -676,8 +730,13 @@ button {
 
 /* Streaming cursor animation */
 @keyframes blink {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0; }
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0;
+  }
 }
 
 .streaming-cursor::after {
@@ -689,8 +748,12 @@ button {
 
 /* Skeleton loading */
 @keyframes shimmer {
-  0% { background-position: -200% 0; }
-  100% { background-position: 200% 0; }
+  0% {
+    background-position: -200% 0;
+  }
+  100% {
+    background-position: 200% 0;
+  }
 }
 
 .skeleton {

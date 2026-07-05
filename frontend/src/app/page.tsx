@@ -159,8 +159,10 @@ export default function Home() {
                 accept={MATERIAL_FILE_ACCEPT}
                 className="hidden"
                 onChange={async (event) => {
-                  await handleUpload(event.target.files);
-                  event.currentTarget.value = "";
+                  const input = event.currentTarget;
+                  const files = input.files;
+                  await handleUpload(files);
+                  input.value = "";
                 }}
                 aria-label="上传复习资料"
               />
@@ -215,7 +217,7 @@ function QuickActions({
         <article className="quick-card">
           <div className="quick-card-icon">
             {uploading ? (
-              <Loader2 size={22} className="animate-spin" />
+              <Loader2 size={22} className="upload-spinner animate-spin" />
             ) : (
               <Upload size={22} />
             )}

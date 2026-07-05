@@ -1,4 +1,5 @@
 import os
+from pathlib import Path
 from typing import Optional
 
 from app.core.config import settings
@@ -19,10 +20,29 @@ class EmbeddingService:
         if cls._model is None:
             if settings.hf_endpoint and not os.environ.get("HF_ENDPOINT"):
                 os.environ["HF_ENDPOINT"] = settings.hf_endpoint
+            cls._ensure_valid_ssl_cert_file()
 
             from sentence_transformers import SentenceTransformer
 
             cls._model = SentenceTransformer(cls._model_name)
+
+    @staticmethod
+    def _ensure_valid_ssl_cert_file() -> None:
+        ssl_cert_file = os.environ.get("SSL_CERT_FILE")
+        if not ssl_cert_file or Path(ssl_cert_file).exists():
+            return
+
+        try:
+            import certifi
+        except ImportError:
+            os.environ.pop("SSL_CERT_FILE", None)
+            return
+
+        certifi_path = certifi.where()
+        if Path(certifi_path).exists():
+            os.environ["SSL_CERT_FILE"] = certifi_path
+        else:
+            os.environ.pop("SSL_CERT_FILE", None)
 
     @property
     def model(self):

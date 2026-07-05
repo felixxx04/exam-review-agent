@@ -225,6 +225,29 @@ describe("AppSidebar", () => {
     expect(onDeleteMaterial).toHaveBeenCalledWith(7);
   });
 
+  it("clears the upload input after async upload without crashing", async () => {
+    const user = userEvent.setup();
+    const onUpload = vi.fn().mockResolvedValue(undefined);
+    renderSidebar({ onUpload });
+    const input = screen.getByLabelText("上传复习资料") as HTMLInputElement;
+    const file = new File(["fake"], "MQ.docx", {
+      type: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    });
+
+    await user.upload(input, file);
+
+    expect(onUpload).toHaveBeenCalled();
+    expect(input.value).toBe("");
+  });
+
+  it("uses the upload spinner class while uploading", () => {
+    renderSidebar({ uploading: true });
+
+    const uploadButton = screen.getByRole("button", { name: "上传资料" });
+    const spinner = uploadButton.querySelector("svg");
+    expect(spinner).toHaveClass("upload-spinner");
+  });
+
   it("deletes a conversation from the sidebar", async () => {
     const user = userEvent.setup();
     renderSidebar();
