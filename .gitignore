@@ -3,6 +3,7 @@
 .codex/
 .playwright-mcp/*.log
 .playwright-mcp/*.yml
+.superpowers/
 AGENTS.md
 SKILL.md
 backend/.coverage
