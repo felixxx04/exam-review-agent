@@ -4,6 +4,7 @@
 .playwright-mcp/*.log
 .playwright-mcp/*.yml
 .superpowers/
+.worktrees/
 AGENTS.md
 SKILL.md
 backend/.coverage
