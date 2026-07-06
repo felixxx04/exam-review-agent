@@ -98,6 +98,53 @@ export interface DashboardData {
   accuracy: number;
 }
 
+export type ReviewMistakeStatus =
+  | "unreviewed"
+  | "corrected"
+  | "needs_requiz"
+  | "mastered";
+
+export interface ReviewMistake {
+  id: string;
+  question_id: string;
+  question_text: string;
+  question_type: "multiple_choice" | "fill_blank" | string;
+  concept: string;
+  topic: string;
+  wrong_answer: string;
+  correct_answer: string;
+  explanation: string | null;
+  source_material: string | null;
+  source_chunk_ids: string[];
+  status: ReviewMistakeStatus;
+  attempt_count: number;
+  last_wrong_at: string;
+  correction_note: string;
+  mastered_at: string | null;
+  next_review_at: string | null;
+  review_history: Array<Record<string, unknown>>;
+}
+
+export interface ReviewSummary {
+  total_count: number;
+  pending_count: number;
+  mastered_count: number;
+  corrected_count: number;
+  needs_requiz_count: number;
+}
+
+export interface MistakeListData {
+  mistakes: ReviewMistake[];
+  summary: ReviewSummary;
+  total: number;
+}
+
+export interface MistakeUpdatePayload {
+  correction_note?: string;
+  status?: ReviewMistakeStatus;
+  mastered?: boolean;
+}
+
 export type AppMode = "ask" | "quiz" | "review";
 
 export interface ScoreResult {

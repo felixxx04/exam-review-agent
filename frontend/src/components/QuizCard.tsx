@@ -57,12 +57,18 @@ export function QuizCard() {
 
   const handleSubmit = async () => {
     if (!selected) return;
-    const result: ScoreResult = await api.quiz.submit(
-      q.id,
-      q.correct,
-      selected,
-      q.question_type,
-    );
+    const result: ScoreResult = await api.quiz.submit({
+      questionId: q.id,
+      correctAnswer: q.correct,
+      studentAnswer: selected,
+      questionType: q.question_type,
+      concept: q.topic,
+      topic: q.topic,
+      questionText: q.question,
+      explanation: q.explanation ?? "",
+      sourceChunkIds: q.source_chunk_ids,
+      sourceMaterial: null,
+    });
     answerQuestion(q.id, selected);
     recordScore(q.id, result);
   };

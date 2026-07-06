@@ -49,6 +49,42 @@ class TestTrackerScoring:
         assert call_args["correct_answer"] == "B"
 
     @pytest.mark.asyncio
+    async def test_wrong_answer_records_review_context(self):
+        """Wrong answers should store enough context for the review workbench."""
+        mock_db = AsyncMock()
+        mock_llm = AsyncMock()
+        tracker = TrackerAgent(db=mock_db, llm_service=mock_llm)
+
+        await tracker.score_answer(
+            user_id="test-user",
+            question_id="q-context",
+            correct_answer="B",
+            student_answer="A",
+            question_type="multiple_choice",
+            concept="特征值",
+            topic="线性代数",
+            question_text="矩阵 A 的特征值定义是什么？",
+            explanation="特征值满足 Ax = λx。",
+            source_chunk_ids=["chunk-1"],
+            source_material="linear.pdf",
+        )
+
+        mock_db.add.assert_called_once()
+        call_args = mock_db.add.call_args[0][0]
+        assert call_args["type"] == "mistake_records"
+        assert call_args["id"].startswith("q-context-")
+        assert call_args["question_text"] == "矩阵 A 的特征值定义是什么？"
+        assert call_args["question_type"] == "multiple_choice"
+        assert call_args["explanation"] == "特征值满足 Ax = λx。"
+        assert call_args["source_chunk_ids"] == ["chunk-1"]
+        assert call_args["source_material"] == "linear.pdf"
+        assert call_args["status"] == "unreviewed"
+        assert call_args["attempt_count"] == 1
+        assert call_args["correction_note"] == ""
+        assert call_args["mastered_at"] is None
+        assert call_args["last_wrong_at"]
+
+    @pytest.mark.asyncio
     async def test_correct_mc_does_not_record_mistake(self):
         """Correct multiple choice answer should not create a mistake record."""
         mock_db = AsyncMock()

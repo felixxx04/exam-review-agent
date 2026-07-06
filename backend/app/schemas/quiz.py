@@ -5,6 +5,8 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any
 
+from pydantic import BaseModel, Field
+
 
 @dataclass
 class Question:
@@ -37,6 +39,19 @@ class QuizResponse:
 
     def __post_init__(self) -> None:
         self.total = len(self.questions)
+
+
+class QuizSubmitRequest(BaseModel):
+    question_id: str
+    correct_answer: str
+    student_answer: str
+    question_type: str = "multiple_choice"
+    concept: str = ""
+    topic: str = ""
+    question_text: str = ""
+    explanation: str = ""
+    source_chunk_ids: list[str] = Field(default_factory=list)
+    source_material: str | None = None
 
 
 def to_quiz_payload(response: QuizResponse, difficulty: float = 0.5) -> dict[str, Any]:

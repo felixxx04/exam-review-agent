@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import pytest
 
+from app.core.store import get_shared_store
+
 
 class TestQuizGenerate:
 
@@ -25,6 +27,10 @@ class TestQuizGenerate:
 
 
 class TestQuizSubmit:
+
+    @pytest.fixture(autouse=True)
+    def clear_shared_store(self):
+        get_shared_store()._records.clear()
 
     @pytest.mark.asyncio
     async def test_submit_correct_answer(self, client):
@@ -70,3 +76,34 @@ class TestQuizSubmit:
         assert response.status_code == 200
         data = response.json()["data"]
         assert data["is_correct"] is True
+
+    @pytest.mark.asyncio
+    async def test_submit_wrong_answer_records_question_context(self, client):
+        response = await client.post(
+            "/api/quiz/submit",
+            json={
+                "question_id": "q-context",
+                "correct_answer": "B",
+                "student_answer": "A",
+                "question_type": "multiple_choice",
+                "concept": "特征值",
+                "topic": "线性代数",
+                "question_text": "矩阵 A 的特征值定义是什么？",
+                "explanation": "特征值满足 Ax = λx。",
+                "source_chunk_ids": ["chunk-1"],
+                "source_material": "linear.pdf",
+            },
+        )
+
+        assert response.status_code == 200
+        data = response.json()["data"]
+        assert data["mistake_recorded"] is True
+
+        mistakes = await get_shared_store().query({
+            "user_id": "default",
+            "type": "mistake_records",
+        })
+        assert len(mistakes) == 1
+        assert mistakes[0]["question_text"] == "矩阵 A 的特征值定义是什么？"
+        assert mistakes[0]["explanation"] == "特征值满足 Ax = λx。"
+        assert mistakes[0]["source_chunk_ids"] == ["chunk-1"]

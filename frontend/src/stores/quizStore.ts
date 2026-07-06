@@ -8,7 +8,7 @@ interface QuizState {
   scores: Record<string, ScoreResult>;
   isGenerating: boolean;
   topic: string;
-  setQuestions: (questions: QuizQuestion[], topic: string) => void;
+  setQuestions: (questions: QuizQuestion[], topic?: string) => void;
   answerQuestion: (questionId: string, answer: string) => void;
   recordScore: (questionId: string, result: ScoreResult) => void;
   nextQuestion: () => void;
@@ -24,7 +24,7 @@ export const useQuizStore = create<QuizState>((set) => ({
   scores: {},
   isGenerating: false,
   topic: "",
-  setQuestions: (questions, topic) =>
+  setQuestions: (questions, topic = "") =>
     set({ questions, topic, currentIndex: 0, answers: {}, scores: {} }),
   answerQuestion: (questionId, answer) =>
     set((s) => ({ answers: { ...s.answers, [questionId]: answer } })),

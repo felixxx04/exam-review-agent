@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass
+from datetime import datetime, timezone
 
 
 @dataclass(frozen=True)
@@ -48,6 +49,10 @@ class TrackerAgent:
         question_type: str,
         concept: str = "",
         topic: str = "",
+        question_text: str = "",
+        explanation: str = "",
+        source_chunk_ids: list[str] | None = None,
+        source_material: str | None = None,
     ) -> ScoreResult:
         """Score a student answer and record a mistake if incorrect.
 
@@ -74,15 +79,29 @@ class TrackerAgent:
 
         mistake_recorded = False
         if not is_correct:
+            wrong_at = datetime.now(timezone.utc)
             await self.db.add(
                 {
                     "type": "mistake_records",
+                    "id": f"{question_id}-{int(wrong_at.timestamp() * 1_000_000)}",
                     "user_id": user_id,
                     "question_id": question_id,
                     "concept": concept,
                     "topic": topic,
                     "wrong_answer": student_answer,
                     "correct_answer": correct_answer,
+                    "question_text": question_text,
+                    "question_type": question_type,
+                    "explanation": explanation,
+                    "source_chunk_ids": source_chunk_ids or [],
+                    "source_material": source_material,
+                    "status": "unreviewed",
+                    "attempt_count": 1,
+                    "last_wrong_at": wrong_at.isoformat(),
+                    "correction_note": "",
+                    "mastered_at": None,
+                    "review_history": [],
+                    "next_review_at": None,
                 }
             )
             mistake_recorded = True
