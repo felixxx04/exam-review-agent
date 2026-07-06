@@ -8,6 +8,9 @@ from app.agents.tracker_agent import TrackerAgent
 from app.core.store import get_shared_store
 from app.schemas.common import ApiResponse
 from app.schemas.review import (
+    DailySessionRequest,
+    DailySessionResponse,
+    MistakeExplanationResponse,
     MistakeListResponse,
     MistakeRecord,
     MistakeUpdateRequest,
@@ -63,6 +66,13 @@ def _normalize_mistake(record: dict) -> MistakeRecord:
 async def _mistake_records() -> list[dict]:
     store = get_shared_store()
     return await store.query({"user_id": "default", "type": "mistake_records"})
+
+
+async def _find_mistake_record(mistake_id: str) -> dict | None:
+    return next(
+        (record for record in await _mistake_records() if _record_id(record) == mistake_id),
+        None,
+    )
 
 
 def _summary(mistakes: list[MistakeRecord]) -> ReviewSummary:
@@ -161,9 +171,9 @@ async def list_mistakes(
 
 @router.get("/mistakes/{mistake_id}")
 async def get_mistake(mistake_id: str):
-    for record in await _mistake_records():
-        if _record_id(record) == mistake_id:
-            return ApiResponse.ok(data=_normalize_mistake(record))
+    record = await _find_mistake_record(mistake_id)
+    if record is not None:
+        return ApiResponse.ok(data=_normalize_mistake(record))
     raise HTTPException(status_code=404, detail="Mistake not found")
 
 
@@ -192,7 +202,7 @@ async def update_mistake(mistake_id: str, request: MistakeUpdateRequest):
             and _record_id(record) == mistake_id
         )
 
-    existing = next((record for record in await _mistake_records() if matches(record)), None)
+    existing = await _find_mistake_record(mistake_id)
     if existing is None:
         raise HTTPException(status_code=404, detail="Mistake not found")
 
@@ -206,6 +216,74 @@ async def update_mistake(mistake_id: str, request: MistakeUpdateRequest):
 
     updated = await store.update(matches, updates)
     return ApiResponse.ok(data=_normalize_mistake(updated or existing))
+
+
+@router.post("/daily-session")
+async def create_daily_session(request: DailySessionRequest):
+    records = await _mistake_records()
+    mistakes = [_normalize_mistake(record) for record in records]
+    reviewable = [mistake for mistake in mistakes if mistake.status != "mastered"]
+    selected = _sort_mistakes(reviewable, "priority")[: max(request.limit, 1)]
+    return ApiResponse.ok(data=DailySessionResponse(
+        mistakes=selected,
+        message="今日复习已准备好" if selected else "暂无需要复习的错题",
+    ))
+
+
+@router.post("/mistakes/{mistake_id}/similar-quiz")
+async def create_similar_quiz(mistake_id: str):
+    record = await _find_mistake_record(mistake_id)
+    if record is None:
+        raise HTTPException(status_code=404, detail="Mistake not found")
+
+    mistake = _normalize_mistake(record)
+    question = {
+        "id": f"similar-{mistake.id}-1",
+        "question": f"围绕“{mistake.concept}”的相似练习：{mistake.question_text}",
+        "question_type": "multiple_choice",
+        "options": [
+            f"A. {mistake.wrong_answer or '容易混淆的说法'}",
+            f"B. {mistake.correct_answer or '正确说法'}",
+            "C. 与题干无关的干扰项",
+            "D. 只适用于特殊情况的说法",
+        ],
+        "correct": "B",
+        "explanation": mistake.explanation or f"复习“{mistake.concept}”时，先回到定义再判断选项。",
+        "difficulty": 0.4,
+        "topic": mistake.concept,
+        "source_chunk_ids": mistake.source_chunk_ids,
+    }
+    return ApiResponse.ok(data={
+        "questions": [question],
+        "topic": mistake.concept,
+        "total": 1,
+    })
+
+
+@router.post("/mistakes/{mistake_id}/explanation")
+async def explain_mistake(mistake_id: str):
+    record = await _find_mistake_record(mistake_id)
+    if record is None:
+        raise HTTPException(status_code=404, detail="Mistake not found")
+
+    mistake = _normalize_mistake(record)
+    explanation = mistake.explanation or (
+        f"正确答案是“{mistake.correct_answer}”。"
+        f"你的答案是“{mistake.wrong_answer}”，说明“{mistake.concept}”这个知识点还需要回到定义和适用条件重新确认。"
+        "下次先判断题目考查的概念，再排除与定义不一致的选项。"
+    )
+
+    store = get_shared_store()
+
+    def matches(candidate: dict) -> bool:
+        return (
+            candidate.get("user_id") == "default"
+            and candidate.get("type") == "mistake_records"
+            and _record_id(candidate) == mistake_id
+        )
+
+    await store.update(matches, {"explanation": explanation})
+    return ApiResponse.ok(data=MistakeExplanationResponse(explanation=explanation))
 
 
 @router.post("/study-plan")

@@ -10,6 +10,7 @@ interface ReviewSummaryBarProps {
   loading: boolean;
   onRefresh: () => void;
   onStartDailyReview?: () => void;
+  onOpenStudyPlan?: () => void;
 }
 
 export function ReviewSummaryBar({
@@ -19,6 +20,7 @@ export function ReviewSummaryBar({
   loading,
   onRefresh,
   onStartDailyReview,
+  onOpenStudyPlan,
 }: ReviewSummaryBarProps) {
   return (
     <section
@@ -52,6 +54,19 @@ export function ReviewSummaryBar({
         >
           <CalendarDays size={15} />
           开始今日复习
+        </button>
+        <button
+          type="button"
+          onClick={onOpenStudyPlan}
+          className="flex items-center gap-1.5 px-3 py-2 text-sm font-medium"
+          style={{
+            borderRadius: "var(--radius-md)",
+            border: "1px solid var(--color-border)",
+            color: "var(--color-ink)",
+            background: "var(--color-surface)",
+          }}
+        >
+          生成复习计划
         </button>
         <button
           type="button"

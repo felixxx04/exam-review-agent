@@ -13,6 +13,10 @@ vi.mock("@/lib/api", () => ({
       weakPoints: vi.fn(),
       mistakes: vi.fn(),
       updateMistake: vi.fn(),
+      dailySession: vi.fn(),
+      similarQuiz: vi.fn(),
+      explainMistake: vi.fn(),
+      studyPlan: vi.fn(),
     },
     quiz: {
       generate: vi.fn(),
@@ -78,6 +82,10 @@ describe("ReviewWorkbench", () => {
     vi.mocked(api.review.weakPoints).mockReset();
     vi.mocked(api.review.mistakes).mockReset();
     vi.mocked(api.review.updateMistake).mockReset();
+    vi.mocked(api.review.dailySession).mockReset();
+    vi.mocked(api.review.similarQuiz).mockReset();
+    vi.mocked(api.review.explainMistake).mockReset();
+    vi.mocked(api.review.studyPlan).mockReset();
     vi.mocked(api.quiz.generate).mockReset();
     vi.mocked(api.review.weakPoints).mockResolvedValue({
       weak_concepts: weakConcepts,
@@ -89,6 +97,23 @@ describe("ReviewWorkbench", () => {
       ...mistakes[0],
       status: "corrected",
       correction_note: "我把定义和计算公式混淆了。",
+    });
+    vi.mocked(api.review.dailySession).mockResolvedValue({
+      mistakes,
+      total: 1,
+      message: "今日复习已准备好",
+    });
+    vi.mocked(api.review.similarQuiz).mockResolvedValue({
+      questions: [],
+      topic: "特征值",
+      total: 0,
+    });
+    vi.mocked(api.review.explainMistake).mockResolvedValue({
+      explanation: "正确答案是 B。你的答案是 A。",
+    });
+    vi.mocked(api.review.studyPlan).mockResolvedValue({
+      plan: [{ day: 1, topics: ["特征值"], tasks: ["重做错题"] }],
+      message: "已生成复习计划",
     });
     vi.mocked(api.quiz.generate).mockResolvedValue({
       questions: [],
@@ -150,5 +175,48 @@ describe("ReviewWorkbench", () => {
 
     expect(api.quiz.generate).toHaveBeenCalledWith("特征值", 0.3, 3);
     expect(useChatStore.getState().mode).toBe("quiz");
+  });
+
+  it("starts a daily review flow", async () => {
+    const user = userEvent.setup();
+    render(<ReviewWorkbench />);
+
+    await user.click(await screen.findByRole("button", { name: /开始今日复习/ }));
+
+    expect(api.review.dailySession).toHaveBeenCalledWith({ limit: 5 });
+    expect(await screen.findByText("今日复习 1 / 1")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /显示答案/ })).toBeInTheDocument();
+  });
+
+  it("generates a similar quiz from the selected mistake", async () => {
+    const user = userEvent.setup();
+    render(<ReviewWorkbench />);
+
+    await user.click(await screen.findByRole("button", { name: /生成相似题/ }));
+
+    expect(api.review.similarQuiz).toHaveBeenCalledWith("m1");
+    expect(useChatStore.getState().mode).toBe("quiz");
+  });
+
+  it("generates an explanation for the selected mistake", async () => {
+    const user = userEvent.setup();
+    render(<ReviewWorkbench />);
+
+    await user.click(await screen.findByRole("button", { name: /生成错因分析/ }));
+
+    expect(api.review.explainMistake).toHaveBeenCalledWith("m1");
+    expect(await screen.findByText(/正确答案是 B/)).toBeInTheDocument();
+  });
+
+  it("generates a study plan", async () => {
+    const user = userEvent.setup();
+    render(<ReviewWorkbench />);
+
+    await user.click(await screen.findByRole("button", { name: /生成复习计划/ }));
+    await user.click(screen.getByRole("button", { name: /确认生成/ }));
+
+    expect(api.review.studyPlan).toHaveBeenCalled();
+    expect(await screen.findByText("第 1 天")).toBeInTheDocument();
+    expect(screen.getByText("重做错题")).toBeInTheDocument();
   });
 });

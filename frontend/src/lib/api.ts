@@ -2,14 +2,17 @@ import type {
   Conversation,
   ConversationListData,
   ConversationMessage,
+  DailySessionData,
   DashboardData,
   LearningProfile,
   Material,
+  MistakeExplanationData,
   MistakeListData,
   MistakeUpdatePayload,
   QuizData,
   ReviewMistake,
   ScoreResult,
+  StudyPlanData,
 } from "@/types";
 import { API_BASE } from "@/lib/config";
 
@@ -168,6 +171,30 @@ export const api = {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),
       }).then((r) => unwrap<ReviewMistake>(r)),
+
+    dailySession: (payload: { limit: number }) =>
+      fetch(`${API_BASE}/api/review/daily-session`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      }).then((r) => unwrap<DailySessionData>(r)),
+
+    similarQuiz: (id: string) =>
+      fetch(`${API_BASE}/api/review/mistakes/${id}/similar-quiz`, {
+        method: "POST",
+      }).then((r) => unwrap<QuizData>(r)),
+
+    explainMistake: (id: string) =>
+      fetch(`${API_BASE}/api/review/mistakes/${id}/explanation`, {
+        method: "POST",
+      }).then((r) => unwrap<MistakeExplanationData>(r)),
+
+    studyPlan: (payload: { exam_date: string; days_before_exam: number }) =>
+      fetch(`${API_BASE}/api/review/study-plan`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      }).then((r) => unwrap<StudyPlanData>(r)),
   },
 
   memory: {

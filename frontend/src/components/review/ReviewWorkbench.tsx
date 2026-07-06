@@ -8,6 +8,7 @@ import type {
   MistakeListData,
   ReviewMistake,
   ReviewMistakeStatus,
+  StudyPlanData,
   WeakConcept,
 } from "@/types";
 import { ReviewSummaryBar } from "@/components/review/ReviewSummaryBar";
@@ -15,6 +16,8 @@ import { ReviewFilters } from "@/components/review/ReviewFilters";
 import { WeakConceptList } from "@/components/review/WeakConceptList";
 import { MistakeList } from "@/components/review/MistakeList";
 import { MistakeDetailPanel } from "@/components/review/MistakeDetailPanel";
+import { DailyReviewFlow } from "@/components/review/DailyReviewFlow";
+import { StudyPlanDialog } from "@/components/review/StudyPlanDialog";
 import { emptySummary } from "@/components/review/reviewUtils";
 
 export function ReviewWorkbench() {
@@ -34,6 +37,10 @@ export function ReviewWorkbench() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [dailyMistakes, setDailyMistakes] = useState<ReviewMistake[]>([]);
+  const [studyPlanOpen, setStudyPlanOpen] = useState(false);
+  const [studyPlanLoading, setStudyPlanLoading] = useState(false);
+  const [studyPlan, setStudyPlan] = useState<StudyPlanData | null>(null);
 
   const selectedMistake =
     mistakeData.mistakes.find((mistake) => mistake.id === selectedId) ??
@@ -152,6 +159,45 @@ export function ReviewWorkbench() {
     }
   }
 
+  async function startDailyReview() {
+    const session = await api.review.dailySession({ limit: 5 });
+    setDailyMistakes(session.mistakes);
+  }
+
+  async function createSimilarQuiz(mistake: ReviewMistake) {
+    setGenerating(true);
+    setMode("quiz");
+    try {
+      const quiz = await api.review.similarQuiz(mistake.id);
+      setQuestions(quiz.questions, quiz.topic);
+    } finally {
+      setGenerating(false);
+    }
+  }
+
+  async function explainMistake(mistake: ReviewMistake) {
+    const result = await api.review.explainMistake(mistake.id);
+    setMistakeData((current) => ({
+      ...current,
+      mistakes: current.mistakes.map((item) =>
+        item.id === mistake.id ? { ...item, explanation: result.explanation } : item,
+      ),
+    }));
+  }
+
+  async function generateStudyPlan(payload: {
+    exam_date: string;
+    days_before_exam: number;
+  }) {
+    setStudyPlanLoading(true);
+    try {
+      const result = await api.review.studyPlan(payload);
+      setStudyPlan(result);
+    } finally {
+      setStudyPlanLoading(false);
+    }
+  }
+
   return (
     <div className="flex-1 overflow-y-auto px-5 py-4">
       <div className="mx-auto space-y-4" style={{ maxWidth: "min(1480px, calc(100vw - 40px))" }}>
@@ -161,8 +207,18 @@ export function ReviewWorkbench() {
           averageAccuracy={averageAccuracy}
           loading={loading}
           onRefresh={loadReviewData}
-          onStartDailyReview={() => undefined}
+          onStartDailyReview={startDailyReview}
+          onOpenStudyPlan={() => setStudyPlanOpen(true)}
         />
+
+        {dailyMistakes.length > 0 && (
+          <DailyReviewFlow
+            mistakes={dailyMistakes}
+            onClose={() => setDailyMistakes([])}
+            onSaveCorrection={saveCorrection}
+            onMarkMastered={markMastered}
+          />
+        )}
 
         {error && (
           <div
@@ -218,9 +274,18 @@ export function ReviewWorkbench() {
             onMarkMastered={markMastered}
             onCancelMastered={cancelMastered}
             onRetestConcept={retestConcept}
+            onSimilarQuiz={createSimilarQuiz}
+            onExplain={explainMistake}
           />
         </div>
       </div>
+      <StudyPlanDialog
+        open={studyPlanOpen}
+        loading={studyPlanLoading}
+        plan={studyPlan}
+        onClose={() => setStudyPlanOpen(false)}
+        onGenerate={generateStudyPlan}
+      />
     </div>
   );
 }

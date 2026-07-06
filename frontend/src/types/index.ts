@@ -145,6 +145,27 @@ export interface MistakeUpdatePayload {
   mastered?: boolean;
 }
 
+export interface DailySessionData {
+  mistakes: ReviewMistake[];
+  total: number;
+  message: string;
+}
+
+export interface MistakeExplanationData {
+  explanation: string;
+}
+
+export interface StudyPlanDay {
+  day: number;
+  topics: string[];
+  tasks: string[];
+}
+
+export interface StudyPlanData {
+  plan: StudyPlanDay[];
+  message: string;
+}
+
 export type AppMode = "ask" | "quiz" | "review";
 
 export interface ScoreResult {

@@ -15,6 +15,8 @@ interface MistakeDetailPanelProps {
   onMarkMastered: (mistake: ReviewMistake) => void;
   onCancelMastered: (mistake: ReviewMistake) => void;
   onRetestConcept: (concept: string) => void;
+  onSimilarQuiz: (mistake: ReviewMistake) => void;
+  onExplain: (mistake: ReviewMistake) => void;
 }
 
 export function MistakeDetailPanel({
@@ -24,6 +26,8 @@ export function MistakeDetailPanel({
   onMarkMastered,
   onCancelMastered,
   onRetestConcept,
+  onSimilarQuiz,
+  onExplain,
 }: MistakeDetailPanelProps) {
   const [note, setNote] = useState("");
 
@@ -175,6 +179,22 @@ export function MistakeDetailPanel({
           style={secondaryButtonStyle}
         >
           针对知识点再测
+        </button>
+        <button
+          type="button"
+          onClick={() => onSimilarQuiz(mistake)}
+          className="px-3 py-2 text-sm font-medium"
+          style={secondaryButtonStyle}
+        >
+          生成相似题
+        </button>
+        <button
+          type="button"
+          onClick={() => onExplain(mistake)}
+          className="px-3 py-2 text-sm font-medium"
+          style={secondaryButtonStyle}
+        >
+          生成错因分析
         </button>
       </div>
     </aside>

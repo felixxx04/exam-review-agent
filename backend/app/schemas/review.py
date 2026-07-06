@@ -69,6 +69,25 @@ class MistakeUpdateRequest(BaseModel):
     mastered: bool | None = None
 
 
+class DailySessionRequest(BaseModel):
+    limit: int = 5
+
+
+@dataclass
+class DailySessionResponse:
+    mistakes: list[MistakeRecord]
+    total: int = 0
+    message: str = ""
+
+    def __post_init__(self) -> None:
+        self.total = len(self.mistakes)
+
+
+@dataclass
+class MistakeExplanationResponse:
+    explanation: str
+
+
 @dataclass
 class StudyDay:
     day: int
