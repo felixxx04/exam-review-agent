@@ -6,6 +6,7 @@ import type {
   DashboardData,
   LearningProfile,
   Material,
+  MistakeExportData,
   MistakeExplanationData,
   MistakeListData,
   MistakeUpdatePayload,
@@ -195,6 +196,11 @@ export const api = {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),
       }).then((r) => unwrap<StudyPlanData>(r)),
+
+    exportMistakes: (params: { format: "markdown" | "csv" }) =>
+      fetch(`${API_BASE}/api/review/export?${new URLSearchParams(params)}`).then((r) =>
+        unwrap<MistakeExportData>(r),
+      ),
   },
 
   memory: {

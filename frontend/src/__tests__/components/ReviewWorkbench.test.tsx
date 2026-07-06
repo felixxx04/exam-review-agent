@@ -17,6 +17,7 @@ vi.mock("@/lib/api", () => ({
       similarQuiz: vi.fn(),
       explainMistake: vi.fn(),
       studyPlan: vi.fn(),
+      exportMistakes: vi.fn(),
     },
     quiz: {
       generate: vi.fn(),
@@ -52,7 +53,7 @@ const mistakes: ReviewMistake[] = [
     correction_note: "",
     mastered_at: null,
     next_review_at: null,
-    review_history: [],
+    review_history: [{ event: "corrected", at: "2026-07-06T10:20:00+00:00" }],
   },
 ];
 
@@ -86,6 +87,7 @@ describe("ReviewWorkbench", () => {
     vi.mocked(api.review.similarQuiz).mockReset();
     vi.mocked(api.review.explainMistake).mockReset();
     vi.mocked(api.review.studyPlan).mockReset();
+    vi.mocked(api.review.exportMistakes).mockReset();
     vi.mocked(api.quiz.generate).mockReset();
     vi.mocked(api.review.weakPoints).mockResolvedValue({
       weak_concepts: weakConcepts,
@@ -115,6 +117,11 @@ describe("ReviewWorkbench", () => {
       plan: [{ day: 1, topics: ["特征值"], tasks: ["重做错题"] }],
       message: "已生成复习计划",
     });
+    vi.mocked(api.review.exportMistakes).mockResolvedValue({
+      format: "markdown",
+      filename: "mistakes.md",
+      content: "# 错题导出\n\n## 特征值定义",
+    });
     vi.mocked(api.quiz.generate).mockResolvedValue({
       questions: [],
       topic: "特征值",
@@ -128,6 +135,7 @@ describe("ReviewWorkbench", () => {
     expect(await screen.findByText("待复习错题")).toBeInTheDocument();
     expect(screen.getAllByText("矩阵 A 的特征值定义是什么？").length).toBeGreaterThan(0);
     expect(screen.getByText("错误答案")).toBeInTheDocument();
+    expect(screen.getByText(/复习历史/)).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /保存订正/ })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /标记已掌握/ })).toBeInTheDocument();
   });
@@ -218,5 +226,15 @@ describe("ReviewWorkbench", () => {
     expect(api.review.studyPlan).toHaveBeenCalled();
     expect(await screen.findByText("第 1 天")).toBeInTheDocument();
     expect(screen.getByText("重做错题")).toBeInTheDocument();
+  });
+
+  it("exports mistakes as markdown", async () => {
+    const user = userEvent.setup();
+    render(<ReviewWorkbench />);
+
+    await user.click(await screen.findByRole("button", { name: /导出 Markdown/ }));
+
+    expect(api.review.exportMistakes).toHaveBeenCalledWith({ format: "markdown" });
+    expect(await screen.findByText(/# 错题导出/)).toBeInTheDocument();
   });
 });

@@ -225,3 +225,56 @@ class TestReviewEndpoints:
 
         detail = await client.get("/api/review/mistakes/q-explain")
         assert detail.json()["data"]["explanation"] == data["explanation"]
+
+    @pytest.mark.asyncio
+    async def test_update_mistake_sets_review_schedule_and_history(self, client):
+        await get_shared_store().add({
+            "type": "mistake_records",
+            "user_id": "default",
+            "question_id": "q-schedule",
+            "question_text": "函数连续性",
+            "question_type": "multiple_choice",
+            "concept": "连续",
+            "topic": "微积分",
+            "wrong_answer": "A",
+            "correct_answer": "B",
+            "status": "unreviewed",
+            "review_history": [],
+        })
+
+        response = await client.patch(
+            "/api/review/mistakes/q-schedule",
+            json={"status": "needs_requiz"},
+        )
+
+        assert response.status_code == 200
+        data = response.json()["data"]
+        assert data["status"] == "needs_requiz"
+        assert data["next_review_at"] is not None
+        assert data["review_history"][-1]["event"] == "needs_requiz"
+
+    @pytest.mark.asyncio
+    async def test_export_mistakes_as_markdown_and_csv(self, client):
+        await get_shared_store().add({
+            "type": "mistake_records",
+            "user_id": "default",
+            "question_id": "q-export",
+            "question_text": "特征值定义",
+            "question_type": "multiple_choice",
+            "concept": "特征值",
+            "topic": "线性代数",
+            "wrong_answer": "A",
+            "correct_answer": "B",
+            "status": "corrected",
+            "correction_note": "回到定义判断。",
+        })
+
+        markdown = await client.get("/api/review/export", params={"format": "markdown"})
+        csv = await client.get("/api/review/export", params={"format": "csv"})
+
+        assert markdown.status_code == 200
+        assert "# 错题导出" in markdown.json()["data"]["content"]
+        assert "特征值定义" in markdown.json()["data"]["content"]
+        assert csv.status_code == 200
+        assert "question,concept,topic" in csv.json()["data"]["content"]
+        assert "特征值定义" in csv.json()["data"]["content"]

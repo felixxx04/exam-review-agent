@@ -129,8 +129,34 @@ export function MistakeDetailPanel({
           来源：{mistake.source_material || "暂无来源信息"}
         </p>
         <p>上次错误：{formatDateTime(mistake.last_wrong_at)}</p>
+        <p>下次复习：{formatDateTime(mistake.next_review_at)}</p>
         {mistake.source_chunk_ids.length > 0 && (
           <p>片段：{mistake.source_chunk_ids.join(", ")}</p>
+        )}
+      </section>
+
+      <section
+        className="space-y-2 p-3 text-xs"
+        style={{
+          borderRadius: "var(--radius-lg)",
+          border: "1px solid var(--color-border)",
+          background: "var(--color-bg)",
+          color: "var(--color-muted)",
+        }}
+      >
+        <h3 className="text-sm font-medium" style={{ color: "var(--color-ink)" }}>
+          复习历史
+        </h3>
+        {mistake.review_history.length === 0 ? (
+          <p>暂无历史记录</p>
+        ) : (
+          <ul className="space-y-1">
+            {mistake.review_history.map((item, index) => (
+              <li key={`${String(item.event)}-${index}`}>
+                {String(item.event ?? "updated")} · {formatDateTime(String(item.at ?? ""))}
+              </li>
+            ))}
+          </ul>
         )}
       </section>
 

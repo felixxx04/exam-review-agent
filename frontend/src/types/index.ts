@@ -166,6 +166,12 @@ export interface StudyPlanData {
   message: string;
 }
 
+export interface MistakeExportData {
+  format: string;
+  filename: string;
+  content: string;
+}
+
 export type AppMode = "ask" | "quiz" | "review";
 
 export interface ScoreResult {

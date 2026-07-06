@@ -89,6 +89,13 @@ class MistakeExplanationResponse:
 
 
 @dataclass
+class MistakeExportResponse:
+    format: str
+    filename: str
+    content: str
+
+
+@dataclass
 class StudyDay:
     day: int
     topics: list[str] = field(default_factory=list)

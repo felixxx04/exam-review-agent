@@ -6,6 +6,7 @@ import { useChatStore } from "@/stores/chatStore";
 import { useQuizStore } from "@/stores/quizStore";
 import type {
   MistakeListData,
+  MistakeExportData,
   ReviewMistake,
   ReviewMistakeStatus,
   StudyPlanData,
@@ -18,6 +19,7 @@ import { MistakeList } from "@/components/review/MistakeList";
 import { MistakeDetailPanel } from "@/components/review/MistakeDetailPanel";
 import { DailyReviewFlow } from "@/components/review/DailyReviewFlow";
 import { StudyPlanDialog } from "@/components/review/StudyPlanDialog";
+import { ReviewExportPanel } from "@/components/review/ReviewExportPanel";
 import { emptySummary } from "@/components/review/reviewUtils";
 
 export function ReviewWorkbench() {
@@ -41,6 +43,8 @@ export function ReviewWorkbench() {
   const [studyPlanOpen, setStudyPlanOpen] = useState(false);
   const [studyPlanLoading, setStudyPlanLoading] = useState(false);
   const [studyPlan, setStudyPlan] = useState<StudyPlanData | null>(null);
+  const [exportData, setExportData] = useState<MistakeExportData | null>(null);
+  const [exporting, setExporting] = useState(false);
 
   const selectedMistake =
     mistakeData.mistakes.find((mistake) => mistake.id === selectedId) ??
@@ -198,6 +202,16 @@ export function ReviewWorkbench() {
     }
   }
 
+  async function exportMistakes(format: "markdown" | "csv") {
+    setExporting(true);
+    try {
+      const result = await api.review.exportMistakes({ format });
+      setExportData(result);
+    } finally {
+      setExporting(false);
+    }
+  }
+
   return (
     <div className="flex-1 overflow-y-auto px-5 py-4">
       <div className="mx-auto space-y-4" style={{ maxWidth: "min(1480px, calc(100vw - 40px))" }}>
@@ -257,6 +271,11 @@ export function ReviewWorkbench() {
               }}
             />
             <WeakConceptList concepts={weakConcepts} onRetest={retestConcept} />
+            <ReviewExportPanel
+              exportData={exportData}
+              exporting={exporting}
+              onExport={exportMistakes}
+            />
           </div>
 
           <MistakeList

@@ -1,6 +1,8 @@
 from __future__ import annotations
 
-from datetime import datetime, timezone
+import csv
+from datetime import datetime, timedelta, timezone
+from io import StringIO
 
 from fastapi import APIRouter, HTTPException
 
@@ -10,6 +12,7 @@ from app.schemas.common import ApiResponse
 from app.schemas.review import (
     DailySessionRequest,
     DailySessionResponse,
+    MistakeExportResponse,
     MistakeExplanationResponse,
     MistakeListResponse,
     MistakeRecord,
@@ -119,6 +122,56 @@ def _matches_search(mistake: MistakeRecord, search: str) -> bool:
     return text in haystack
 
 
+def _next_review_at(status: str, now: datetime) -> str | None:
+    if status == "needs_requiz":
+        return (now + timedelta(days=1)).isoformat()
+    if status == "corrected":
+        return (now + timedelta(days=3)).isoformat()
+    return None
+
+
+def _markdown_export(mistakes: list[MistakeRecord]) -> str:
+    lines = ["# 错题导出", ""]
+    for mistake in mistakes:
+        lines.extend([
+            f"## {mistake.question_text}",
+            "",
+            f"- 知识点: {mistake.concept}",
+            f"- 主题: {mistake.topic}",
+            f"- 错误答案: {mistake.wrong_answer}",
+            f"- 正确答案: {mistake.correct_answer}",
+            f"- 状态: {mistake.status}",
+            f"- 订正: {mistake.correction_note or '未填写'}",
+            "",
+        ])
+    return "\n".join(lines)
+
+
+def _csv_export(mistakes: list[MistakeRecord]) -> str:
+    output = StringIO()
+    writer = csv.writer(output)
+    writer.writerow([
+        "question",
+        "concept",
+        "topic",
+        "wrong_answer",
+        "correct_answer",
+        "status",
+        "correction_note",
+    ])
+    for mistake in mistakes:
+        writer.writerow([
+            mistake.question_text,
+            mistake.concept,
+            mistake.topic,
+            mistake.wrong_answer,
+            mistake.correct_answer,
+            mistake.status,
+            mistake.correction_note,
+        ])
+    return output.getvalue()
+
+
 @router.get("/weak-points")
 async def get_weak_points():
     tracker = _build_tracker()
@@ -189,9 +242,14 @@ async def update_mistake(mistake_id: str, request: MistakeUpdateRequest):
     if request.mastered is True:
         updates["status"] = "mastered"
         updates["mastered_at"] = now
+        updates["next_review_at"] = None
     elif request.mastered is False:
         updates["status"] = request.status or "corrected"
         updates["mastered_at"] = None
+
+    target_status = updates.get("status")
+    if target_status in {"corrected", "needs_requiz"}:
+        updates["next_review_at"] = _next_review_at(target_status, datetime.fromisoformat(now))
 
     store = get_shared_store()
 
@@ -216,6 +274,23 @@ async def update_mistake(mistake_id: str, request: MistakeUpdateRequest):
 
     updated = await store.update(matches, updates)
     return ApiResponse.ok(data=_normalize_mistake(updated or existing))
+
+
+@router.get("/export")
+async def export_mistakes(format: str = "markdown"):
+    mistakes = [_normalize_mistake(record) for record in await _mistake_records()]
+    if format == "csv":
+        content = _csv_export(mistakes)
+        filename = "mistakes.csv"
+    else:
+        format = "markdown"
+        content = _markdown_export(mistakes)
+        filename = "mistakes.md"
+    return ApiResponse.ok(data=MistakeExportResponse(
+        format=format,
+        filename=filename,
+        content=content,
+    ))
 
 
 @router.post("/daily-session")
