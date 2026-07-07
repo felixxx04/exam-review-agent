@@ -40,7 +40,9 @@ export default function Home() {
     deleteMaterial,
     refetch,
   } = useMaterials();
-  const { sendMessage } = useChatStream();
+  const { sendMessage } = useChatStream({
+    onConversationChange: refreshConversations,
+  });
   const [uploading, setUploading] = useState(false);
   const [conversationsVersion, setConversationsVersion] = useState(0);
   const quickUploadRef = useRef<HTMLInputElement>(null);
@@ -166,7 +168,7 @@ export default function Home() {
                 }}
                 aria-label="上传复习资料"
               />
-              <ChatInput />
+              <ChatInput onConversationChange={refreshConversations} />
             </section>
           )}
           {mode === "quiz" && <QuizCard />}
@@ -206,10 +208,10 @@ function QuickActions({
   return (
     <div className="quick-actions">
       <div className="quick-actions-heading">
-        <p className="eyebrow">Exam Review Agent</p>
-        <h2>把资料变成可提问、可测验、可复习的学习台</h2>
+        <p className="eyebrow">AI Study Workspace</p>
+        <h2>把复习资料整理成可追问、可测验、可沉淀的学习工作台</h2>
         <p>
-          选择左侧文档，或者从下面的快捷卡片开始。系统会优先结合当前选中的资料回答。
+          上传课程资料后，从问答、测验到错题复盘都围绕同一份知识上下文展开。先选择左侧文档，或直接从下方快捷操作开始。
         </p>
       </div>
 

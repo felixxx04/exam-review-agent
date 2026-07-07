@@ -141,6 +141,20 @@ describe("AppSidebar", () => {
     expect(screen.getByText("MQ.docx")).toBeInTheDocument();
   });
 
+  it("keeps the full conversation title available when the visible label is clamped", async () => {
+    const longTitle = "马上要面试了，给我出一道最可能考到的数据库事务题";
+    vi.mocked(api.conversations.list).mockResolvedValue({
+      total: 1,
+      conversations: [{ ...conversations[0], title: longTitle }],
+    });
+
+    renderSidebar();
+
+    const title = await screen.findByText(longTitle);
+    expect(title).toHaveClass("conversation-title");
+    expect(title).toHaveAttribute("title", longTitle);
+  });
+
   it("switches to a selected conversation", async () => {
     const user = userEvent.setup();
     renderSidebar();

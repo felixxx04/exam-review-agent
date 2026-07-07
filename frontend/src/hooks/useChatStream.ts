@@ -8,7 +8,13 @@ import { useChatStore } from "@/stores/chatStore";
 import { useQuizStore } from "@/stores/quizStore";
 import type { Message } from "@/types";
 
-export function useChatStream() {
+interface UseChatStreamOptions {
+  onConversationChange?: () => void;
+}
+
+export function useChatStream({
+  onConversationChange,
+}: UseChatStreamOptions = {}) {
   const {
     addMessage,
     conversationId,
@@ -38,6 +44,7 @@ export function useChatStream() {
       };
       addMessage(assistantMsg);
       let hasReceivedToken = false;
+      let hasConversationEvent = false;
 
       setStreaming(true);
       const controller = new AbortController();
@@ -69,6 +76,7 @@ export function useChatStream() {
             try {
               const data = JSON.parse(ev.data);
               if (data.event === "conversation") {
+                hasConversationEvent = true;
                 setConversationId(data.data.id);
               } else if (data.event === "token") {
                 if (!hasReceivedToken) {
@@ -102,6 +110,9 @@ export function useChatStream() {
         addMessage({ ...assistantMsg });
       } finally {
         setStreaming(false);
+        if (hasConversationEvent) {
+          onConversationChange?.();
+        }
       }
     },
     [
@@ -112,6 +123,7 @@ export function useChatStream() {
       materialScope,
       setMode,
       setQuestions,
+      onConversationChange,
     ],
   );
 

@@ -167,10 +167,13 @@ export function AppSidebar({
                   className="sidebar-row-main"
                   onClick={() => switchConversation(conversation.id)}
                 >
-                  <span className="truncate font-medium">
+                  <span
+                    className="conversation-title"
+                    title={conversation.title}
+                  >
                     {conversation.title}
                   </span>
-                  <span className="text-xs text-[color:var(--color-muted)]">
+                  <span className="conversation-meta">
                     {conversation.message_count} 条消息
                   </span>
                 </button>

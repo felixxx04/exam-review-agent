@@ -28,6 +28,10 @@ async def list_conversations(db: AsyncSession = Depends(get_db)):
         .order_by(Conversation.updated_at.desc(), Conversation.id.desc())
     )
     conversations = list(result.scalars().all())
+    conversations = [
+        await service.autotitle_default_conversation(conversation)
+        for conversation in conversations
+    ]
     return ApiResponse.ok(
         data=ConversationListResponse(
             conversations=conversations,

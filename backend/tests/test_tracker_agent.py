@@ -4,6 +4,7 @@ import pytest
 from unittest.mock import AsyncMock
 
 from app.agents.tracker_agent import ScoreResult, TrackerAgent
+from app.core.exceptions import LLMProviderError
 from app.specialists.mistake_summarizer import MistakeSummarizer
 
 
@@ -245,6 +246,120 @@ class TestTrackerWeakConcepts:
         results = await tracker.get_weak_concepts(user_id="u1")
 
         assert results == []
+
+    @pytest.mark.asyncio
+    async def test_get_weak_concepts_uses_question_text_when_concept_is_prompt(self):
+        """Prompt-like concepts should not appear as weak-point names."""
+        mock_db = AsyncMock()
+        mock_llm = AsyncMock()
+        mock_db.query = AsyncMock(
+            return_value=[
+                {
+                    "user_id": "u1",
+                    "concept": "随便为我 题",
+                    "topic": "随便为我 题",
+                    "question_text": "在数据库事务中，如果多个事务同时读取同一数据，然后其中一个事务更新了该数据并提交，这种现象被称为？",
+                    "wrong_answer": "A",
+                    "correct_answer": "B",
+                },
+            ]
+        )
+        tracker = TrackerAgent(db=mock_db, llm_service=mock_llm)
+
+        results = await tracker.get_weak_concepts(user_id="u1")
+
+        assert len(results) == 1
+        assert "随便为我" not in results[0]["concept"]
+        assert results[0]["concept"].startswith("错题：在数据库事务中")
+        assert results[0]["topic"] == "错题回顾"
+
+    @pytest.mark.asyncio
+    async def test_get_weak_concepts_keeps_legitimate_request_concepts(self):
+        """Concept names such as HTTP requests should not be treated as prompts."""
+        mock_db = AsyncMock()
+        mock_llm = AsyncMock()
+        mock_db.query = AsyncMock(
+            return_value=[
+                {
+                    "user_id": "u1",
+                    "concept": "HTTP 请求",
+                    "topic": "计算机网络",
+                    "question_text": "HTTP 请求方法 GET 和 POST 的区别是什么？",
+                    "wrong_answer": "A",
+                    "correct_answer": "B",
+                },
+            ]
+        )
+        tracker = TrackerAgent(db=mock_db, llm_service=mock_llm)
+
+        results = await tracker.get_weak_concepts(user_id="u1")
+
+        assert results[0]["concept"] == "HTTP 请求"
+        assert results[0]["topic"] == "计算机网络"
+
+    @pytest.mark.asyncio
+    async def test_generate_study_plan_prompt_excludes_prompt_like_concepts(self):
+        """Study-plan prompts should use mistake summaries instead of user prompts."""
+        mock_db = AsyncMock()
+        mock_llm = AsyncMock()
+        mock_db.query = AsyncMock(
+            return_value=[
+                {
+                    "user_id": "u1",
+                    "concept": "随便为我 题",
+                    "topic": "随便为我 题",
+                    "question_text": "在数据库事务中，如果多个事务同时读取同一数据，然后其中一个事务更新了该数据并提交，这种现象被称为？",
+                    "wrong_answer": "A",
+                    "correct_answer": "B",
+                },
+            ]
+        )
+        mock_llm.invoke = AsyncMock(return_value='[{"day":1,"topics":["错题回顾"],"tasks":["重做相关错题"]}]')
+        tracker = TrackerAgent(db=mock_db, llm_service=mock_llm)
+
+        result = await tracker.generate_study_plan(
+            user_id="u1",
+            exam_date="2026-07-13",
+            days_before_exam=7,
+        )
+
+        prompt = mock_llm.invoke.call_args[0][0][0]["content"]
+        assert "随便为我" not in prompt
+        assert "错题：在数据库事务中" in prompt
+        assert result["plan"][0]["topics"] == ["错题回顾"]
+
+    @pytest.mark.asyncio
+    async def test_generate_study_plan_falls_back_when_llm_unavailable(self):
+        """A local plan should be returned if the LLM cannot generate one."""
+        mock_db = AsyncMock()
+        mock_llm = AsyncMock()
+        mock_db.query = AsyncMock(
+            return_value=[
+                {
+                    "user_id": "u1",
+                    "concept": "特征值",
+                    "topic": "线性代数",
+                    "question_text": "矩阵 A 的特征值定义是什么？",
+                    "wrong_answer": "A",
+                    "correct_answer": "B",
+                },
+            ]
+        )
+        mock_llm.invoke = AsyncMock(
+            side_effect=LLMProviderError("config", "No usable LLM providers are configured.")
+        )
+        tracker = TrackerAgent(db=mock_db, llm_service=mock_llm)
+
+        result = await tracker.generate_study_plan(
+            user_id="u1",
+            exam_date="2026-07-13",
+            days_before_exam=3,
+        )
+
+        assert result["message"] == "AI 生成暂不可用，已根据薄弱点生成基础复习计划"
+        assert len(result["plan"]) == 3
+        assert result["plan"][0]["topics"] == ["特征值"]
+        assert "特征值" in result["plan"][0]["tasks"][0]
 
 
 # ---------------------------------------------------------------------------

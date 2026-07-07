@@ -7,6 +7,7 @@ from io import StringIO
 from fastapi import APIRouter, HTTPException
 
 from app.agents.tracker_agent import TrackerAgent
+from app.core.exceptions import LLMProviderError
 from app.core.store import get_shared_store
 from app.schemas.common import ApiResponse
 from app.schemas.review import (
@@ -29,8 +30,19 @@ from app.services.llm_service import get_default_llm_service
 router = APIRouter(prefix="/api/review", tags=["review"])
 
 
+class _UnavailableLLMService:
+    def __init__(self, error: LLMProviderError):
+        self._error = error
+
+    async def invoke(self, *_args, **_kwargs):
+        raise self._error
+
+
 def _build_tracker() -> TrackerAgent:
-    llm = get_default_llm_service()
+    try:
+        llm = get_default_llm_service()
+    except LLMProviderError as exc:
+        llm = _UnavailableLLMService(exc)
     return TrackerAgent(db=get_shared_store(), llm_service=llm)
 
 

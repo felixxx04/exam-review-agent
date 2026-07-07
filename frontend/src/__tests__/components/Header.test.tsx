@@ -28,7 +28,9 @@ describe("Header", () => {
   it("renders the app title and three mode buttons", () => {
     render(<Header />);
 
-    expect(screen.getByRole("heading", { level: 1 })).toHaveTextContent("Exam Review");
+    expect(screen.getByRole("heading", { level: 1 })).toHaveTextContent(
+      "AI 学习工作台",
+    );
     expect(screen.getByRole("button", { name: /新会话/ })).toBeInTheDocument();
     expect(screen.getByRole("tab", { name: /问答/ })).toBeInTheDocument();
     expect(screen.getByRole("tab", { name: /测验/ })).toBeInTheDocument();
@@ -37,7 +39,10 @@ describe("Header", () => {
 
   it("ask tab is selected by default", () => {
     render(<Header />);
-    expect(screen.getByRole("tab", { name: /问答/ })).toHaveAttribute("aria-selected", "true");
+    expect(screen.getByRole("tab", { name: /问答/ })).toHaveAttribute(
+      "aria-selected",
+      "true",
+    );
   });
 
   it("clicking quiz tab changes mode", async () => {

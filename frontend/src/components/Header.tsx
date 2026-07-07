@@ -24,11 +24,11 @@ export function Header({ onConversationChange }: HeaderProps) {
       <div className="flex h-full items-center justify-between gap-4 px-4 sm:px-6">
         <div className="flex min-w-0 items-center gap-3">
           <div className="brand-mark" aria-hidden="true">
-            ER
+            AI
           </div>
           <div className="min-w-0">
             <h1 className="truncate text-base font-semibold text-[color:var(--color-ink)] sm:text-lg">
-              Exam Review
+              AI 学习工作台
             </h1>
             <p className="hidden text-xs text-[color:var(--color-muted)] sm:block">
               资料问答 · 自动测验 · 错题复习

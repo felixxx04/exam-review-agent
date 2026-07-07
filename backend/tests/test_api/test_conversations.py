@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import pytest
 
-from app.db.models import ConversationMessage, MessageRole
+from app.db.models import Conversation, ConversationMessage, MessageRole
 
 
 def _data(response):
@@ -50,6 +50,58 @@ async def test_list_conversations_returns_recent_first(client_with_db):
         _data(second)["id"],
         _data(first)["id"],
     ]
+
+
+@pytest.mark.asyncio
+async def test_list_conversations_names_legacy_default_title_from_first_user_message(
+    client_with_db,
+    db_session,
+):
+    created = await client_with_db.post("/api/conversations")
+    conversation_id = _data(created)["id"]
+    db_session.add(
+        ConversationMessage(
+            conversation_id=conversation_id,
+            role=MessageRole.USER,
+            content="请解释二叉树遍历的区别。",
+            material_scope=None,
+            message_metadata={},
+        )
+    )
+    await db_session.commit()
+
+    response = await client_with_db.get("/api/conversations")
+
+    assert response.status_code == 200
+    data = _data(response)
+    assert data["conversations"][0]["title"] == "解释二叉树遍历的区别"
+
+
+@pytest.mark.asyncio
+async def test_list_conversations_repairs_legacy_ellipsized_title(
+    client_with_db,
+    db_session,
+):
+    created = await client_with_db.post("/api/conversations")
+    conversation_id = _data(created)["id"]
+    conversation = await db_session.get(Conversation, conversation_id)
+    conversation.title = "马上要面试了，给我出一道..."
+    db_session.add(
+        ConversationMessage(
+            conversation_id=conversation_id,
+            role=MessageRole.USER,
+            content="我马上要面试了，给我出一道最可能考到的数据库事务题。",
+            material_scope=None,
+            message_metadata={},
+        )
+    )
+    await db_session.commit()
+
+    response = await client_with_db.get("/api/conversations")
+
+    assert response.status_code == 200
+    data = _data(response)
+    assert data["conversations"][0]["title"] == "马上要面试了，给我出一道最可能考到的数据库事务题"
 
 
 @pytest.mark.asyncio

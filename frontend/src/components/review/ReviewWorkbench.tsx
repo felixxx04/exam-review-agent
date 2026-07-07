@@ -61,10 +61,12 @@ export function ReviewWorkbench() {
 
   const conceptOptions = useMemo(() => {
     return Array.from(
-      new Set([
-        ...weakConcepts.map((item) => item.concept),
-        ...mistakeData.mistakes.map((item) => item.concept),
-      ].filter(Boolean)),
+      new Set(
+        [
+          ...weakConcepts.map((item) => item.concept),
+          ...mistakeData.mistakes.map((item) => item.concept),
+        ].filter(Boolean),
+      ),
     );
   }, [mistakeData.mistakes, weakConcepts]);
 
@@ -184,7 +186,9 @@ export function ReviewWorkbench() {
     setMistakeData((current) => ({
       ...current,
       mistakes: current.mistakes.map((item) =>
-        item.id === mistake.id ? { ...item, explanation: result.explanation } : item,
+        item.id === mistake.id
+          ? { ...item, explanation: result.explanation }
+          : item,
       ),
     }));
   }
@@ -213,8 +217,11 @@ export function ReviewWorkbench() {
   }
 
   return (
-    <div className="flex-1 overflow-y-auto px-5 py-4">
-      <div className="mx-auto space-y-4" style={{ maxWidth: "min(1480px, calc(100vw - 40px))" }}>
+    <div className="review-workbench flex-1 overflow-y-auto px-5 py-4">
+      <div
+        className="mx-auto space-y-4"
+        style={{ maxWidth: "min(1480px, calc(100vw - 40px))" }}
+      >
         <ReviewSummaryBar
           summary={mistakeData.summary}
           weakConceptCount={weakConcepts.length}
@@ -245,7 +252,11 @@ export function ReviewWorkbench() {
             }}
           >
             <span>{error}</span>
-            <button type="button" onClick={loadReviewData} className="font-medium">
+            <button
+              type="button"
+              onClick={loadReviewData}
+              className="font-medium"
+            >
               重试
             </button>
           </div>

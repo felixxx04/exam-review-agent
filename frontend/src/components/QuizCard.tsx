@@ -12,6 +12,7 @@ import {
   ChevronLeft,
   BookOpen,
 } from "lucide-react";
+import type { CSSProperties } from "react";
 import type { ScoreResult } from "@/types";
 
 export function QuizCard() {
@@ -74,7 +75,7 @@ export function QuizCard() {
   };
 
   return (
-    <div className="flex-1 overflow-y-auto px-5 py-4">
+    <div className="quiz-workspace flex-1 overflow-y-auto px-5 py-4">
       <div className="mx-auto" style={{ maxWidth: "var(--content-max)" }}>
         {/* Progress bar */}
         <div className="accuracy-bar mb-4" style={{ height: "3px" }}>
@@ -110,14 +111,7 @@ export function QuizCard() {
         </div>
 
         {/* Question card */}
-        <div
-          className="p-5"
-          style={{
-            background: "var(--color-surface)",
-            border: "1px solid var(--color-border)",
-            borderRadius: "var(--radius-xl)",
-          }}
-        >
+        <div className="quiz-question-card">
           <p
             className="mb-5 font-medium"
             style={{
@@ -147,28 +141,17 @@ export function QuizCard() {
                       !isSubmitted && answerQuestion(q.id, optionState.letter)
                     }
                     disabled={isSubmitted}
-                    className="w-full px-4 py-3 text-sm text-left transition-colors"
-                    style={{
-                      borderRadius: "var(--radius-lg)",
-                      background: optionState.background,
-                      border: `1px solid ${optionState.border}`,
-                      color: optionState.textColor,
-                      cursor: isSubmitted ? "default" : "pointer",
-                      fontFamily: "var(--font-prose)",
-                      lineHeight: "var(--leading-ui)",
-                    }}
-                    onMouseEnter={(e) => {
-                      if (!isSubmitted && !optionState.isSelected) {
-                        e.currentTarget.style.background =
-                          "var(--color-surface-hover)";
-                      }
-                    }}
-                    onMouseLeave={(e) => {
-                      if (!isSubmitted && !optionState.isSelected) {
-                        e.currentTarget.style.background =
-                          optionState.background;
-                      }
-                    }}
+                    className="quiz-option"
+                    data-selected={optionState.isSelected}
+                    data-correct={optionState.isCorrect}
+                    data-wrong={optionState.isWrong}
+                    style={
+                      {
+                        "--quiz-option-bg": optionState.background,
+                        "--quiz-option-border": optionState.border,
+                        "--quiz-option-color": optionState.textColor,
+                      } as CSSProperties
+                    }
                   >
                     <span className="flex items-center justify-between">
                       {opt}
@@ -193,16 +176,7 @@ export function QuizCard() {
 
           {/* Explanation */}
           {isSubmitted && q.explanation && (
-            <div
-              className="mt-4 p-4 text-sm"
-              style={{
-                borderRadius: "var(--radius-lg)",
-                background: "var(--color-bg)",
-                border: "1px solid var(--color-border)",
-                fontFamily: "var(--font-prose)",
-                lineHeight: "var(--leading-prose)",
-              }}
-            >
+            <div className="quiz-explanation mt-4">
               <p
                 className="font-medium mb-1"
                 style={{ color: "var(--color-ink)" }}
@@ -217,20 +191,7 @@ export function QuizCard() {
           {!isSubmitted && selected && (
             <button
               onClick={handleSubmit}
-              className="mt-4 px-5 py-2 text-sm font-medium transition-colors"
-              style={{
-                borderRadius: "var(--radius-lg)",
-                background: "var(--color-primary)",
-                color: "oklch(1 0 0)",
-                cursor: "pointer",
-                border: "none",
-              }}
-              onMouseEnter={(e) => {
-                e.currentTarget.style.background = "var(--color-primary-hover)";
-              }}
-              onMouseLeave={(e) => {
-                e.currentTarget.style.background = "var(--color-primary)";
-              }}
+              className="quiz-submit-button mt-4 px-5 py-2 text-sm font-medium"
             >
               提交答案
             </button>
@@ -238,54 +199,18 @@ export function QuizCard() {
         </div>
 
         {/* Navigation */}
-        <div
-          className="mt-3 flex justify-between"
-          style={{ color: "var(--color-muted)" }}
-        >
+        <div className="quiz-navigation mt-3 flex justify-between">
           <button
             onClick={prevQuestion}
             disabled={currentIndex === 0}
-            className="flex items-center gap-1 px-3 py-2 text-sm transition-colors"
-            style={{
-              cursor: currentIndex === 0 ? "not-allowed" : "pointer",
-              opacity: currentIndex === 0 ? 0.3 : 1,
-              background: "transparent",
-              border: "none",
-              color: "var(--color-muted)",
-            }}
-            onMouseEnter={(e) => {
-              if (currentIndex > 0) {
-                e.currentTarget.style.color = "var(--color-ink)";
-              }
-            }}
-            onMouseLeave={(e) => {
-              e.currentTarget.style.color = "var(--color-muted)";
-            }}
+            className="quiz-nav-button flex items-center gap-1 px-3 py-2 text-sm"
           >
             <ChevronLeft size={16} /> 上一题
           </button>
           <button
             onClick={nextQuestion}
             disabled={currentIndex === questions.length - 1}
-            className="flex items-center gap-1 px-3 py-2 text-sm transition-colors"
-            style={{
-              cursor:
-                currentIndex === questions.length - 1
-                  ? "not-allowed"
-                  : "pointer",
-              opacity: currentIndex === questions.length - 1 ? 0.3 : 1,
-              background: "transparent",
-              border: "none",
-              color: "var(--color-muted)",
-            }}
-            onMouseEnter={(e) => {
-              if (currentIndex < questions.length - 1) {
-                e.currentTarget.style.color = "var(--color-ink)";
-              }
-            }}
-            onMouseLeave={(e) => {
-              e.currentTarget.style.color = "var(--color-muted)";
-            }}
+            className="quiz-nav-button flex items-center gap-1 px-3 py-2 text-sm"
           >
             下一题 <ChevronRight size={16} />
           </button>

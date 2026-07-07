@@ -14,7 +14,13 @@ describe("upload spinner styles", () => {
 
     expect(css).toMatch(/\.upload-spinner\s*\{[^}]*animation:\s*app-spin/s);
     expect(css).toMatch(
-      /@media\s*\(prefers-reduced-motion:\s*reduce\)\s*\{[\s\S]*\.upload-spinner\s*\{[\s\S]*animation:\s*app-spin\s+1s\s+linear\s+infinite\s*!important/s,
+      /@media\s*\(prefers-reduced-motion:\s*reduce\)\s*\{[\s\S]*\*,\s*\*::before,\s*\*::after\s*\{[\s\S]*animation-duration:\s*0\.01ms\s*!important;[\s\S]*transition-duration:\s*0\.01ms\s*!important/s,
+    );
+    expect(css).toMatch(
+      /@media\s*\(prefers-reduced-motion:\s*reduce\)\s*\{[\s\S]*\.upload-spinner,\s*\.thinking-ring\s*\{[\s\S]*animation-duration:\s*1\.2s\s*!important;[\s\S]*animation-iteration-count:\s*infinite\s*!important/s,
+    );
+    expect(css).toMatch(
+      /@media\s*\(prefers-reduced-motion:\s*reduce\)\s*\{[\s\S]*\.upload-spinner\s*\{[\s\S]*animation-name:\s*app-spin\s*!important/s,
     );
   });
 });

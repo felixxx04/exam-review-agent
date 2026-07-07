@@ -11,9 +11,15 @@ interface WeakConceptListProps {
 
 export function WeakConceptList({ concepts, onRetest }: WeakConceptListProps) {
   return (
-    <section className="space-y-2" aria-label="薄弱知识点">
+    <section
+      className="review-panel weak-concept-panel space-y-2"
+      aria-label="薄弱知识点"
+    >
       <div className="flex items-center justify-between">
-        <h2 className="text-sm font-semibold" style={{ color: "var(--color-ink)" }}>
+        <h2
+          className="text-sm font-semibold"
+          style={{ color: "var(--color-ink)" }}
+        >
           薄弱知识点
         </h2>
         <span className="text-xs" style={{ color: "var(--color-muted)" }}>
@@ -29,16 +35,14 @@ export function WeakConceptList({ concepts, onRetest }: WeakConceptListProps) {
         concepts.map((concept) => (
           <div
             key={`${concept.topic}-${concept.concept}`}
-            className="space-y-2 p-3"
-            style={{
-              borderRadius: "var(--radius-lg)",
-              border: "1px solid var(--color-border)",
-              background: "var(--color-surface)",
-            }}
+            className="review-item weak-concept-card space-y-2 p-3"
           >
             <div className="flex items-start justify-between gap-2">
               <div className="min-w-0">
-                <p className="truncate text-sm font-medium" style={{ color: "var(--color-ink)" }}>
+                <p
+                  className="truncate text-sm font-medium"
+                  style={{ color: "var(--color-ink)" }}
+                >
                   {concept.concept}
                 </p>
                 <p className="text-xs" style={{ color: "var(--color-muted)" }}>
@@ -55,13 +59,7 @@ export function WeakConceptList({ concepts, onRetest }: WeakConceptListProps) {
             <button
               type="button"
               onClick={() => onRetest(concept.concept)}
-              className="flex w-full items-center justify-center gap-1.5 px-3 py-2 text-xs font-medium"
-              style={{
-                borderRadius: "var(--radius-md)",
-                border: "none",
-                background: "var(--color-primary)",
-                color: "oklch(1 0 0)",
-              }}
+              className="review-primary-button weak-concept-retest flex w-full items-center justify-center gap-1.5 px-3 py-2 text-xs font-medium"
             >
               <RefreshCw size={13} />
               再测 {concept.concept}

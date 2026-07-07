@@ -1,6 +1,7 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import { createPortal } from "react-dom";
 import type { StudyPlanData } from "@/types";
 
 interface StudyPlanDialogProps {
@@ -8,7 +9,10 @@ interface StudyPlanDialogProps {
   loading: boolean;
   plan: StudyPlanData | null;
   onClose: () => void;
-  onGenerate: (payload: { exam_date: string; days_before_exam: number }) => void;
+  onGenerate: (payload: {
+    exam_date: string;
+    days_before_exam: number;
+  }) => void;
 }
 
 function defaultExamDate() {
@@ -26,29 +30,34 @@ export function StudyPlanDialog({
 }: StudyPlanDialogProps) {
   const [examDate, setExamDate] = useState(defaultExamDate);
   const [days, setDays] = useState(7);
+  const [mounted, setMounted] = useState(false);
 
-  if (!open) return null;
+  useEffect(() => {
+    setMounted(true);
+  }, []);
 
-  return (
+  if (!open || !mounted) return null;
+
+  return createPortal(
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center px-4"
-      style={{ background: "rgba(15, 23, 20, 0.28)" }}
+      className="study-plan-dialog-scrim fixed inset-0 flex items-center justify-center px-4"
       role="dialog"
       aria-modal="true"
       aria-label="生成复习计划"
     >
       <section
-        className="w-full max-w-xl space-y-4 p-5"
+        className="study-plan-dialog-panel w-full max-w-xl space-y-4 p-5"
         style={{
-          borderRadius: "var(--radius-xl)",
-          border: "1px solid var(--color-border)",
-          background: "var(--color-surface)",
-          boxShadow: "var(--shadow-lg)",
+          maxHeight: "calc(100vh - 2rem)",
+          overflowY: "auto",
         }}
       >
         <div className="flex items-start justify-between gap-3">
           <div>
-            <h2 className="text-base font-semibold" style={{ color: "var(--color-ink)" }}>
+            <h2
+              className="text-base font-semibold"
+              style={{ color: "var(--color-ink)" }}
+            >
               生成复习计划
             </h2>
             <p className="text-sm" style={{ color: "var(--color-muted)" }}>
@@ -58,29 +67,29 @@ export function StudyPlanDialog({
           <button
             type="button"
             onClick={onClose}
-            className="text-sm"
-            style={{ border: "none", background: "transparent", color: "var(--color-muted)" }}
+            className="review-icon-button text-sm"
           >
             关闭
           </button>
         </div>
 
         <div className="grid gap-3 sm:grid-cols-2">
-          <label className="block text-sm" style={{ color: "var(--color-ink)" }}>
+          <label
+            className="block text-sm"
+            style={{ color: "var(--color-ink)" }}
+          >
             考试日期
             <input
               type="date"
               value={examDate}
               onChange={(event) => setExamDate(event.target.value)}
-              className="mt-2 w-full px-3 py-2"
-              style={{
-                borderRadius: "var(--radius-md)",
-                border: "1px solid var(--color-border)",
-                background: "var(--color-bg)",
-              }}
+              className="study-plan-dialog-input mt-2 w-full px-3 py-2"
             />
           </label>
-          <label className="block text-sm" style={{ color: "var(--color-ink)" }}>
+          <label
+            className="block text-sm"
+            style={{ color: "var(--color-ink)" }}
+          >
             复习天数
             <input
               type="number"
@@ -88,28 +97,18 @@ export function StudyPlanDialog({
               max={30}
               value={days}
               onChange={(event) => setDays(Number(event.target.value))}
-              className="mt-2 w-full px-3 py-2"
-              style={{
-                borderRadius: "var(--radius-md)",
-                border: "1px solid var(--color-border)",
-                background: "var(--color-bg)",
-              }}
+              className="study-plan-dialog-input mt-2 w-full px-3 py-2"
             />
           </label>
         </div>
 
         <button
           type="button"
-          onClick={() => onGenerate({ exam_date: examDate, days_before_exam: days })}
+          onClick={() =>
+            onGenerate({ exam_date: examDate, days_before_exam: days })
+          }
           disabled={loading}
-          className="px-3 py-2 text-sm font-medium"
-          style={{
-            borderRadius: "var(--radius-md)",
-            border: "none",
-            background: "var(--color-primary)",
-            color: "oklch(1 0 0)",
-            opacity: loading ? 0.65 : 1,
-          }}
+          className="review-primary-button px-3 py-2 text-sm font-medium"
         >
           确认生成
         </button>
@@ -122,22 +121,23 @@ export function StudyPlanDialog({
               </p>
             )}
             {plan.plan.map((day) => (
-              <article
-                key={day.day}
-                className="p-3"
-                style={{
-                  borderRadius: "var(--radius-lg)",
-                  border: "1px solid var(--color-border)",
-                  background: "var(--color-bg)",
-                }}
-              >
-                <h3 className="text-sm font-semibold" style={{ color: "var(--color-ink)" }}>
+              <article key={day.day} className="study-plan-day-card p-3">
+                <h3
+                  className="text-sm font-semibold"
+                  style={{ color: "var(--color-ink)" }}
+                >
                   第 {day.day} 天
                 </h3>
-                <p className="mt-1 text-xs" style={{ color: "var(--color-muted)" }}>
+                <p
+                  className="mt-1 text-xs"
+                  style={{ color: "var(--color-muted)" }}
+                >
                   {day.topics.join("、") || "综合复习"}
                 </p>
-                <ul className="mt-2 space-y-1 text-sm" style={{ color: "var(--color-ink)" }}>
+                <ul
+                  className="mt-2 space-y-1 text-sm"
+                  style={{ color: "var(--color-ink)" }}
+                >
                   {day.tasks.map((task) => (
                     <li key={task}>{task}</li>
                   ))}
@@ -147,6 +147,7 @@ export function StudyPlanDialog({
           </div>
         )}
       </section>
-    </div>
+    </div>,
+    document.body,
   );
 }

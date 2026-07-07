@@ -50,6 +50,61 @@ async def test_save_messages_and_build_context(db_session):
 
 
 @pytest.mark.asyncio
+async def test_first_user_message_names_default_conversation(db_session):
+    service = MemoryService(db_session)
+    conversation = await service.create_conversation(user_id="default")
+
+    await service.save_message(
+        conversation_id=conversation.id,
+        role="user",
+        content="请总结 MQ.docx 的考试重点。",
+        material_scope=["MQ.docx"],
+        metadata={"mode": "ask"},
+    )
+    await db_session.refresh(conversation)
+
+    assert conversation.title == "总结 MQ.docx 的考试重点"
+
+
+@pytest.mark.asyncio
+async def test_first_user_message_keeps_long_title_readable(db_session):
+    service = MemoryService(db_session)
+    conversation = await service.create_conversation(user_id="default")
+
+    await service.save_message(
+        conversation_id=conversation.id,
+        role="user",
+        content="我马上要面试了，给我出一道最可能考到的数据库事务题。",
+        material_scope=None,
+        metadata={"mode": "ask"},
+    )
+    await db_session.refresh(conversation)
+
+    assert conversation.title == "马上要面试了，给我出一道最可能考到的数据库事务题"
+    assert "..." not in conversation.title
+
+
+@pytest.mark.asyncio
+async def test_first_user_message_keeps_custom_conversation_title(db_session):
+    service = MemoryService(db_session)
+    conversation = await service.create_conversation(
+        user_id="default",
+        title="数据库冲刺",
+    )
+
+    await service.save_message(
+        conversation_id=conversation.id,
+        role="user",
+        content="请总结事务隔离级别。",
+        material_scope=None,
+        metadata={"mode": "ask"},
+    )
+    await db_session.refresh(conversation)
+
+    assert conversation.title == "数据库冲刺"
+
+
+@pytest.mark.asyncio
 async def test_profile_merge_is_conservative(db_session):
     service = MemoryService(db_session)
     profile = await service.get_or_create_learning_profile(user_id="default")

@@ -38,17 +38,15 @@ export function DailyReviewFlow({
 
   return (
     <section
-      className="space-y-4 p-4"
-      style={{
-        borderRadius: "var(--radius-xl)",
-        border: "1px solid var(--color-primary)",
-        background: "var(--color-surface)",
-      }}
+      className="review-panel daily-review-panel space-y-4 p-4"
       aria-label="今日复习"
     >
       <div className="flex items-center justify-between gap-3">
         <div>
-          <h2 className="text-sm font-semibold" style={{ color: "var(--color-ink)" }}>
+          <h2
+            className="text-sm font-semibold"
+            style={{ color: "var(--color-ink)" }}
+          >
             今日复习 {index + 1} / {mistakes.length}
           </h2>
           <p className="text-xs" style={{ color: "var(--color-muted)" }}>
@@ -59,8 +57,7 @@ export function DailyReviewFlow({
           type="button"
           onClick={onClose}
           aria-label="关闭今日复习"
-          className="p-2"
-          style={{ border: "none", background: "transparent", color: "var(--color-muted)" }}
+          className="review-icon-button daily-review-close p-2"
         >
           <X size={16} />
         </button>
@@ -72,17 +69,23 @@ export function DailyReviewFlow({
 
       {revealed ? (
         <div
-          className="grid gap-3 text-sm md:grid-cols-2"
+          className="daily-review-answer-grid grid gap-3 text-sm md:grid-cols-2"
           style={{ color: "var(--color-ink)" }}
         >
-          <div>
-            <p className="text-xs font-medium" style={{ color: "var(--color-error)" }}>
+          <div className="daily-review-answer" data-tone="wrong">
+            <p
+              className="text-xs font-medium"
+              style={{ color: "var(--color-error)" }}
+            >
               错误答案
             </p>
             <p>{current.wrong_answer || "未记录"}</p>
           </div>
-          <div>
-            <p className="text-xs font-medium" style={{ color: "var(--color-success)" }}>
+          <div className="daily-review-answer" data-tone="correct">
+            <p
+              className="text-xs font-medium"
+              style={{ color: "var(--color-success)" }}
+            >
               正确答案
             </p>
             <p>{current.correct_answer || "未记录"}</p>
@@ -92,13 +95,7 @@ export function DailyReviewFlow({
         <button
           type="button"
           onClick={() => setRevealed(true)}
-          className="px-3 py-2 text-sm font-medium"
-          style={{
-            borderRadius: "var(--radius-md)",
-            border: "1px solid var(--color-border)",
-            background: "var(--color-surface)",
-            color: "var(--color-primary)",
-          }}
+          className="review-secondary-button daily-review-reveal px-3 py-2 text-sm font-medium"
         >
           显示答案
         </button>
@@ -109,29 +106,17 @@ export function DailyReviewFlow({
         value={note}
         onChange={(event) => setNote(event.target.value)}
         placeholder="写一句今天的订正重点"
-        className="min-h-20 w-full px-3 py-2 text-sm outline-none"
-        style={{
-          borderRadius: "var(--radius-lg)",
-          border: "1px solid var(--color-border)",
-          background: "var(--color-bg)",
-          color: "var(--color-ink)",
-        }}
+        className="daily-review-note min-h-20 w-full px-3 py-2 text-sm outline-none"
       />
 
-      <div className="flex flex-wrap gap-2">
+      <div className="daily-review-actions flex flex-wrap gap-2">
         <button
           type="button"
           onClick={() => {
             onSaveCorrection(current, note);
             goNext();
           }}
-          className="px-3 py-2 text-sm font-medium"
-          style={{
-            borderRadius: "var(--radius-md)",
-            border: "none",
-            background: "var(--color-primary)",
-            color: "oklch(1 0 0)",
-          }}
+          className="review-primary-button daily-review-action px-3 py-2 text-sm font-medium"
         >
           保存并继续
         </button>
@@ -141,13 +126,7 @@ export function DailyReviewFlow({
             onMarkMastered(current);
             goNext();
           }}
-          className="px-3 py-2 text-sm font-medium"
-          style={{
-            borderRadius: "var(--radius-md)",
-            border: "1px solid var(--color-border)",
-            background: "var(--color-surface)",
-            color: "var(--color-ink)",
-          }}
+          className="review-secondary-button daily-review-action px-3 py-2 text-sm font-medium"
         >
           已掌握
         </button>

@@ -15,9 +15,15 @@ export function ReviewExportPanel({
   onExport,
 }: ReviewExportPanelProps) {
   return (
-    <section className="space-y-3" aria-label="错题导出">
+    <section
+      className="review-panel review-export-panel space-y-3"
+      aria-label="错题导出"
+    >
       <div className="flex items-center justify-between gap-2">
-        <h2 className="text-sm font-semibold" style={{ color: "var(--color-ink)" }}>
+        <h2
+          className="text-sm font-semibold"
+          style={{ color: "var(--color-ink)" }}
+        >
           错题导出
         </h2>
         <Download size={15} style={{ color: "var(--color-primary)" }} />
@@ -28,8 +34,7 @@ export function ReviewExportPanel({
           type="button"
           onClick={() => onExport("markdown")}
           disabled={exporting}
-          className="px-3 py-2 text-sm font-medium"
-          style={buttonStyle}
+          className="review-secondary-button review-export-button px-3 py-2 text-sm font-medium"
         >
           导出 Markdown
         </button>
@@ -37,33 +42,17 @@ export function ReviewExportPanel({
           type="button"
           onClick={() => onExport("csv")}
           disabled={exporting}
-          className="px-3 py-2 text-sm font-medium"
-          style={buttonStyle}
+          className="review-secondary-button review-export-button px-3 py-2 text-sm font-medium"
         >
           导出 CSV
         </button>
       </div>
 
       {exportData && (
-        <pre
-          className="max-h-44 overflow-auto whitespace-pre-wrap p-3 text-xs"
-          style={{
-            borderRadius: "var(--radius-lg)",
-            border: "1px solid var(--color-border)",
-            background: "var(--color-bg)",
-            color: "var(--color-ink)",
-          }}
-        >
+        <pre className="review-export-preview max-h-44 overflow-auto whitespace-pre-wrap p-3 text-xs">
           {exportData.content}
         </pre>
       )}
     </section>
   );
 }
-
-const buttonStyle = {
-  borderRadius: "var(--radius-md)",
-  border: "1px solid var(--color-border)",
-  background: "var(--color-surface)",
-  color: "var(--color-primary)",
-};

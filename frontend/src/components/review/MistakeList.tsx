@@ -34,15 +34,7 @@ export function MistakeList({
 
   if (mistakes.length === 0) {
     return (
-      <div
-        className="flex min-h-64 items-center justify-center p-6 text-center"
-        style={{
-          borderRadius: "var(--radius-xl)",
-          border: "1px solid var(--color-border)",
-          background: "var(--color-surface)",
-          color: "var(--color-muted)",
-        }}
-      >
+      <div className="review-panel mistake-list-empty flex min-h-64 items-center justify-center p-6 text-center">
         暂无符合条件的错题
       </div>
     );
@@ -55,33 +47,29 @@ export function MistakeList({
         return (
           <article
             key={mistake.id}
-            className="cursor-pointer p-4 transition-colors"
+            className="review-item mistake-list-item cursor-pointer p-4 transition-colors"
+            data-selected={selected}
             onClick={() => onSelect(mistake)}
-            style={{
-              borderRadius: "var(--radius-lg)",
-              border: `1px solid ${
-                selected ? "var(--color-primary)" : "var(--color-border)"
-              }`,
-              background: selected ? "var(--color-primary-subtle)" : "var(--color-surface)",
-            }}
           >
             <div className="flex items-start justify-between gap-3">
               <div className="min-w-0">
-                <h3 className="line-clamp-2 text-sm font-semibold" style={{ color: "var(--color-ink)" }}>
+                <h3
+                  className="line-clamp-2 text-sm font-semibold"
+                  style={{ color: "var(--color-ink)" }}
+                >
                   {getMistakeTitle(mistake)}
                 </h3>
-                <p className="mt-1 text-xs" style={{ color: "var(--color-muted)" }}>
-                  {mistake.topic || "综合"} · {mistake.concept} · 错误 {mistake.attempt_count} 次
+                <p
+                  className="mt-1 text-xs"
+                  style={{ color: "var(--color-muted)" }}
+                >
+                  {mistake.topic || "综合"} · {mistake.concept} · 错误{" "}
+                  {mistake.attempt_count} 次
                 </p>
               </div>
               <span
-                className="shrink-0 px-2 py-1 text-xs font-medium"
-                style={{
-                  borderRadius: "var(--radius-sm)",
-                  background: "var(--color-surface)",
-                  color: selected ? "var(--color-primary)" : "var(--color-muted)",
-                  border: "1px solid var(--color-border)",
-                }}
+                className="review-status-badge shrink-0 px-2 py-1 text-xs font-medium"
+                data-selected={selected}
               >
                 {REVIEW_STATUS_LABELS[mistake.status] ?? mistake.status}
               </span>
@@ -97,13 +85,7 @@ export function MistakeList({
                   event.stopPropagation();
                   onRetestConcept(mistake.concept);
                 }}
-                className="px-2.5 py-1 text-xs font-medium"
-                style={{
-                  borderRadius: "var(--radius-md)",
-                  border: "1px solid var(--color-border)",
-                  background: "var(--color-surface)",
-                  color: "var(--color-primary)",
-                }}
+                className="review-secondary-button mistake-list-retest px-2.5 py-1 text-xs font-medium"
               >
                 再测此题知识点
               </button>

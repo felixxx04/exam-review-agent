@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import datetime
+import re
 from typing import Any
 
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
@@ -11,8 +12,18 @@ from app.db.models import Conversation, ConversationMessage, LearningProfile, Me
 
 
 DEFAULT_USER_NAME = "Default User"
+DEFAULT_CONVERSATION_TITLE = "新的复习会话"
+DEFAULT_CONVERSATION_TITLES = {
+    DEFAULT_CONVERSATION_TITLE,
+    "默认复习会话",
+    "New Conversation",
+}
+MAX_CONVERSATION_TITLE_LENGTH = 60
 RECENT_MESSAGE_LIMIT = 12
 SUMMARY_MESSAGE_INTERVAL = 6
+TITLE_PREFIX_RE = re.compile(r"^(请帮我|帮我|请你|请|麻烦你|我想|我需要|我)\s*")
+TITLE_ENDING_CHARS = " \t\r\n，,。.!！?？;；:："
+LEGACY_ELLIPSIZED_TITLE_SUFFIX = "..."
 
 
 class MemoryService:
@@ -60,7 +71,7 @@ class MemoryService:
     async def create_conversation(
         self,
         user_id: str = "default",
-        title: str = "新的复习会话",
+        title: str = DEFAULT_CONVERSATION_TITLE,
     ) -> Conversation:
         user = await self.get_or_create_default_user(user_id)
         conversation = Conversation(user_id=user.id, title=title)
@@ -100,20 +111,28 @@ class MemoryService:
         material_scope: list[str] | None = None,
         metadata: dict[str, Any] | None = None,
     ) -> ConversationMessage:
+        role_value = MessageRole(role)
         message = ConversationMessage(
             conversation_id=conversation_id,
-            role=MessageRole(role),
+            role=role_value,
             content=content,
             material_scope=material_scope,
             message_metadata=metadata or {},
         )
         conversation = await self.db.get(Conversation, conversation_id)
         if conversation is not None:
+            should_name_conversation = (
+                role_value == MessageRole.USER
+                and (conversation.message_count or 0) == 0
+                and conversation.title in DEFAULT_CONVERSATION_TITLES
+            )
             now = datetime.datetime.now(datetime.UTC)
             conversation.message_count = (conversation.message_count or 0) + 1
             conversation.last_message_at = now
             conversation.updated_at = now
             conversation.material_scope = material_scope
+            if should_name_conversation:
+                conversation.title = self._conversation_title_from_message(content)
         self.db.add(message)
         await self.db.commit()
         await self.db.refresh(message)
@@ -131,6 +150,44 @@ class MemoryService:
             .limit(limit)
         )
         return list(reversed(result.scalars().all()))
+
+    async def autotitle_default_conversation(
+        self,
+        conversation: Conversation,
+    ) -> Conversation:
+        should_rebuild_title = (
+            conversation.title in DEFAULT_CONVERSATION_TITLES
+            or conversation.title.endswith(LEGACY_ELLIPSIZED_TITLE_SUFFIX)
+        )
+        if not should_rebuild_title:
+            return conversation
+
+        result = await self.db.execute(
+            select(ConversationMessage)
+            .where(
+                ConversationMessage.conversation_id == conversation.id,
+                ConversationMessage.role == MessageRole.USER,
+            )
+            .order_by(
+                ConversationMessage.created_at.asc(),
+                ConversationMessage.id.asc(),
+            )
+            .limit(1)
+        )
+        first_user_message = result.scalar_one_or_none()
+        if first_user_message is None:
+            return conversation
+
+        title = self._conversation_title_from_message(first_user_message.content)
+        if title == conversation.title:
+            return conversation
+
+        original_updated_at = conversation.updated_at
+        conversation.title = title
+        conversation.updated_at = original_updated_at
+        await self.db.commit()
+        await self.db.refresh(conversation)
+        return conversation
 
     async def build_memory_context(
         self,
@@ -247,3 +304,15 @@ class MemoryService:
     @staticmethod
     def _role_value(role: str | MessageRole) -> str:
         return role.value if hasattr(role, "value") else str(role)
+
+    @staticmethod
+    def _conversation_title_from_message(content: str) -> str:
+        normalized = " ".join(content.split())
+        normalized = TITLE_PREFIX_RE.sub("", normalized).strip(TITLE_ENDING_CHARS)
+        first_sentence = re.split(r"[。！？!?；;]", normalized, maxsplit=1)[0]
+        title = first_sentence.strip(TITLE_ENDING_CHARS)
+        if not title:
+            return DEFAULT_CONVERSATION_TITLE
+        if len(title) <= MAX_CONVERSATION_TITLE_LENGTH:
+            return title
+        return title[:MAX_CONVERSATION_TITLE_LENGTH].rstrip(TITLE_ENDING_CHARS)

@@ -5,9 +5,13 @@ import { useChatStream } from "@/hooks/useChatStream";
 import { useChatStore } from "@/stores/chatStore";
 import { Send, Square } from "lucide-react";
 
-export function ChatInput() {
+interface ChatInputProps {
+  onConversationChange?: () => void;
+}
+
+export function ChatInput({ onConversationChange }: ChatInputProps) {
   const [text, setText] = useState("");
-  const { sendMessage, abort } = useChatStream();
+  const { sendMessage, abort } = useChatStream({ onConversationChange });
   const { isStreaming } = useChatStore();
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
