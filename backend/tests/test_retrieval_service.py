@@ -18,6 +18,7 @@ class _FakeVectorStore:
     def add(self, user_id, embeddings, documents, metadatas, ids=None):
         self.documents.extend(
             {
+                "user_id": user_id,
                 "id": doc_id,
                 "document": document,
                 "metadata": metadata,
@@ -28,7 +29,9 @@ class _FakeVectorStore:
         return ids
 
     def search(self, user_id, query_embedding, top_k=10, metadata_filter=None):
-        results = self.documents
+        results = [
+            item for item in self.documents if item["user_id"] == user_id
+        ]
         if metadata_filter:
             for key, expected in metadata_filter.items():
                 if isinstance(expected, dict) and "$in" in expected:
@@ -44,7 +47,11 @@ class _FakeVectorStore:
         return results[:top_k]
 
     def delete(self, user_id, ids):
-        self.documents = [item for item in self.documents if item["id"] not in ids]
+        self.documents = [
+            item
+            for item in self.documents
+            if item["user_id"] != user_id or item["id"] not in ids
+        ]
 
 
 class _FakeEmbeddingService:
@@ -185,3 +192,30 @@ async def test_batch_index_large_documents(make_retrieval_service):
     assert len(chunk_ids) == 10
     results = await service.search("test-user-batch", "机器学习", top_k=5)
     assert len(results) >= 1
+
+
+@pytest.mark.asyncio
+async def test_retrieval_isolated_between_courses_for_the_same_user(
+    make_retrieval_service,
+):
+    service = make_retrieval_service()
+    await service.index_chunks(
+        "same-user",
+        [{"text": "公共主题 数据库事务", "metadata": {"source": "db.pdf"}}],
+        course_id=101,
+    )
+    await service.index_chunks(
+        "same-user",
+        [{"text": "公共主题 网络协议", "metadata": {"source": "net.pdf"}}],
+        course_id=202,
+    )
+
+    database_results = await service.search(
+        "same-user", "公共主题", top_k=5, course_id=101
+    )
+    network_results = await service.search(
+        "same-user", "公共主题", top_k=5, course_id=202
+    )
+
+    assert {result.metadata["source"] for result in database_results} == {"db.pdf"}
+    assert {result.metadata["source"] for result in network_results} == {"net.pdf"}
