@@ -2,6 +2,15 @@ import pytest
 from app.services.retrieval_service import RetrievalService, SearchResult
 
 
+def test_constructor_does_not_open_persistent_vector_store(monkeypatch):
+    def fail_if_opened():
+        raise AssertionError("persistent vector store opened during construction")
+
+    monkeypatch.setattr("app.services.retrieval_service.VectorStore", fail_if_opened)
+
+    RetrievalService(embedding_service=_FakeEmbeddingService())
+
+
 class _FakeVectorStore:
     def __init__(self):
         self.documents = []
@@ -51,9 +60,28 @@ class _FakeCrossEncoder:
         return [0.9 for _ in pairs]
 
 
+@pytest.fixture
+def make_retrieval_service(monkeypatch):
+    """Build an isolated retrieval service without loading ML models."""
+    monkeypatch.setattr(
+        RetrievalService,
+        "_get_cross_encoder",
+        classmethod(lambda cls: _FakeCrossEncoder()),
+    )
+
+    def factory(**kwargs):
+        return RetrievalService(
+            vector_store=_FakeVectorStore(),
+            embedding_service=_FakeEmbeddingService(),
+            **kwargs,
+        )
+
+    return factory
+
+
 @pytest.mark.asyncio
-async def test_hybrid_search_returns_ranked_results():
-    service = RetrievalService()
+async def test_hybrid_search_returns_ranked_results(make_retrieval_service):
+    service = make_retrieval_service()
     await service.index_chunks("test-user", [
         {"text": "薛定谔方程描述量子态随时间的演化", "metadata": {"source": "quantum.pdf", "page": 23}},
         {"text": "矩阵的特征值是满足det(A-λI)=0的λ", "metadata": {"source": "linalg.pdf", "page": 45}},
@@ -64,8 +92,8 @@ async def test_hybrid_search_returns_ranked_results():
 
 
 @pytest.mark.asyncio
-async def test_search_result_has_required_fields():
-    service = RetrievalService()
+async def test_search_result_has_required_fields(make_retrieval_service):
+    service = make_retrieval_service()
     await service.index_chunks("test-user-fields", [
         {"text": "量子力学的基本原理包括波粒二象性", "metadata": {"source": "physics.pdf", "page": 10}},
     ])
@@ -79,8 +107,8 @@ async def test_search_result_has_required_fields():
 
 
 @pytest.mark.asyncio
-async def test_index_and_delete_chunks():
-    service = RetrievalService()
+async def test_index_and_delete_chunks(make_retrieval_service):
+    service = make_retrieval_service()
     chunk_ids = await service.index_chunks("test-user-del", [
         {"text": "测试内容一", "metadata": {"source": "test.pdf", "page": 1}},
         {"text": "测试内容二", "metadata": {"source": "test.pdf", "page": 2}},
@@ -92,8 +120,8 @@ async def test_index_and_delete_chunks():
 
 
 @pytest.mark.asyncio
-async def test_search_with_quality_gate_filters_low_relevance():
-    service = RetrievalService(quality_threshold=0.5)
+async def test_search_with_quality_gate_filters_low_relevance(make_retrieval_service):
+    service = make_retrieval_service(quality_threshold=0.5)
     await service.index_chunks("test-user-gate", [
         {"text": "Java是一种面向对象的编程语言", "metadata": {"source": "cs.pdf", "page": 1}},
     ])
@@ -104,8 +132,8 @@ async def test_search_with_quality_gate_filters_low_relevance():
 
 
 @pytest.mark.asyncio
-async def test_metadata_filtering_in_search():
-    service = RetrievalService()
+async def test_metadata_filtering_in_search(make_retrieval_service):
+    service = make_retrieval_service()
     await service.index_chunks("test-user-filter", [
         {"text": "线性代数的基本概念", "metadata": {"source": "linalg.pdf", "page": 1}},
         {"text": "概率论中的贝叶斯公式", "metadata": {"source": "prob.pdf", "page": 15}},
@@ -147,8 +175,8 @@ async def test_metadata_filtering_applies_to_bm25_results(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_batch_index_large_documents():
-    service = RetrievalService()
+async def test_batch_index_large_documents(make_retrieval_service):
+    service = make_retrieval_service()
     chunks = [
         {"text": f"文档片段 {i} 的内容，涉及人工智能和机器学习的基本原理", "metadata": {"source": "ai.pdf", "page": i // 5 + 1}}
         for i in range(10)

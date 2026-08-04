@@ -1,18 +1,61 @@
+import gc
+import os
+import tempfile
+from unittest.mock import AsyncMock
+
 import pytest
 from httpx import ASGITransport, AsyncClient
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
-from unittest.mock import AsyncMock
+
+# Tests must never inherit developer credentials or persistent data paths.
+_test_data_dir = tempfile.TemporaryDirectory(prefix="exam-review-agent-tests-")
+os.environ.update(
+    {
+        "DATABASE_URL": "sqlite+aiosqlite:///:memory:",
+        "REDIS_URL": "redis://127.0.0.1:6379/15",
+        "CHROMA_PERSIST_DIR": os.path.join(_test_data_dir.name, "chroma"),
+        "DEEPSEEK_API_KEY": "",
+        "MINIMAX_API_KEY": "",
+        "GLM_API_KEY": "",
+        "ARK_API_KEY": "",
+        "DEFAULT_LLM_PROVIDER": "deepseek",
+        "JWT_SECRET": "test-only-secret-with-at-least-32-chars",
+        "HF_ENDPOINT": "",
+    }
+)
 
 from app.db.database import get_db
-from app.db.models import Base
+from app.core.auth import AuthenticatedUser, get_current_user
+from app.db.models import Base, User
 from app.main import app
+from app.repositories.mistakes import SqlAlchemyMistakeRepository
+
+
+@pytest.fixture(scope="session", autouse=True)
+def cleanup_test_data():
+    yield
+
+    from chromadb.api.client import SharedSystemClient
+
+    SharedSystemClient.clear_system_cache()
+    gc.collect()
+    _test_data_dir.cleanup()
 
 
 @pytest.fixture
 async def client():
+    app.dependency_overrides[get_current_user] = lambda: AuthenticatedUser(
+        id=1,
+        username="test_user",
+        role="user",
+        session_id="test-session",
+    )
     transport = ASGITransport(app=app)
-    async with AsyncClient(transport=transport, base_url="http://test") as c:
-        yield c
+    try:
+        async with AsyncClient(transport=transport, base_url="http://test") as c:
+            yield c
+    finally:
+        app.dependency_overrides.pop(get_current_user, None)
 
 
 @pytest.fixture
@@ -30,17 +73,44 @@ async def db_session():
 
 
 @pytest.fixture
-async def client_with_db(db_session):
+async def authenticated_user(db_session):
+    user = User(
+        username="test_user",
+        email=None,
+        hashed_password="test-password-hash",
+        display_name="Test User",
+        role="user",
+    )
+    db_session.add(user)
+    await db_session.commit()
+    await db_session.refresh(user)
+    return user
+
+
+@pytest.fixture
+async def client_with_db(db_session, authenticated_user):
     async def override_get_db():
         yield db_session
 
     app.dependency_overrides[get_db] = override_get_db
+    app.dependency_overrides[get_current_user] = lambda: AuthenticatedUser(
+        id=authenticated_user.id,
+        username=authenticated_user.username,
+        role=authenticated_user.role,
+        session_id="test-session",
+    )
 
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as c:
         yield c
 
-    app.dependency_overrides.clear()
+    app.dependency_overrides.pop(get_db, None)
+    app.dependency_overrides.pop(get_current_user, None)
+
+
+@pytest.fixture
+def mistake_repository(db_session, authenticated_user):
+    return SqlAlchemyMistakeRepository(db_session)
 
 
 @pytest.fixture

@@ -133,11 +133,17 @@ describe("ReviewWorkbench", () => {
     render(<ReviewWorkbench />);
 
     expect(await screen.findByText("待复习错题")).toBeInTheDocument();
-    expect(screen.getAllByText("矩阵 A 的特征值定义是什么？").length).toBeGreaterThan(0);
+    expect(
+      screen.getAllByText("矩阵 A 的特征值定义是什么？").length,
+    ).toBeGreaterThan(0);
     expect(screen.getByText("错误答案")).toBeInTheDocument();
     expect(screen.getByText(/复习历史/)).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /保存订正/ })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /标记已掌握/ })).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: /保存订正/ }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: /标记已掌握/ }),
+    ).toBeInTheDocument();
   });
 
   it("saves a correction note", async () => {
@@ -179,7 +185,9 @@ describe("ReviewWorkbench", () => {
     const user = userEvent.setup();
     render(<ReviewWorkbench />);
 
-    await user.click(await screen.findByRole("button", { name: /再测 特征值/ }));
+    await user.click(
+      await screen.findByRole("button", { name: /再测 特征值/ }),
+    );
 
     expect(api.quiz.generate).toHaveBeenCalledWith("特征值", 0.3, 3);
     expect(useChatStore.getState().mode).toBe("quiz");
@@ -189,11 +197,15 @@ describe("ReviewWorkbench", () => {
     const user = userEvent.setup();
     render(<ReviewWorkbench />);
 
-    await user.click(await screen.findByRole("button", { name: /开始今日复习/ }));
+    await user.click(
+      await screen.findByRole("button", { name: /开始今日复习/ }),
+    );
 
     expect(api.review.dailySession).toHaveBeenCalledWith({ limit: 5 });
     expect(await screen.findByText("今日复习 1 / 1")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /显示答案/ })).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: /显示答案/ }),
+    ).toBeInTheDocument();
   });
 
   it("generates a similar quiz from the selected mistake", async () => {
@@ -210,7 +222,9 @@ describe("ReviewWorkbench", () => {
     const user = userEvent.setup();
     render(<ReviewWorkbench />);
 
-    await user.click(await screen.findByRole("button", { name: /生成错因分析/ }));
+    await user.click(
+      await screen.findByRole("button", { name: /生成错因分析/ }),
+    );
 
     expect(api.review.explainMistake).toHaveBeenCalledWith("m1");
     expect(await screen.findByText(/正确答案是 B/)).toBeInTheDocument();
@@ -220,7 +234,9 @@ describe("ReviewWorkbench", () => {
     const user = userEvent.setup();
     render(<ReviewWorkbench />);
 
-    await user.click(await screen.findByRole("button", { name: /生成复习计划/ }));
+    await user.click(
+      await screen.findByRole("button", { name: /生成复习计划/ }),
+    );
     await user.click(screen.getByRole("button", { name: /确认生成/ }));
 
     expect(api.review.studyPlan).toHaveBeenCalled();
@@ -232,9 +248,13 @@ describe("ReviewWorkbench", () => {
     const user = userEvent.setup();
     render(<ReviewWorkbench />);
 
-    await user.click(await screen.findByRole("button", { name: /导出 Markdown/ }));
+    await user.click(
+      await screen.findByRole("button", { name: /导出 Markdown/ }),
+    );
 
-    expect(api.review.exportMistakes).toHaveBeenCalledWith({ format: "markdown" });
+    expect(api.review.exportMistakes).toHaveBeenCalledWith({
+      format: "markdown",
+    });
     expect(await screen.findByText(/# 错题导出/)).toBeInTheDocument();
   });
 });

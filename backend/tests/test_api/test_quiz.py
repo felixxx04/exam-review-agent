@@ -2,8 +2,6 @@ from __future__ import annotations
 
 import pytest
 
-from app.core.store import get_shared_store
-
 
 class TestQuizGenerate:
 
@@ -27,14 +25,9 @@ class TestQuizGenerate:
 
 
 class TestQuizSubmit:
-
-    @pytest.fixture(autouse=True)
-    def clear_shared_store(self):
-        get_shared_store()._records.clear()
-
     @pytest.mark.asyncio
-    async def test_submit_correct_answer(self, client):
-        response = await client.post(
+    async def test_submit_correct_answer(self, client_with_db):
+        response = await client_with_db.post(
             "/api/quiz/submit",
             params={
                 "question_id": "q1",
@@ -48,8 +41,8 @@ class TestQuizSubmit:
         assert data["is_correct"] is True
 
     @pytest.mark.asyncio
-    async def test_submit_wrong_answer(self, client):
-        response = await client.post(
+    async def test_submit_wrong_answer(self, client_with_db):
+        response = await client_with_db.post(
             "/api/quiz/submit",
             params={
                 "question_id": "q2",
@@ -63,8 +56,8 @@ class TestQuizSubmit:
         assert data["is_correct"] is False
 
     @pytest.mark.asyncio
-    async def test_submit_fill_blank_case_insensitive(self, client):
-        response = await client.post(
+    async def test_submit_fill_blank_case_insensitive(self, client_with_db):
+        response = await client_with_db.post(
             "/api/quiz/submit",
             params={
                 "question_id": "q3",
@@ -78,8 +71,12 @@ class TestQuizSubmit:
         assert data["is_correct"] is True
 
     @pytest.mark.asyncio
-    async def test_submit_wrong_answer_records_question_context(self, client):
-        response = await client.post(
+    async def test_submit_wrong_answer_records_question_context(
+        self,
+        client_with_db,
+        mistake_repository,
+    ):
+        response = await client_with_db.post(
             "/api/quiz/submit",
             json={
                 "question_id": "q-context",
@@ -99,10 +96,7 @@ class TestQuizSubmit:
         data = response.json()["data"]
         assert data["mistake_recorded"] is True
 
-        mistakes = await get_shared_store().query({
-            "user_id": "default",
-            "type": "mistake_records",
-        })
+        mistakes = await mistake_repository.list_for_user("1")
         assert len(mistakes) == 1
         assert mistakes[0]["question_text"] == "矩阵 A 的特征值定义是什么？"
         assert mistakes[0]["explanation"] == "特征值满足 Ax = λx。"

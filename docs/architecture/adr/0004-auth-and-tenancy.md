@@ -1,0 +1,48 @@
+# ADR-0004：认证与租户隔离
+
+- 状态：Accepted
+- 日期：2026-08-03
+- 实现：Task 1.2 已完成，等待验收（2026-08-04）
+
+## 背景
+
+Task 1.2 之前，路由固定使用 `user_id="default"`，Bearer Token 只是占位判断。V2 面向少量受邀同学，但资料、向量、测验、记忆和 Agent Trace 都必须完全隔离。
+
+## 决策
+
+1. 仅允许邀请码注册用户名/密码账号。邀请码可设置总次数、到期时间和禁用状态，消费必须在数据库事务内完成。
+2. 密码使用 Argon2id 哈希。Access Token 短期有效；Refresh Token 每次使用后轮换，只保存不可逆哈希并支持逐会话撤销。
+3. Web 默认通过 `Secure`、`HttpOnly`、`SameSite=Lax` Cookie 传递会话，不在 `localStorage` 保存长期 Token。状态变更请求执行 CSRF 防护。
+4. 受保护 API 只从认证上下文获得 `user_id` 和角色。请求体、查询参数或 URL 中出现的资源 ID 必须再次验证租户归属。
+5. Repository 的租户条件是主要隔离边界；PostgreSQL 对直接用户数据表启用 RLS 作为纵深防御，Worker 在事务中设置可信租户上下文。
+6. 管理员使用独立角色和审计路径，不通过伪造普通用户 ID 查看数据。默认管理能力只包含邀请码、账号禁用和任务状态。
+
+## 数据访问规则
+
+- 每个用户拥有私人课程，课程、资料、Chunk、会话、测验、复习、记忆和 Run 不跨用户共享。
+- 所有查询先按认证用户限定父实体，再解析子资源；不存在与无权访问统一返回 `404`，避免枚举资源。
+- 向量、全文检索、对象 Key、缓存键、Job Payload 和 Agent 工具调用都必须携带同一可信租户范围。
+- 缓存不得只用资源 ID 作为 Key；至少包含用户 ID 和资源版本。
+- 自动化测试必须包含跨用户读取、修改、删除、检索和签名 URL 的 IDOR 场景。
+
+## 禁用与删除
+
+- 禁用账号立即拒绝新 Access/Refresh Token，并撤销现有 Refresh Token；已排队 Job 在下一安全边界取消。
+- 账号删除创建可查询的幂等删除任务，清除数据库业务数据、向量、对象、Token 和可识别 Trace。
+- 删除失败保持明确状态并重试，不能向用户报告已经完成。
+- 匿名聚合指标可以保留，但不得包含可反查用户或资料的标识与正文。
+
+## 结果
+
+租户身份从 HTTP 请求贯穿数据库、队列、对象存储和检索路径，降低 IDOR 与后台任务串租户风险。代价是 Repository、Worker 和测试都必须显式维护租户上下文。
+
+## Task 1.2 实现说明
+
+- 用户名规范化后唯一；密码只保存 Argon2id 哈希。管理员由本地 CLI 引导创建，普通用户只能消费有效邀请码注册。
+- Access Token 默认 15 分钟，Refresh Token 默认 30 天。Refresh Token 和 CSRF Token 只以 SHA-256 哈希存储；每次刷新轮换，旧 Token 重用会撤销同一会话。
+- 浏览器使用 `Secure`、`HttpOnly`、`SameSite=Lax` Cookie；开发环境仅可在本地 HTTP 显式关闭 `Secure`。Cookie 认证的状态变更必须通过双提交 CSRF 校验；Bearer 客户端不依赖浏览器 CSRF Cookie。
+- 禁用账号会撤销其活动 Refresh Token，已有 Access Token 也会在每次请求时因账号或会话状态校验而失效。
+- 现有 Chat、Conversation、Material、Quiz、Review 和 Memory API 已从可信认证上下文获取用户；直接租户表在 PostgreSQL 中启用并强制执行 RLS。每次新事务自动重绑租户上下文，独立 SessionFactory 也必须显式绑定可信用户。
+- 本地 PostgreSQL 使用独立 bootstrap 管理员创建 `NOSUPERUSER NOBYPASSRLS` 的 `exam_review` 应用角色；Alembic 与运行时都使用应用角色，避免超级用户绕过 RLS。
+- PostgreSQL 17.8 + pgvector 0.8.1 已完成在线 migration 往返、跨事务 RLS、越权写拒绝和 readiness 联调。
+- Task 1.2 不包含私人多课程、账号删除/配额、对象存储或 Agent Runtime。

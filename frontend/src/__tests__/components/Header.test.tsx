@@ -5,8 +5,17 @@ import { Header } from "@/components/Header";
 import { api } from "@/lib/api";
 import { useChatStore } from "@/stores/chatStore";
 
+const replace = vi.fn();
+
+vi.mock("next/navigation", () => ({
+  useRouter: () => ({ replace }),
+}));
+
 vi.mock("@/lib/api", () => ({
   api: {
+    auth: {
+      logout: vi.fn(),
+    },
     conversations: {
       create: vi.fn(),
     },
@@ -22,6 +31,8 @@ describe("Header", () => {
       isStreaming: false,
       materialScope: [],
     });
+    replace.mockReset();
+    vi.mocked(api.auth.logout).mockReset();
     vi.mocked(api.conversations.create).mockReset();
   });
 
@@ -88,5 +99,16 @@ describe("Header", () => {
     expect(useChatStore.getState().mode).toBe("ask");
     expect(useChatStore.getState().materialScope).toEqual([]);
     expect(onConversationChange).toHaveBeenCalledOnce();
+  });
+
+  it("logs out the current session and returns to login", async () => {
+    vi.mocked(api.auth.logout).mockResolvedValue({ status: "logged_out" });
+    const user = userEvent.setup();
+    render(<Header />);
+
+    await user.click(screen.getByRole("button", { name: "退出登录" }));
+
+    expect(api.auth.logout).toHaveBeenCalledOnce();
+    expect(replace).toHaveBeenCalledWith("/login");
   });
 });

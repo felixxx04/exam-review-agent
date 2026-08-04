@@ -1,10 +1,12 @@
 from __future__ import annotations
 
-from fastapi import APIRouter, Body, HTTPException
+from fastapi import APIRouter, Body, Depends, HTTPException
 
 from app.agents.quiz_agent import QuizAgent
 from app.agents.tracker_agent import TrackerAgent
-from app.core.store import get_shared_store
+from app.api.dependencies import get_mistake_repository
+from app.core.auth import AuthenticatedUser, get_current_user
+from app.repositories.mistakes import MistakeRepository
 from app.schemas.common import ApiResponse
 from app.schemas.quiz import QuizRequest, QuizSubmitRequest, to_quiz_payload
 from app.services.llm_service import get_default_llm_service
@@ -22,10 +24,13 @@ def _build_quiz_agent() -> QuizAgent:
 
 
 @router.post("/generate")
-async def generate_quiz(request: QuizRequest):
+async def generate_quiz(
+    request: QuizRequest,
+    current_user: AuthenticatedUser = Depends(get_current_user),
+):
     agent = _build_quiz_agent()
     response = await agent.generate_quiz(
-        user_id="default",
+        user_id=current_user.subject,
         topic=request.topic,
         difficulty=request.difficulty,
         count=request.count,
@@ -43,6 +48,8 @@ async def submit_answer(
     question_type: str = "multiple_choice",
     concept: str = "",
     topic: str = "",
+    current_user: AuthenticatedUser = Depends(get_current_user),
+    mistake_repository: MistakeRepository = Depends(get_mistake_repository),
 ):
     if payload is None:
         if question_id is None or correct_answer is None or student_answer is None:
@@ -56,10 +63,12 @@ async def submit_answer(
             topic=topic,
         )
 
-    llm = get_default_llm_service()
-    tracker = TrackerAgent(db=get_shared_store(), llm_service=llm)
+    tracker = TrackerAgent(
+        mistake_repository=mistake_repository,
+        llm_service=None,
+    )
     result = await tracker.score_answer(
-        user_id="default",
+        user_id=current_user.subject,
         question_id=payload.question_id,
         correct_answer=payload.correct_answer,
         student_answer=payload.student_answer,

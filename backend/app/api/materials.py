@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import datetime
 import hashlib
+import re
 import uuid
 from pathlib import Path
 
@@ -11,12 +12,12 @@ from fastapi import APIRouter, Depends, HTTPException, UploadFile
 from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.auth import AuthenticatedUser, get_current_user
 from app.core.config import settings
 from app.db.database import get_db
 from app.db.models import FileType, Material, MaterialChunk, ProcessingStatus
 from app.schemas.common import ApiResponse
 from app.schemas.materials import MaterialListResponse, MaterialResponse
-from app.services.memory_service import MemoryService
 
 router = APIRouter(prefix="/api/materials", tags=["materials"])
 
@@ -27,6 +28,11 @@ ALLOWED_TYPES = {
 }
 
 UPLOAD_DIR = Path("uploads")
+
+
+def _lexical_tokens(text: str) -> str:
+    tokens = re.findall(r"[\u4e00-\u9fff]|[A-Za-z0-9_]+", text.lower())
+    return " ".join(tokens)
 
 
 def _check_file_type(filename: str) -> FileType:
@@ -46,13 +52,12 @@ def _check_file_type(filename: str) -> FileType:
 @router.post("")
 async def upload_material(
     file: UploadFile,
+    current_user: AuthenticatedUser = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
     if file.filename is None:
         raise HTTPException(status_code=400, detail="文件名不能为空")
 
-    memory = MemoryService(db)
-    user = await memory.get_or_create_default_user(user_id="default")
     file_type = _check_file_type(file.filename)
     content = await file.read()
     file_size = len(content)
@@ -70,7 +75,7 @@ async def upload_material(
     file_path.write_bytes(content)
 
     material = Material(
-        user_id=user.id,
+        user_id=current_user.id,
         filename=storage_name,
         original_filename=file.filename,
         file_type=file_type,
@@ -118,18 +123,23 @@ async def upload_material(
             }
             chunk_payloads.append(payload)
         chunk_ids = await retrieval.index_chunks(
-            user_id="default",
+            user_id=current_user.subject,
             chunks=chunk_payloads,
         )
         for chunk_id, chunk in zip(chunk_ids, chunk_payloads, strict=False):
             metadata = chunk.get("metadata", {}) or {}
+            chunk_text = chunk.get("text") or ""
             db.add(
                 MaterialChunk(
                     material_id=material.id,
                     chunk_id=chunk_id,
-                    text_preview=(chunk.get("text") or "")[:300],
+                    content=chunk_text,
+                    text_preview=chunk_text[:300],
                     page_number=metadata.get("page"),
-                    token_count=len(chunk.get("text") or ""),
+                    token_count=len(chunk_text),
+                    content_hash=hashlib.sha256(chunk_text.encode("utf-8")).hexdigest(),
+                    lexical_tokens=_lexical_tokens(chunk_text),
+                    chunk_metadata=metadata,
                     embedding_id=chunk_id,
                 )
             )
@@ -151,10 +161,13 @@ async def upload_material(
 
 @router.get("")
 async def list_materials(
+    current_user: AuthenticatedUser = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
     result = await db.execute(
-        select(Material).order_by(Material.created_at.desc())
+        select(Material)
+        .where(Material.user_id == current_user.id)
+        .order_by(Material.created_at.desc())
     )
     materials = result.scalars().all()
     response = MaterialListResponse(
@@ -167,9 +180,17 @@ async def list_materials(
 @router.get("/{material_id}")
 async def get_material(
     material_id: int,
+    current_user: AuthenticatedUser = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    material = await db.get(Material, material_id)
+    material = (
+        await db.execute(
+            select(Material).where(
+                Material.id == material_id,
+                Material.user_id == current_user.id,
+            )
+        )
+    ).scalar_one_or_none()
     if material is None:
         raise HTTPException(status_code=404, detail="材料不存在")
     return ApiResponse.ok(data=MaterialResponse.model_validate(material))
@@ -178,9 +199,17 @@ async def get_material(
 @router.delete("/{material_id}")
 async def delete_material(
     material_id: int,
+    current_user: AuthenticatedUser = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    material = await db.get(Material, material_id)
+    material = (
+        await db.execute(
+            select(Material).where(
+                Material.id == material_id,
+                Material.user_id == current_user.id,
+            )
+        )
+    ).scalar_one_or_none()
     if material is None:
         raise HTTPException(status_code=404, detail="材料不存在")
 
@@ -195,7 +224,9 @@ async def delete_material(
     if chunk_ids:
         from app.services.retrieval_service import RetrievalService
 
-        await RetrievalService().delete_chunks(user_id="default", chunk_ids=chunk_ids)
+        await RetrievalService().delete_chunks(
+            user_id=current_user.subject, chunk_ids=chunk_ids
+        )
 
     await db.execute(delete(MaterialChunk).where(MaterialChunk.material_id == material_id))
     await db.delete(material)
@@ -207,9 +238,17 @@ async def delete_material(
 @router.post("/{material_id}/reprocess")
 async def reprocess_material(
     material_id: int,
+    current_user: AuthenticatedUser = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    material = await db.get(Material, material_id)
+    material = (
+        await db.execute(
+            select(Material).where(
+                Material.id == material_id,
+                Material.user_id == current_user.id,
+            )
+        )
+    ).scalar_one_or_none()
     if material is None:
         raise HTTPException(status_code=404, detail="材料不存在")
 

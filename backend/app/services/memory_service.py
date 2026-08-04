@@ -9,9 +9,9 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models import Conversation, ConversationMessage, LearningProfile, MessageRole, User
+from app.repositories.users import UserRepository
 
 
-DEFAULT_USER_NAME = "Default User"
 DEFAULT_CONVERSATION_TITLE = "新的复习会话"
 DEFAULT_CONVERSATION_TITLES = {
     DEFAULT_CONVERSATION_TITLE,
@@ -29,29 +29,18 @@ LEGACY_ELLIPSIZED_TITLE_SUFFIX = "..."
 class MemoryService:
     def __init__(self, db: AsyncSession) -> None:
         self.db = db
+        self.users = UserRepository(db)
 
-    async def get_or_create_default_user(self, user_id: str = "default") -> User:
-        result = await self.db.execute(
-            select(User).where(User.email == f"{user_id}@example.local")
-        )
-        user = result.scalar_one_or_none()
-        if user is not None:
-            return user
-
-        user = User(
-            email=f"{user_id}@example.local",
-            hashed_password="local-memory-user",
-            display_name=DEFAULT_USER_NAME,
-        )
-        self.db.add(user)
-        await self.db.commit()
-        await self.db.refresh(user)
+    async def get_user(self, user_id: str | int) -> User:
+        user = await self.users.get_by_subject(user_id)
+        if user is None:
+            raise ValueError("Authenticated user does not exist")
         return user
 
     async def get_or_create_active_conversation(
-        self, user_id: str = "default"
+        self, user_id: str | int
     ) -> Conversation:
-        user = await self.get_or_create_default_user(user_id)
+        user = await self.get_user(user_id)
         result = await self.db.execute(
             select(Conversation)
             .where(Conversation.user_id == user.id)
@@ -70,10 +59,10 @@ class MemoryService:
 
     async def create_conversation(
         self,
-        user_id: str = "default",
+        user_id: str | int,
         title: str = DEFAULT_CONVERSATION_TITLE,
     ) -> Conversation:
-        user = await self.get_or_create_default_user(user_id)
+        user = await self.get_user(user_id)
         conversation = Conversation(user_id=user.id, title=title)
         self.db.add(conversation)
         await self.db.commit()
@@ -81,9 +70,9 @@ class MemoryService:
         return conversation
 
     async def get_or_create_learning_profile(
-        self, user_id: str = "default"
+        self, user_id: str | int
     ) -> LearningProfile:
-        user = await self.get_or_create_default_user(user_id)
+        user = await self.get_user(user_id)
         result = await self.db.execute(
             select(LearningProfile).where(LearningProfile.user_id == user.id)
         )
@@ -105,12 +94,16 @@ class MemoryService:
 
     async def save_message(
         self,
+        user_id: str | int,
         conversation_id: int,
         role: str,
         content: str,
         material_scope: list[str] | None = None,
         metadata: dict[str, Any] | None = None,
     ) -> ConversationMessage:
+        conversation = await self.get_conversation(user_id, conversation_id)
+        if conversation is None:
+            raise ValueError("Conversation not found")
         role_value = MessageRole(role)
         message = ConversationMessage(
             conversation_id=conversation_id,
@@ -119,20 +112,18 @@ class MemoryService:
             material_scope=material_scope,
             message_metadata=metadata or {},
         )
-        conversation = await self.db.get(Conversation, conversation_id)
-        if conversation is not None:
-            should_name_conversation = (
-                role_value == MessageRole.USER
-                and (conversation.message_count or 0) == 0
-                and conversation.title in DEFAULT_CONVERSATION_TITLES
-            )
-            now = datetime.datetime.now(datetime.UTC)
-            conversation.message_count = (conversation.message_count or 0) + 1
-            conversation.last_message_at = now
-            conversation.updated_at = now
-            conversation.material_scope = material_scope
-            if should_name_conversation:
-                conversation.title = self._conversation_title_from_message(content)
+        should_name_conversation = (
+            role_value == MessageRole.USER
+            and (conversation.message_count or 0) == 0
+            and conversation.title in DEFAULT_CONVERSATION_TITLES
+        )
+        now = datetime.datetime.now(datetime.UTC)
+        conversation.message_count = (conversation.message_count or 0) + 1
+        conversation.last_message_at = now
+        conversation.updated_at = now
+        conversation.material_scope = material_scope
+        if should_name_conversation:
+            conversation.title = self._conversation_title_from_message(content)
         self.db.add(message)
         await self.db.commit()
         await self.db.refresh(message)
@@ -140,9 +131,13 @@ class MemoryService:
 
     async def get_recent_messages(
         self,
+        user_id: str | int,
         conversation_id: int,
         limit: int = RECENT_MESSAGE_LIMIT,
     ) -> list[ConversationMessage]:
+        conversation = await self.get_conversation(user_id, conversation_id)
+        if conversation is None:
+            return []
         result = await self.db.execute(
             select(ConversationMessage)
             .where(ConversationMessage.conversation_id == conversation_id)
@@ -192,12 +187,12 @@ class MemoryService:
     async def build_memory_context(
         self,
         conversation_id: int,
-        user_id: str = "default",
+        user_id: str | int,
         material_scope: list[str] | None = None,
     ) -> dict[str, Any]:
-        conversation = await self.db.get(Conversation, conversation_id)
+        conversation = await self.get_conversation(user_id, conversation_id)
         profile = await self.get_or_create_learning_profile(user_id)
-        recent = await self.get_recent_messages(conversation_id)
+        recent = await self.get_recent_messages(user_id, conversation_id)
         return {
             "conversation_id": conversation_id,
             "summary": conversation.summary if conversation else None,
@@ -211,6 +206,18 @@ class MemoryService:
             "learning_profile": self.profile_to_dict(profile),
             "material_scope": material_scope or [],
         }
+
+    async def get_conversation(
+        self, user_id: str | int, conversation_id: int
+    ) -> Conversation | None:
+        user = await self.get_user(user_id)
+        result = await self.db.execute(
+            select(Conversation).where(
+                Conversation.id == conversation_id,
+                Conversation.user_id == user.id,
+            )
+        )
+        return result.scalar_one_or_none()
 
     def should_update_summary(self, conversation: Conversation) -> bool:
         return (

@@ -3,7 +3,9 @@ from pydantic_settings import BaseSettings
 
 
 class Settings(BaseSettings):
-    database_url: str = "sqlite+aiosqlite:///./dev.db"
+    database_url: str = (
+        "postgresql+asyncpg://exam_review:exam-review-dev@localhost:5432/exam_review"
+    )
     redis_url: str = "redis://localhost:6379"
     chroma_persist_dir: str = "./chroma_data"
 
@@ -19,6 +21,9 @@ class Settings(BaseSettings):
 
     default_llm_provider: str = "deepseek"
     jwt_secret: str = "change-me-in-production"
+    access_token_minutes: int = 15
+    refresh_token_days: int = 30
+    auth_cookie_secure: bool = True
     max_upload_size_mb: int = 50
     cors_origins: str = "http://localhost:3000,http://127.0.0.1:3000"
 

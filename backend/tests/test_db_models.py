@@ -25,8 +25,12 @@ from app.db.models import (
 
 
 @pytest.fixture
-def engine():
-    return create_async_engine("sqlite+aiosqlite:///:memory:")
+async def engine():
+    test_engine = create_async_engine("sqlite+aiosqlite:///:memory:")
+    try:
+        yield test_engine
+    finally:
+        await test_engine.dispose()
 
 
 @pytest.fixture
@@ -41,7 +45,10 @@ async def session(engine):
 @pytest.mark.asyncio
 async def test_create_user(session):
     user = User(
-        email="test@example.com", hashed_password="hashed_xxx", display_name="Test User"
+        username="test",
+        email="test@example.com",
+        hashed_password="hashed_xxx",
+        display_name="Test User",
     )
     session.add(user)
     await session.commit()
@@ -56,8 +63,12 @@ async def test_create_user(session):
 
 @pytest.mark.asyncio
 async def test_user_unique_email(session):
-    user1 = User(email="dup@example.com", hashed_password="pw1", display_name="U1")
-    user2 = User(email="dup@example.com", hashed_password="pw2", display_name="U2")
+    user1 = User(
+        username="dup-one", email="dup@example.com", hashed_password="pw1", display_name="U1"
+    )
+    user2 = User(
+        username="dup-two", email="dup@example.com", hashed_password="pw2", display_name="U2"
+    )
     session.add_all([user1, user2])
     with pytest.raises(Exception):
         await session.commit()
@@ -65,7 +76,9 @@ async def test_user_unique_email(session):
 
 @pytest.mark.asyncio
 async def test_create_conversation(session):
-    user = User(email="convuser@example.com", hashed_password="pw", display_name="CU")
+    user = User(
+        username="convuser", email="convuser@example.com", hashed_password="pw", display_name="CU"
+    )
     session.add(user)
     await session.commit()
 
@@ -89,7 +102,9 @@ async def test_create_conversation(session):
 
 @pytest.mark.asyncio
 async def test_create_material(session):
-    user = User(email="matuser@example.com", hashed_password="pw", display_name="MU")
+    user = User(
+        username="matuser", email="matuser@example.com", hashed_password="pw", display_name="MU"
+    )
     session.add(user)
     await session.commit()
 
@@ -113,7 +128,9 @@ async def test_create_material(session):
 
 @pytest.mark.asyncio
 async def test_create_quiz_session(session):
-    user = User(email="quizuser@example.com", hashed_password="pw", display_name="QU")
+    user = User(
+        username="quizuser", email="quizuser@example.com", hashed_password="pw", display_name="QU"
+    )
     session.add(user)
     await session.commit()
 
@@ -135,7 +152,9 @@ async def test_create_quiz_session(session):
 
 @pytest.mark.asyncio
 async def test_create_question(session):
-    user = User(email="qsuser@example.com", hashed_password="pw", display_name="QSU")
+    user = User(
+        username="qsuser", email="qsuser@example.com", hashed_password="pw", display_name="QSU"
+    )
     session.add(user)
     await session.commit()
 
@@ -173,7 +192,9 @@ async def test_create_question(session):
 
 @pytest.mark.asyncio
 async def test_create_answer_record(session):
-    user = User(email="aruser@example.com", hashed_password="pw", display_name="ARU")
+    user = User(
+        username="aruser", email="aruser@example.com", hashed_password="pw", display_name="ARU"
+    )
     session.add(user)
     await session.commit()
 
@@ -221,7 +242,9 @@ async def test_create_answer_record(session):
 
 @pytest.mark.asyncio
 async def test_create_mistake_record(session):
-    user = User(email="mruser@example.com", hashed_password="pw", display_name="MRU")
+    user = User(
+        username="mruser", email="mruser@example.com", hashed_password="pw", display_name="MRU"
+    )
     session.add(user)
     await session.commit()
 
@@ -293,7 +316,10 @@ async def test_create_concept_and_dependency(session):
 async def test_user_cascade_conversations(session):
     """Deleting a user should cascade to their conversations."""
     user = User(
-        email="cascade@example.com", hashed_password="pw", display_name="Cascade"
+        username="cascade",
+        email="cascade@example.com",
+        hashed_password="pw",
+        display_name="Cascade",
     )
     session.add(user)
     await session.commit()
@@ -317,7 +343,9 @@ async def test_user_cascade_conversations(session):
 
 @pytest.mark.asyncio
 async def test_material_processing_status_transition(session):
-    user = User(email="status@example.com", hashed_password="pw", display_name="ST")
+    user = User(
+        username="status", email="status@example.com", hashed_password="pw", display_name="ST"
+    )
     session.add(user)
     await session.commit()
 
@@ -346,6 +374,7 @@ async def test_material_processing_status_transition(session):
 @pytest.mark.asyncio
 async def test_conversation_message_model(session):
     user = User(
+        username="memory",
         email="memory@example.com",
         hashed_password="hashed",
         display_name="Memory User",
@@ -377,6 +406,7 @@ async def test_conversation_message_model(session):
 @pytest.mark.asyncio
 async def test_learning_profile_model(session):
     user = User(
+        username="profile",
         email="profile@example.com",
         hashed_password="hashed",
         display_name="Profile User",
@@ -405,6 +435,7 @@ async def test_learning_profile_model(session):
 @pytest.mark.asyncio
 async def test_material_chunk_and_extended_fields(session):
     user = User(
+        username="chunk",
         email="chunk@example.com",
         hashed_password="hashed",
         display_name="Chunk User",
@@ -443,9 +474,67 @@ async def test_material_chunk_and_extended_fields(session):
     assert material.storage_path == "uploads/stored.pdf"
 
 
+def test_material_chunk_has_v2_retrieval_columns():
+    columns = MaterialChunk.__table__.columns
+
+    assert columns["content"].nullable is False
+    assert columns["content_hash"].nullable is False
+    assert columns["lexical_tokens"].nullable is False
+    assert columns["embedding_model"].nullable is True
+    assert columns["embedding"].type.dim == 1024
+
+
+def test_mistake_record_supports_review_workbench_without_persisted_question():
+    columns = MistakeRecord.__table__.columns
+
+    assert columns["question_id"].nullable is True
+    assert columns["source_question_id"].nullable is False
+    for field in (
+        "question_text",
+        "question_type",
+        "explanation",
+        "source_chunk_ids",
+        "source_material",
+        "status",
+        "attempt_count",
+        "last_wrong_at",
+        "correction_note",
+        "mastered_at",
+        "review_history",
+    ):
+        assert field in columns
+
+
+def test_v2_models_define_tenant_and_scheduling_indexes():
+    material_indexes = {index.name for index in Material.__table__.indexes}
+    mistake_indexes = {index.name for index in MistakeRecord.__table__.indexes}
+
+    assert "ix_materials_user_status" in material_indexes
+    assert "ix_mistakes_user_status_review" in mistake_indexes
+    assert "ix_mistakes_user_concept" in mistake_indexes
+
+
+def test_v2_timestamp_columns_are_timezone_aware():
+    timestamp_columns = [
+        User.created_at,
+        Conversation.created_at,
+        Conversation.updated_at,
+        Material.created_at,
+        Material.processed_at,
+        QuizSession.created_at,
+        AnswerRecord.created_at,
+        MistakeRecord.last_wrong_at,
+        MistakeRecord.mastered_at,
+        MistakeRecord.next_review_at,
+    ]
+
+    assert all(column.type.timezone is True for column in timestamp_columns)
+
+
 @pytest.mark.asyncio
 async def test_answer_record_extended_fields(session):
     user = User(
+        username="answer",
         email="answer@example.com",
         hashed_password="hashed",
         display_name="Answer User",

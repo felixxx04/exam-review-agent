@@ -1,14 +1,18 @@
 from __future__ import annotations
 
 import csv
+from collections.abc import Mapping
 from datetime import datetime, timedelta, timezone
 from io import StringIO
+from typing import Any
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 
 from app.agents.tracker_agent import TrackerAgent
+from app.api.dependencies import get_mistake_repository
+from app.core.auth import AuthenticatedUser, get_current_user
 from app.core.exceptions import LLMProviderError
-from app.core.store import get_shared_store
+from app.repositories.mistakes import MistakeData, MistakeRepository
 from app.schemas.common import ApiResponse
 from app.schemas.review import (
     DailySessionRequest,
@@ -38,19 +42,19 @@ class _UnavailableLLMService:
         raise self._error
 
 
-def _build_tracker() -> TrackerAgent:
+def _build_tracker(repository: MistakeRepository) -> TrackerAgent:
     try:
         llm = get_default_llm_service()
     except LLMProviderError as exc:
         llm = _UnavailableLLMService(exc)
-    return TrackerAgent(db=get_shared_store(), llm_service=llm)
+    return TrackerAgent(mistake_repository=repository, llm_service=llm)
 
 
-def _record_id(record: dict) -> str:
+def _record_id(record: Mapping[str, Any]) -> str:
     return str(record.get("id") or record.get("question_id") or "")
 
 
-def _normalize_mistake(record: dict) -> MistakeRecord:
+def _normalize_mistake(record: Mapping[str, Any]) -> MistakeRecord:
     status = record.get("status") or "unreviewed"
     mastered_at = record.get("mastered_at")
     if mastered_at:
@@ -78,16 +82,30 @@ def _normalize_mistake(record: dict) -> MistakeRecord:
     )
 
 
-async def _mistake_records() -> list[dict]:
-    store = get_shared_store()
-    return await store.query({"user_id": "default", "type": "mistake_records"})
-
-
-async def _find_mistake_record(mistake_id: str) -> dict | None:
-    return next(
-        (record for record in await _mistake_records() if _record_id(record) == mistake_id),
-        None,
+async def _mistake_records(
+    repository: MistakeRepository,
+    user_id: str,
+    *,
+    status: str | None = None,
+    concept: str | None = None,
+    topic: str | None = None,
+    question_type: str | None = None,
+) -> list[MistakeData]:
+    return await repository.list_for_user(
+        user_id,
+        status=status,
+        concept=concept,
+        topic=topic,
+        question_type=question_type,
     )
+
+
+async def _find_mistake_record(
+    repository: MistakeRepository,
+    user_id: str,
+    mistake_id: str,
+) -> MistakeData | None:
+    return await repository.get(user_id, mistake_id)
 
 
 def _summary(mistakes: list[MistakeRecord]) -> ReviewSummary:
@@ -185,9 +203,12 @@ def _csv_export(mistakes: list[MistakeRecord]) -> str:
 
 
 @router.get("/weak-points")
-async def get_weak_points():
-    tracker = _build_tracker()
-    concepts = await tracker.get_weak_concepts("default")
+async def get_weak_points(
+    current_user: AuthenticatedUser = Depends(get_current_user),
+    repository: MistakeRepository = Depends(get_mistake_repository),
+):
+    tracker = _build_tracker(repository)
+    concepts = await tracker.get_weak_concepts(current_user.subject)
     return ApiResponse.ok(data=WeakPointsResponse(
         weak_concepts=[
             WeakConcept(
@@ -211,18 +232,19 @@ async def list_mistakes(
     sort: str = "priority",
     limit: int = 50,
     offset: int = 0,
+    current_user: AuthenticatedUser = Depends(get_current_user),
+    repository: MistakeRepository = Depends(get_mistake_repository),
 ):
-    records = await _mistake_records()
+    records = await _mistake_records(
+        repository,
+        current_user.subject,
+        status=status,
+        concept=concept,
+        topic=topic,
+        question_type=question_type,
+    )
     mistakes = [_normalize_mistake(record) for record in records]
 
-    if status:
-        mistakes = [m for m in mistakes if m.status == status]
-    if concept:
-        mistakes = [m for m in mistakes if m.concept == concept]
-    if topic:
-        mistakes = [m for m in mistakes if m.topic == topic]
-    if question_type:
-        mistakes = [m for m in mistakes if m.question_type == question_type]
     if search:
         mistakes = [m for m in mistakes if _matches_search(m, search)]
 
@@ -235,15 +257,24 @@ async def list_mistakes(
 
 
 @router.get("/mistakes/{mistake_id}")
-async def get_mistake(mistake_id: str):
-    record = await _find_mistake_record(mistake_id)
+async def get_mistake(
+    mistake_id: str,
+    current_user: AuthenticatedUser = Depends(get_current_user),
+    repository: MistakeRepository = Depends(get_mistake_repository),
+):
+    record = await _find_mistake_record(repository, current_user.subject, mistake_id)
     if record is not None:
         return ApiResponse.ok(data=_normalize_mistake(record))
     raise HTTPException(status_code=404, detail="Mistake not found")
 
 
 @router.patch("/mistakes/{mistake_id}")
-async def update_mistake(mistake_id: str, request: MistakeUpdateRequest):
+async def update_mistake(
+    mistake_id: str,
+    request: MistakeUpdateRequest,
+    current_user: AuthenticatedUser = Depends(get_current_user),
+    repository: MistakeRepository = Depends(get_mistake_repository),
+):
     updates: dict = {}
     now = datetime.now(timezone.utc).isoformat()
 
@@ -263,16 +294,7 @@ async def update_mistake(mistake_id: str, request: MistakeUpdateRequest):
     if target_status in {"corrected", "needs_requiz"}:
         updates["next_review_at"] = _next_review_at(target_status, datetime.fromisoformat(now))
 
-    store = get_shared_store()
-
-    def matches(record: dict) -> bool:
-        return (
-            record.get("user_id") == "default"
-            and record.get("type") == "mistake_records"
-            and _record_id(record) == mistake_id
-        )
-
-    existing = await _find_mistake_record(mistake_id)
+    existing = await _find_mistake_record(repository, current_user.subject, mistake_id)
     if existing is None:
         raise HTTPException(status_code=404, detail="Mistake not found")
 
@@ -284,13 +306,20 @@ async def update_mistake(mistake_id: str, request: MistakeUpdateRequest):
         })
         updates["review_history"] = history
 
-    updated = await store.update(matches, updates)
+    updated = await repository.update(current_user.subject, mistake_id, updates)
     return ApiResponse.ok(data=_normalize_mistake(updated or existing))
 
 
 @router.get("/export")
-async def export_mistakes(format: str = "markdown"):
-    mistakes = [_normalize_mistake(record) for record in await _mistake_records()]
+async def export_mistakes(
+    format: str = "markdown",
+    current_user: AuthenticatedUser = Depends(get_current_user),
+    repository: MistakeRepository = Depends(get_mistake_repository),
+):
+    mistakes = [
+        _normalize_mistake(record)
+        for record in await _mistake_records(repository, current_user.subject)
+    ]
     if format == "csv":
         content = _csv_export(mistakes)
         filename = "mistakes.csv"
@@ -306,8 +335,12 @@ async def export_mistakes(format: str = "markdown"):
 
 
 @router.post("/daily-session")
-async def create_daily_session(request: DailySessionRequest):
-    records = await _mistake_records()
+async def create_daily_session(
+    request: DailySessionRequest,
+    current_user: AuthenticatedUser = Depends(get_current_user),
+    repository: MistakeRepository = Depends(get_mistake_repository),
+):
+    records = await _mistake_records(repository, current_user.subject)
     mistakes = [_normalize_mistake(record) for record in records]
     reviewable = [mistake for mistake in mistakes if mistake.status != "mastered"]
     selected = _sort_mistakes(reviewable, "priority")[: max(request.limit, 1)]
@@ -318,8 +351,12 @@ async def create_daily_session(request: DailySessionRequest):
 
 
 @router.post("/mistakes/{mistake_id}/similar-quiz")
-async def create_similar_quiz(mistake_id: str):
-    record = await _find_mistake_record(mistake_id)
+async def create_similar_quiz(
+    mistake_id: str,
+    current_user: AuthenticatedUser = Depends(get_current_user),
+    repository: MistakeRepository = Depends(get_mistake_repository),
+):
+    record = await _find_mistake_record(repository, current_user.subject, mistake_id)
     if record is None:
         raise HTTPException(status_code=404, detail="Mistake not found")
 
@@ -348,8 +385,12 @@ async def create_similar_quiz(mistake_id: str):
 
 
 @router.post("/mistakes/{mistake_id}/explanation")
-async def explain_mistake(mistake_id: str):
-    record = await _find_mistake_record(mistake_id)
+async def explain_mistake(
+    mistake_id: str,
+    current_user: AuthenticatedUser = Depends(get_current_user),
+    repository: MistakeRepository = Depends(get_mistake_repository),
+):
+    record = await _find_mistake_record(repository, current_user.subject, mistake_id)
     if record is None:
         raise HTTPException(status_code=404, detail="Mistake not found")
 
@@ -360,24 +401,21 @@ async def explain_mistake(mistake_id: str):
         "下次先判断题目考查的概念，再排除与定义不一致的选项。"
     )
 
-    store = get_shared_store()
-
-    def matches(candidate: dict) -> bool:
-        return (
-            candidate.get("user_id") == "default"
-            and candidate.get("type") == "mistake_records"
-            and _record_id(candidate) == mistake_id
-        )
-
-    await store.update(matches, {"explanation": explanation})
+    await repository.update(
+        current_user.subject, mistake_id, {"explanation": explanation}
+    )
     return ApiResponse.ok(data=MistakeExplanationResponse(explanation=explanation))
 
 
 @router.post("/study-plan")
-async def generate_study_plan(request: StudyPlanRequest):
-    tracker = _build_tracker()
+async def generate_study_plan(
+    request: StudyPlanRequest,
+    current_user: AuthenticatedUser = Depends(get_current_user),
+    repository: MistakeRepository = Depends(get_mistake_repository),
+):
+    tracker = _build_tracker(repository)
     result = await tracker.generate_study_plan(
-        user_id="default",
+        user_id=current_user.subject,
         exam_date=request.exam_date,
         days_before_exam=request.days_before_exam,
     )

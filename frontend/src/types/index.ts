@@ -99,10 +99,7 @@ export interface DashboardData {
 }
 
 export type ReviewMistakeStatus =
-  | "unreviewed"
-  | "corrected"
-  | "needs_requiz"
-  | "mastered";
+  "unreviewed" | "corrected" | "needs_requiz" | "mastered";
 
 export interface ReviewMistake {
   id: string;

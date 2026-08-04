@@ -13,6 +13,7 @@ import { MessageList } from "@/components/MessageList";
 import { ChatInput } from "@/components/ChatInput";
 import { QuizCard } from "@/components/QuizCard";
 import { DashboardCard } from "@/components/DashboardCard";
+import { AuthGate } from "@/components/auth/AuthGate";
 import type { Material } from "@/types";
 import {
   BarChart3,
@@ -23,6 +24,14 @@ import {
 } from "lucide-react";
 
 export default function Home() {
+  return (
+    <AuthGate>
+      <Workspace />
+    </AuthGate>
+  );
+}
+
+function Workspace() {
   const {
     messages,
     mode,

@@ -15,14 +15,21 @@ describe("chatStore", () => {
   });
 
   it("adds a user message", () => {
-    useChatStore.getState().addMessage({ id: "1", role: "user", content: "hello", timestamp: 0 });
+    useChatStore
+      .getState()
+      .addMessage({ id: "1", role: "user", content: "hello", timestamp: 0 });
     const msgs = useChatStore.getState().messages;
     expect(msgs).toHaveLength(1);
     expect(msgs[0].content).toBe("hello");
   });
 
   it("adds an assistant message", () => {
-    useChatStore.getState().addMessage({ id: "2", role: "assistant", content: "reply", timestamp: 1 });
+    useChatStore.getState().addMessage({
+      id: "2",
+      role: "assistant",
+      content: "reply",
+      timestamp: 1,
+    });
     expect(useChatStore.getState().messages[0].role).toBe("assistant");
   });
 
@@ -32,7 +39,9 @@ describe("chatStore", () => {
   });
 
   it("clears messages", () => {
-    useChatStore.getState().addMessage({ id: "1", role: "user", content: "hi", timestamp: 0 });
+    useChatStore
+      .getState()
+      .addMessage({ id: "1", role: "user", content: "hi", timestamp: 0 });
     useChatStore.getState().clearMessages();
     expect(useChatStore.getState().messages).toHaveLength(0);
   });
@@ -48,13 +57,25 @@ describe("chatStore", () => {
   });
 
   it("messages are immutable (spread) on add", () => {
-    useChatStore.getState().addMessage({ id: "a", role: "user", content: "first", timestamp: 0 });
-    useChatStore.getState().addMessage({ id: "b", role: "assistant", content: "second", timestamp: 1 });
+    useChatStore
+      .getState()
+      .addMessage({ id: "a", role: "user", content: "first", timestamp: 0 });
+    useChatStore.getState().addMessage({
+      id: "b",
+      role: "assistant",
+      content: "second",
+      timestamp: 1,
+    });
     expect(useChatStore.getState().messages).toHaveLength(2);
   });
 
   it("updates an existing message when ids match", () => {
-    useChatStore.getState().addMessage({ id: "stream-1", role: "assistant", content: "QA", timestamp: 0 });
+    useChatStore.getState().addMessage({
+      id: "stream-1",
+      role: "assistant",
+      content: "QA",
+      timestamp: 0,
+    });
     useChatStore.getState().addMessage({
       id: "stream-1",
       role: "assistant",
@@ -87,7 +108,9 @@ describe("chatStore", () => {
 
   it("starts a new conversation with empty ask-mode state", () => {
     useChatStore.setState({
-      messages: [{ id: "old", role: "assistant", content: "旧消息", timestamp: 0 }],
+      messages: [
+        { id: "old", role: "assistant", content: "旧消息", timestamp: 0 },
+      ],
       conversationId: 1,
       mode: "quiz",
       isStreaming: true,

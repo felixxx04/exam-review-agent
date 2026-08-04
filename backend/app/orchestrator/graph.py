@@ -7,7 +7,8 @@ from langgraph.graph import StateGraph
 from app.agents.rag_agent import RAGAgent
 from app.agents.quiz_agent import QuizAgent
 from app.agents.tracker_agent import TrackerAgent
-from app.core.store import get_shared_store
+from app.db.database import AsyncSessionLocal
+from app.repositories.mistakes import SessionFactoryMistakeRepository
 from app.schemas.quiz import to_quiz_payload
 from app.services.llm_service import get_default_llm_service
 from app.services.retrieval_service import RetrievalService
@@ -41,13 +42,19 @@ def _build_quiz_agent() -> QuizAgent:
     llm = get_default_llm_service()
     retrieval = RetrievalService()
     generator = QuizGenerator(llm)
-    tracker = TrackerAgent(db=get_shared_store(), llm_service=llm)
+    tracker = TrackerAgent(
+        mistake_repository=SessionFactoryMistakeRepository(AsyncSessionLocal),
+        llm_service=llm,
+    )
     return QuizAgent(retrieval, generator, tracker_agent=tracker)
 
 
 def _build_tracker_agent() -> TrackerAgent:
     llm = get_default_llm_service()
-    return TrackerAgent(db=get_shared_store(), llm_service=llm)
+    return TrackerAgent(
+        mistake_repository=SessionFactoryMistakeRepository(AsyncSessionLocal),
+        llm_service=llm,
+    )
 
 
 def _get_last_user_message(state: AgentState) -> str:

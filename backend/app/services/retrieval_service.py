@@ -32,7 +32,7 @@ class RetrievalService:
     ):
         self._quality_threshold = quality_threshold
         self._rrf_k = rrf_k
-        self._vector_store = vector_store or VectorStore()
+        self._vector_store = vector_store
         self._embedding_service = embedding_service
         self._bm25_indices: dict[str, tuple[BM25Okapi, list[str], list[dict], list[str]]] = {}
 
@@ -74,7 +74,7 @@ class RetrievalService:
             metadatas[i] = {**metadatas[i], "chunk_id": cid}
 
         # Store in vector DB
-        self._vector_store.add(
+        self._get_vector_store().add(
             user_id=user_id,
             embeddings=embeddings,
             documents=texts,
@@ -149,7 +149,7 @@ class RetrievalService:
 
     async def delete_chunks(self, user_id: str, chunk_ids: list[str]) -> None:
         """Delete chunks from both stores."""
-        self._vector_store.delete(user_id, chunk_ids)
+        self._get_vector_store().delete(user_id, chunk_ids)
         if user_id in self._bm25_indices:
             bm25, texts, metas, ids = self._bm25_indices[user_id]
             keep_indices = [i for i, cid in enumerate(ids) if cid not in chunk_ids]
@@ -170,6 +170,11 @@ class RetrievalService:
         if self._embedding_service is None:
             self._embedding_service = EmbeddingService()
         return self._embedding_service
+
+    def _get_vector_store(self) -> VectorStore:
+        if self._vector_store is None:
+            self._vector_store = VectorStore()
+        return self._vector_store
 
     @staticmethod
     def _tokenize(text: str) -> list[str]:
@@ -229,7 +234,7 @@ class RetrievalService:
     ) -> list[dict]:
         """Dense vector search via ChromaDB."""
         query_embedding = self._get_embedding_service().embed_query(query)
-        raw_results = self._vector_store.search(
+        raw_results = self._get_vector_store().search(
             user_id, query_embedding, top_k, metadata_filter
         )
         results = []

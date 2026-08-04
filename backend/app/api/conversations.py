@@ -4,6 +4,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 
+from app.core.auth import AuthenticatedUser, get_current_user
 from app.db.database import get_db
 from app.db.models import Conversation
 from app.schemas.common import ApiResponse
@@ -19,12 +20,14 @@ router = APIRouter(prefix="/api/conversations", tags=["conversations"])
 
 
 @router.get("")
-async def list_conversations(db: AsyncSession = Depends(get_db)):
+async def list_conversations(
+    current_user: AuthenticatedUser = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
     service = MemoryService(db)
-    user = await service.get_or_create_default_user(user_id="default")
     result = await db.execute(
         select(Conversation)
-        .where(Conversation.user_id == user.id)
+        .where(Conversation.user_id == current_user.id)
         .order_by(Conversation.updated_at.desc(), Conversation.id.desc())
     )
     conversations = list(result.scalars().all())
@@ -42,25 +45,38 @@ async def list_conversations(db: AsyncSession = Depends(get_db)):
 
 
 @router.get("/active")
-async def get_active_conversation(db: AsyncSession = Depends(get_db)):
+async def get_active_conversation(
+    current_user: AuthenticatedUser = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
     service = MemoryService(db)
-    conversation = await service.get_or_create_active_conversation(user_id="default")
+    conversation = await service.get_or_create_active_conversation(current_user.id)
     return ApiResponse.ok(data=ConversationResponse.model_validate(conversation))
 
 
 @router.post("")
-async def create_conversation(db: AsyncSession = Depends(get_db)):
+async def create_conversation(
+    current_user: AuthenticatedUser = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
     service = MemoryService(db)
-    conversation = await service.create_conversation(user_id="default")
+    conversation = await service.create_conversation(current_user.id)
     return ApiResponse.ok(data=ConversationResponse.model_validate(conversation))
 
 
 @router.delete("/{conversation_id}")
 async def delete_conversation(
     conversation_id: int,
+    current_user: AuthenticatedUser = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    conversation = await db.get(Conversation, conversation_id)
+    result = await db.execute(
+        select(Conversation).where(
+            Conversation.id == conversation_id,
+            Conversation.user_id == current_user.id,
+        )
+    )
+    conversation = result.scalar_one_or_none()
     if conversation is None:
         raise HTTPException(status_code=404, detail="会话不存在")
 
@@ -72,14 +88,17 @@ async def delete_conversation(
 @router.get("/{conversation_id}/messages")
 async def get_conversation_messages(
     conversation_id: int,
+    current_user: AuthenticatedUser = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
     service = MemoryService(db)
-    conversation = await db.get(Conversation, conversation_id)
+    conversation = await service.get_conversation(current_user.id, conversation_id)
     if conversation is None:
         raise HTTPException(status_code=404, detail="会话不存在")
 
-    messages = await service.get_recent_messages(conversation_id, limit=100)
+    messages = await service.get_recent_messages(
+        current_user.id, conversation_id, limit=100
+    )
     data = ConversationMessagesResponse(
         conversation_id=conversation_id,
         messages=[

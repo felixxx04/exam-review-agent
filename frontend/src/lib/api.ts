@@ -58,6 +58,99 @@ interface ApiEnvelope<T> {
   meta: Record<string, unknown> | null;
 }
 
+export interface AuthUser {
+  id: number;
+  username: string;
+  display_name: string;
+  role: "admin" | "user";
+  is_disabled: boolean;
+  created_at: string;
+}
+
+export interface AuthSession {
+  user: AuthUser;
+  access_expires_at: string;
+  refresh_expires_at: string;
+}
+
+export interface RegisterPayload {
+  username: string;
+  password: string;
+  inviteCode: string;
+  displayName?: string;
+}
+
+export const AUTH_REQUIRED_EVENT = "exam-review:auth-required";
+
+let refreshPromise: Promise<AuthSession> | null = null;
+
+export function getCsrfToken(): string {
+  if (typeof document === "undefined") return "";
+  const entry = document.cookie
+    .split(";")
+    .map((part) => part.trim())
+    .find((part) => part.startsWith("csrf_token="));
+  return entry ? decodeURIComponent(entry.slice("csrf_token=".length)) : "";
+}
+
+function rawFetch(input: RequestInfo | URL, init: RequestInit = {}) {
+  const method = (init.method ?? "GET").toUpperCase();
+  const headers = Object.fromEntries(new Headers(init.headers).entries());
+  if (["POST", "PUT", "PATCH", "DELETE"].includes(method)) {
+    const csrfToken = getCsrfToken();
+    if (csrfToken) headers["X-CSRF-Token"] = csrfToken;
+  }
+  return globalThis.fetch(input, {
+    ...init,
+    credentials: "include",
+    headers,
+  });
+}
+
+function isAuthEndpoint(input: RequestInfo | URL): boolean {
+  const url = new URL(String(input), "http://local");
+  return url.pathname.startsWith("/api/auth/");
+}
+
+export function signalAuthRequired(): void {
+  if (typeof window !== "undefined") {
+    window.dispatchEvent(new Event(AUTH_REQUIRED_EVENT));
+  }
+}
+
+export function refreshSession(): Promise<AuthSession> {
+  if (!refreshPromise) {
+    refreshPromise = rawFetch(`${API_BASE}/api/auth/refresh`, {
+      method: "POST",
+    })
+      .then((response) => unwrap<AuthSession>(response))
+      .finally(() => {
+        refreshPromise = null;
+      });
+  }
+  return refreshPromise;
+}
+
+async function fetch(input: RequestInfo | URL, init: RequestInit = {}) {
+  const response = await rawFetch(input, init);
+  if (response.status !== 401 || isAuthEndpoint(input)) {
+    return response;
+  }
+
+  try {
+    await refreshSession();
+  } catch {
+    signalAuthRequired();
+    return response;
+  }
+
+  const retried = await rawFetch(input, init);
+  if (retried.status === 401) {
+    signalAuthRequired();
+  }
+  return retried;
+}
+
 async function unwrap<T>(response: Response): Promise<T> {
   const body: ApiEnvelope<T> = await response.json();
   if (!body.success) {
@@ -67,6 +160,39 @@ async function unwrap<T>(response: Response): Promise<T> {
 }
 
 export const api = {
+  auth: {
+    login: (username: string, password: string) =>
+      fetch(`${API_BASE}/api/auth/login`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ username, password }),
+      }).then((response) => unwrap<AuthSession>(response)),
+
+    register: (payload: RegisterPayload) =>
+      fetch(`${API_BASE}/api/auth/register`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          username: payload.username,
+          password: payload.password,
+          invite_code: payload.inviteCode,
+          display_name: payload.displayName || undefined,
+        }),
+      }).then((response) => unwrap<AuthSession>(response)),
+
+    refresh: refreshSession,
+
+    logout: () =>
+      fetch(`${API_BASE}/api/auth/logout`, { method: "POST" }).then(
+        (response) => unwrap<{ status: string }>(response),
+      ),
+
+    me: () =>
+      fetch(`${API_BASE}/api/auth/me`).then((response) =>
+        unwrap<AuthUser>(response),
+      ),
+  },
+
   conversations: {
     active: () =>
       fetch(`${API_BASE}/api/conversations/active`).then((r) =>
@@ -156,9 +282,9 @@ export const api = {
         }
       });
       const query = search.toString();
-      return fetch(`${API_BASE}/api/review/mistakes${query ? `?${query}` : ""}`).then((r) =>
-        unwrap<MistakeListData>(r),
-      );
+      return fetch(
+        `${API_BASE}/api/review/mistakes${query ? `?${query}` : ""}`,
+      ).then((r) => unwrap<MistakeListData>(r));
     },
 
     mistake: (id: string) =>
@@ -198,9 +324,9 @@ export const api = {
       }).then((r) => unwrap<StudyPlanData>(r)),
 
     exportMistakes: (params: { format: "markdown" | "csv" }) =>
-      fetch(`${API_BASE}/api/review/export?${new URLSearchParams(params)}`).then((r) =>
-        unwrap<MistakeExportData>(r),
-      ),
+      fetch(
+        `${API_BASE}/api/review/export?${new URLSearchParams(params)}`,
+      ).then((r) => unwrap<MistakeExportData>(r)),
   },
 
   memory: {

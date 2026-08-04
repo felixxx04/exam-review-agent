@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import hashlib
+
 import pytest
 from unittest.mock import AsyncMock
 
@@ -71,7 +73,7 @@ class TestMaterialsUpload:
         assert material.hash is not None
 
     @pytest.mark.asyncio
-    async def test_upload_creates_default_user_when_missing(self, client_with_db, db_session):
+    async def test_upload_uses_authenticated_user(self, client_with_db, db_session):
         response = await client_with_db.post(
             "/api/materials",
             files={"file": ("test.pdf", b"fake pdf content", "application/pdf")},
@@ -80,7 +82,7 @@ class TestMaterialsUpload:
         assert response.status_code == 200
         users = (await db_session.execute(select(User))).scalars().all()
         assert len(users) == 1
-        assert users[0].email == "default@example.local"
+        assert users[0].username == "test_user"
 
     @pytest.mark.asyncio
     async def test_upload_indexes_chunks_with_original_filename_metadata(
@@ -214,6 +216,15 @@ class TestMaterialsUpload:
             "normalized window one",
             "normalized window two",
         ]
+        assert [row.content for row in rows] == [
+            "normalized window one",
+            "normalized window two",
+        ]
+        assert rows[0].content_hash == hashlib.sha256(
+            b"normalized window one"
+        ).hexdigest()
+        assert rows[0].lexical_tokens
+        assert rows[0].chunk_metadata["source"] == "Redis.docx"
 
 
 class TestMaterialsList:
@@ -335,7 +346,7 @@ class TestMaterialsDelete:
 
         assert response.status_code == 200
         retrieval.delete_chunks.assert_awaited_once_with(
-            user_id="default",
+            user_id="1",
             chunk_ids=["chunk-vector-delete-test"],
         )
 

@@ -1,4 +1,8 @@
-import type { ReviewMistake, ReviewMistakeStatus, ReviewSummary } from "@/types";
+import type {
+  ReviewMistake,
+  ReviewMistakeStatus,
+  ReviewSummary,
+} from "@/types";
 
 export const REVIEW_STATUS_LABELS: Record<ReviewMistakeStatus, string> = {
   unreviewed: "未订正",

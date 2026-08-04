@@ -1,6 +1,7 @@
 .agents/
 .codegraph/
 .codex/
+/.env
 .playwright-mcp/*.log
 .playwright-mcp/*.yml
 .superpowers/

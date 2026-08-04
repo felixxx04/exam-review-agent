@@ -6,22 +6,25 @@ from app.services.memory_service import MemoryService
 
 
 @pytest.mark.asyncio
-async def test_get_or_create_default_conversation(db_session):
+async def test_get_or_create_default_conversation(db_session, authenticated_user):
     service = MemoryService(db_session)
 
-    conversation = await service.get_or_create_active_conversation(user_id="default")
-    same_conversation = await service.get_or_create_active_conversation(user_id="default")
+    conversation = await service.get_or_create_active_conversation(authenticated_user.id)
+    same_conversation = await service.get_or_create_active_conversation(
+        authenticated_user.id
+    )
 
     assert conversation.id == same_conversation.id
     assert conversation.title == "默认复习会话"
 
 
 @pytest.mark.asyncio
-async def test_save_messages_and_build_context(db_session):
+async def test_save_messages_and_build_context(db_session, authenticated_user):
     service = MemoryService(db_session)
-    conversation = await service.get_or_create_active_conversation(user_id="default")
+    conversation = await service.get_or_create_active_conversation(authenticated_user.id)
 
     await service.save_message(
+        user_id=authenticated_user.id,
         conversation_id=conversation.id,
         role="user",
         content="什么是幻读？",
@@ -29,6 +32,7 @@ async def test_save_messages_and_build_context(db_session):
         metadata={"mode": "ask"},
     )
     await service.save_message(
+        user_id=authenticated_user.id,
         conversation_id=conversation.id,
         role="assistant",
         content="幻读是同一事务中再次查询出现新增行。",
@@ -38,7 +42,7 @@ async def test_save_messages_and_build_context(db_session):
 
     context = await service.build_memory_context(
         conversation_id=conversation.id,
-        user_id="default",
+        user_id=authenticated_user.id,
         material_scope=["database.pdf"],
     )
 
@@ -50,11 +54,14 @@ async def test_save_messages_and_build_context(db_session):
 
 
 @pytest.mark.asyncio
-async def test_first_user_message_names_default_conversation(db_session):
+async def test_first_user_message_names_default_conversation(
+    db_session, authenticated_user
+):
     service = MemoryService(db_session)
-    conversation = await service.create_conversation(user_id="default")
+    conversation = await service.create_conversation(authenticated_user.id)
 
     await service.save_message(
+        user_id=authenticated_user.id,
         conversation_id=conversation.id,
         role="user",
         content="请总结 MQ.docx 的考试重点。",
@@ -67,11 +74,14 @@ async def test_first_user_message_names_default_conversation(db_session):
 
 
 @pytest.mark.asyncio
-async def test_first_user_message_keeps_long_title_readable(db_session):
+async def test_first_user_message_keeps_long_title_readable(
+    db_session, authenticated_user
+):
     service = MemoryService(db_session)
-    conversation = await service.create_conversation(user_id="default")
+    conversation = await service.create_conversation(authenticated_user.id)
 
     await service.save_message(
+        user_id=authenticated_user.id,
         conversation_id=conversation.id,
         role="user",
         content="我马上要面试了，给我出一道最可能考到的数据库事务题。",
@@ -85,14 +95,17 @@ async def test_first_user_message_keeps_long_title_readable(db_session):
 
 
 @pytest.mark.asyncio
-async def test_first_user_message_keeps_custom_conversation_title(db_session):
+async def test_first_user_message_keeps_custom_conversation_title(
+    db_session, authenticated_user
+):
     service = MemoryService(db_session)
     conversation = await service.create_conversation(
-        user_id="default",
+        user_id=authenticated_user.id,
         title="数据库冲刺",
     )
 
     await service.save_message(
+        user_id=authenticated_user.id,
         conversation_id=conversation.id,
         role="user",
         content="请总结事务隔离级别。",
@@ -105,9 +118,9 @@ async def test_first_user_message_keeps_custom_conversation_title(db_session):
 
 
 @pytest.mark.asyncio
-async def test_profile_merge_is_conservative(db_session):
+async def test_profile_merge_is_conservative(db_session, authenticated_user):
     service = MemoryService(db_session)
-    profile = await service.get_or_create_learning_profile(user_id="default")
+    profile = await service.get_or_create_learning_profile(authenticated_user.id)
 
     await service.merge_learning_profile(
         profile=profile,

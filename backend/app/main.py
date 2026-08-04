@@ -1,11 +1,13 @@
+import asyncio
 import logging
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI, HTTPException
+from fastapi import Depends, FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 from app.api.chat import router as chat_router
+from app.api.auth import router as auth_router
 from app.api.conversations import router as conversations_router
 from app.api.materials import router as materials_router
 from app.api.memory import router as memory_router
@@ -14,15 +16,37 @@ from app.api.review import router as review_router
 from app.core.config import settings
 from app.core.exceptions import AppException
 from app.core.middleware import RateLimitMiddleware
+from app.db.database import engine
 from app.schemas.common import ApiResponse
+from app.services.health import (
+    DatabaseReadinessProbe,
+    ReadinessProbe,
+    RedisReadinessProbe,
+)
 
 logger = logging.getLogger(__name__)
+
+READINESS_TIMEOUT_SECONDS = 3
+MIN_JWT_SECRET_LENGTH = 32
+INSECURE_JWT_SECRETS = frozenset(
+    {
+        "change-me-in-production",
+        "replace-with-at-least-32-random-characters",
+    }
+)
 
 EXCEPTION_STATUS: dict[str, int] = {
     "INSUFFICIENT_MATERIAL": 404,
     "LLM_PROVIDER_ERROR": 502,
     "FILE_PARSING_ERROR": 422,
     "RATE_LIMIT_EXCEEDED": 429,
+    "AUTH_REQUIRED": 401,
+    "INVALID_CREDENTIALS": 401,
+    "INVALID_INVITE": 400,
+    "CSRF_FAILED": 403,
+    "FORBIDDEN": 403,
+    "NOT_FOUND": 404,
+    "CONFLICT": 409,
 }
 
 
@@ -40,7 +64,11 @@ def _validate_settings_on_startup() -> None:
     if not getattr(settings, attr, ""):
         missing.append(attr.upper())
 
-    if settings.jwt_secret == "change-me-in-production":
+    jwt_secret = settings.jwt_secret.strip()
+    if (
+        jwt_secret in INSECURE_JWT_SECRETS
+        or len(jwt_secret) < MIN_JWT_SECRET_LENGTH
+    ):
         missing.append("JWT_SECRET (must not be the default value)")
     if missing:
         msg = f"Missing or invalid required settings: {', '.join(missing)}"
@@ -69,12 +97,20 @@ app.add_middleware(
 )
 app.add_middleware(RateLimitMiddleware)
 
+app.include_router(auth_router)
 app.include_router(materials_router)
 app.include_router(chat_router)
 app.include_router(conversations_router)
 app.include_router(memory_router)
 app.include_router(quiz_router)
 app.include_router(review_router)
+
+
+def get_readiness_probes() -> list[ReadinessProbe]:
+    return [
+        DatabaseReadinessProbe(engine),
+        RedisReadinessProbe(settings.redis_url),
+    ]
 
 
 @app.exception_handler(AppException)
@@ -106,3 +142,35 @@ async def unhandled_exception_handler(request, exc: Exception):
 @app.get("/api/health")
 async def health():
     return ApiResponse.ok(data={"status": "ok", "default_provider": settings.default_llm_provider})
+
+
+@app.get("/health/live")
+async def liveness():
+    return ApiResponse.ok(data={"status": "alive"})
+
+
+@app.get("/health/ready")
+async def readiness(
+    probes: list[ReadinessProbe] = Depends(get_readiness_probes),
+):
+    checks: dict[str, str] = {}
+    unavailable = False
+    for probe in probes:
+        try:
+            async with asyncio.timeout(READINESS_TIMEOUT_SECONDS):
+                await probe.check()
+            checks[probe.name] = "ok"
+        except Exception:
+            logger.warning("Readiness probe failed: %s", probe.name, exc_info=True)
+            checks[probe.name] = "unavailable"
+            unavailable = True
+
+    if unavailable:
+        response = ApiResponse.fail(
+            code="DEPENDENCY_UNAVAILABLE",
+            message="One or more required dependencies are unavailable.",
+        ).model_dump()
+        response["data"] = {"status": "not_ready", "checks": checks}
+        return JSONResponse(status_code=503, content=response)
+
+    return ApiResponse.ok(data={"status": "ready", "checks": checks})

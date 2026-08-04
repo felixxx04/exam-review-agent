@@ -142,3 +142,22 @@ class TestChatSSE:
 
         assert response.status_code == 200
         assert '"event": "error"' not in response.text
+
+    @pytest.mark.asyncio
+    async def test_chat_does_not_expose_internal_exception_details(
+        self,
+        client_with_db,
+        monkeypatch,
+    ):
+        async def failing_run_orchestrator(*args, **kwargs):
+            raise RuntimeError("database password and provider response")
+
+        monkeypatch.setattr(
+            "app.api.chat.run_orchestrator", failing_run_orchestrator
+        )
+
+        response = await client_with_db.post("/api/chat", json={"message": "继续"})
+
+        assert response.status_code == 200
+        assert "database password and provider response" not in response.text
+        assert "聊天服务暂时不可用" in response.text

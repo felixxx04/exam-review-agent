@@ -76,4 +76,4 @@ class TestRateLimitMiddleware:
         for _ in range(31):
             r = await client_with_db.post("/api/chat", json={"message": "ping"})
         assert r.status_code == 429
-        assert "频繁" in r.json()["detail"]
+        assert "频繁" in r.json()["error"]["message"]

@@ -10,10 +10,13 @@ from __future__ import annotations
 
 import json
 import re
+from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import datetime, timezone
+from typing import Any
 
 from app.core.exceptions import LLMProviderError
+from app.repositories.mistakes import MistakeRepository
 
 
 GENERIC_CONCEPT_LABELS = {"", "未归类知识点", "综合", "测试"}
@@ -43,8 +46,8 @@ class TrackerAgent:
     and coarse-grained (topic) gaps.
     """
 
-    def __init__(self, db, llm_service):
-        self.db = db
+    def __init__(self, mistake_repository: MistakeRepository, llm_service):
+        self.mistakes = mistake_repository
         self.llm = llm_service
 
     # ------------------------------------------------------------------
@@ -72,8 +75,8 @@ class TrackerAgent:
         - ``fill_blank``: lowercase-normalized, whitespace-trimmed comparison.
         - other types: exact string comparison (fallback).
 
-        When the answer is wrong, a mistake record is persisted via
-        ``self.db.add(...)``.
+        When the answer is wrong, the mistake repository persists the
+        review context in PostgreSQL.
         """
         if question_type == "multiple_choice":
             is_correct = (
@@ -91,7 +94,7 @@ class TrackerAgent:
         mistake_recorded = False
         if not is_correct:
             wrong_at = datetime.now(timezone.utc)
-            await self.db.add(
+            await self.mistakes.create(
                 {
                     "type": "mistake_records",
                     "id": f"{question_id}-{int(wrong_at.timestamp() * 1_000_000)}",
@@ -134,9 +137,7 @@ class TrackerAgent:
         concept, and returns a sorted list with accuracy and attempt
         counts.
         """
-        mistakes = await self.db.query(
-            {"user_id": user_id, "type": "mistake_records"}
-        )
+        mistakes = await self.mistakes.list_for_user(user_id)
 
         concept_stats: dict[str, dict] = {}
         for m in mistakes:
@@ -172,9 +173,7 @@ class TrackerAgent:
         - 1-2 wrong -> difficulty stays at 0.5 (medium)
         - 0 wrong (all correct) -> difficulty rises to 0.8 (hard)
         """
-        mistakes = await self.db.query(
-            {"user_id": user_id, "concept": concept}
-        )
+        mistakes = await self.mistakes.list_for_user(user_id, concept=concept)
         wrong_count = len(mistakes)
         if wrong_count >= 3:
             return 0.2
@@ -292,7 +291,7 @@ class TrackerAgent:
         }
 
     @classmethod
-    def _review_labels(cls, mistake: dict) -> tuple[str, str]:
+    def _review_labels(cls, mistake: Mapping[str, Any]) -> tuple[str, str]:
         concept = str(mistake.get("concept") or "").strip()
         topic = str(mistake.get("topic") or "").strip()
 

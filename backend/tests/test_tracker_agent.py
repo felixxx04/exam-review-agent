@@ -22,7 +22,7 @@ class TestTrackerScoring:
         and a mistake record should be persisted."""
         mock_db = AsyncMock()
         mock_llm = AsyncMock()
-        tracker = TrackerAgent(db=mock_db, llm_service=mock_llm)
+        tracker = TrackerAgent(mistake_repository=mock_db, llm_service=mock_llm)
 
         result = await tracker.score_answer(
             user_id="test-user",
@@ -40,8 +40,8 @@ class TestTrackerScoring:
         assert result.score == 0.0
 
         # Verify the mistake was recorded
-        mock_db.add.assert_called_once()
-        call_args = mock_db.add.call_args[0][0]
+        mock_db.create.assert_called_once()
+        call_args = mock_db.create.call_args[0][0]
         assert call_args["user_id"] == "test-user"
         assert call_args["question_id"] == "q1"
         assert call_args["concept"] == "特征值"
@@ -54,7 +54,7 @@ class TestTrackerScoring:
         """Wrong answers should store enough context for the review workbench."""
         mock_db = AsyncMock()
         mock_llm = AsyncMock()
-        tracker = TrackerAgent(db=mock_db, llm_service=mock_llm)
+        tracker = TrackerAgent(mistake_repository=mock_db, llm_service=mock_llm)
 
         await tracker.score_answer(
             user_id="test-user",
@@ -70,8 +70,8 @@ class TestTrackerScoring:
             source_material="linear.pdf",
         )
 
-        mock_db.add.assert_called_once()
-        call_args = mock_db.add.call_args[0][0]
+        mock_db.create.assert_called_once()
+        call_args = mock_db.create.call_args[0][0]
         assert call_args["type"] == "mistake_records"
         assert call_args["id"].startswith("q-context-")
         assert call_args["question_text"] == "矩阵 A 的特征值定义是什么？"
@@ -90,7 +90,7 @@ class TestTrackerScoring:
         """Correct multiple choice answer should not create a mistake record."""
         mock_db = AsyncMock()
         mock_llm = AsyncMock()
-        tracker = TrackerAgent(db=mock_db, llm_service=mock_llm)
+        tracker = TrackerAgent(mistake_repository=mock_db, llm_service=mock_llm)
 
         result = await tracker.score_answer(
             user_id="test-user",
@@ -105,14 +105,14 @@ class TestTrackerScoring:
         assert result.is_correct is True
         assert result.mistake_recorded is False
         assert result.score == 1.0
-        mock_db.add.assert_not_called()
+        mock_db.create.assert_not_called()
 
     @pytest.mark.asyncio
     async def test_case_insensitive_mc_scoring(self):
         """Multiple choice scoring is case-insensitive."""
         mock_db = AsyncMock()
         mock_llm = AsyncMock()
-        tracker = TrackerAgent(db=mock_db, llm_service=mock_llm)
+        tracker = TrackerAgent(mistake_repository=mock_db, llm_service=mock_llm)
 
         result = await tracker.score_answer(
             user_id="u1",
@@ -131,7 +131,7 @@ class TestTrackerScoring:
         """Multiple choice scoring trims whitespace from the student answer."""
         mock_db = AsyncMock()
         mock_llm = AsyncMock()
-        tracker = TrackerAgent(db=mock_db, llm_service=mock_llm)
+        tracker = TrackerAgent(mistake_repository=mock_db, llm_service=mock_llm)
 
         result = await tracker.score_answer(
             user_id="u1",
@@ -150,7 +150,7 @@ class TestTrackerScoring:
         """Fill-in-the-blank uses lowercase-normalized comparison."""
         mock_db = AsyncMock()
         mock_llm = AsyncMock()
-        tracker = TrackerAgent(db=mock_db, llm_service=mock_llm)
+        tracker = TrackerAgent(mistake_repository=mock_db, llm_service=mock_llm)
 
         result = await tracker.score_answer(
             user_id="u1",
@@ -169,7 +169,7 @@ class TestTrackerScoring:
         """Fill-in-the-blank wrong answer records a mistake."""
         mock_db = AsyncMock()
         mock_llm = AsyncMock()
-        tracker = TrackerAgent(db=mock_db, llm_service=mock_llm)
+        tracker = TrackerAgent(mistake_repository=mock_db, llm_service=mock_llm)
 
         result = await tracker.score_answer(
             user_id="u1",
@@ -189,7 +189,7 @@ class TestTrackerScoring:
         """Essay/short-answer uses exact comparison as fallback."""
         mock_db = AsyncMock()
         mock_llm = AsyncMock()
-        tracker = TrackerAgent(db=mock_db, llm_service=mock_llm)
+        tracker = TrackerAgent(mistake_repository=mock_db, llm_service=mock_llm)
 
         result = await tracker.score_answer(
             user_id="u1",
@@ -212,7 +212,7 @@ class TestTrackerWeakConcepts:
         """Weak concepts should be aggregated and sorted by mistake count."""
         mock_db = AsyncMock()
         mock_llm = AsyncMock()
-        mock_db.query = AsyncMock(
+        mock_db.list_for_user = AsyncMock(
             return_value=[
                 {"user_id": "u1", "concept": "特征值", "topic": "线性代数",
                  "wrong_answer": "A", "correct_answer": "B"},
@@ -222,7 +222,7 @@ class TestTrackerWeakConcepts:
                  "wrong_answer": "1", "correct_answer": "2"},
             ]
         )
-        tracker = TrackerAgent(db=mock_db, llm_service=mock_llm)
+        tracker = TrackerAgent(mistake_repository=mock_db, llm_service=mock_llm)
 
         results = await tracker.get_weak_concepts(user_id="u1")
 
@@ -240,8 +240,8 @@ class TestTrackerWeakConcepts:
         """No mistakes should return an empty list."""
         mock_db = AsyncMock()
         mock_llm = AsyncMock()
-        mock_db.query = AsyncMock(return_value=[])
-        tracker = TrackerAgent(db=mock_db, llm_service=mock_llm)
+        mock_db.list_for_user = AsyncMock(return_value=[])
+        tracker = TrackerAgent(mistake_repository=mock_db, llm_service=mock_llm)
 
         results = await tracker.get_weak_concepts(user_id="u1")
 
@@ -252,7 +252,7 @@ class TestTrackerWeakConcepts:
         """Prompt-like concepts should not appear as weak-point names."""
         mock_db = AsyncMock()
         mock_llm = AsyncMock()
-        mock_db.query = AsyncMock(
+        mock_db.list_for_user = AsyncMock(
             return_value=[
                 {
                     "user_id": "u1",
@@ -264,7 +264,7 @@ class TestTrackerWeakConcepts:
                 },
             ]
         )
-        tracker = TrackerAgent(db=mock_db, llm_service=mock_llm)
+        tracker = TrackerAgent(mistake_repository=mock_db, llm_service=mock_llm)
 
         results = await tracker.get_weak_concepts(user_id="u1")
 
@@ -278,7 +278,7 @@ class TestTrackerWeakConcepts:
         """Concept names such as HTTP requests should not be treated as prompts."""
         mock_db = AsyncMock()
         mock_llm = AsyncMock()
-        mock_db.query = AsyncMock(
+        mock_db.list_for_user = AsyncMock(
             return_value=[
                 {
                     "user_id": "u1",
@@ -290,7 +290,7 @@ class TestTrackerWeakConcepts:
                 },
             ]
         )
-        tracker = TrackerAgent(db=mock_db, llm_service=mock_llm)
+        tracker = TrackerAgent(mistake_repository=mock_db, llm_service=mock_llm)
 
         results = await tracker.get_weak_concepts(user_id="u1")
 
@@ -302,7 +302,7 @@ class TestTrackerWeakConcepts:
         """Study-plan prompts should use mistake summaries instead of user prompts."""
         mock_db = AsyncMock()
         mock_llm = AsyncMock()
-        mock_db.query = AsyncMock(
+        mock_db.list_for_user = AsyncMock(
             return_value=[
                 {
                     "user_id": "u1",
@@ -315,7 +315,7 @@ class TestTrackerWeakConcepts:
             ]
         )
         mock_llm.invoke = AsyncMock(return_value='[{"day":1,"topics":["错题回顾"],"tasks":["重做相关错题"]}]')
-        tracker = TrackerAgent(db=mock_db, llm_service=mock_llm)
+        tracker = TrackerAgent(mistake_repository=mock_db, llm_service=mock_llm)
 
         result = await tracker.generate_study_plan(
             user_id="u1",
@@ -333,7 +333,7 @@ class TestTrackerWeakConcepts:
         """A local plan should be returned if the LLM cannot generate one."""
         mock_db = AsyncMock()
         mock_llm = AsyncMock()
-        mock_db.query = AsyncMock(
+        mock_db.list_for_user = AsyncMock(
             return_value=[
                 {
                     "user_id": "u1",
@@ -348,7 +348,7 @@ class TestTrackerWeakConcepts:
         mock_llm.invoke = AsyncMock(
             side_effect=LLMProviderError("config", "No usable LLM providers are configured.")
         )
-        tracker = TrackerAgent(db=mock_db, llm_service=mock_llm)
+        tracker = TrackerAgent(mistake_repository=mock_db, llm_service=mock_llm)
 
         result = await tracker.generate_study_plan(
             user_id="u1",
@@ -516,8 +516,8 @@ class TestAdaptiveDifficulty:
     @pytest.mark.asyncio
     async def test_adaptive_difficulty_easy_after_many_wrong(self):
         """3+ wrong answers on a concept should produce easy difficulty."""
-        tracker = TrackerAgent(db=AsyncMock(), llm_service=AsyncMock())
-        tracker.db.query = AsyncMock(return_value=[
+        tracker = TrackerAgent(mistake_repository=AsyncMock(), llm_service=AsyncMock())
+        tracker.mistakes.list_for_user = AsyncMock(return_value=[
             {"concept": "特征值", "topic": "线性代数"},
             {"concept": "特征值", "topic": "线性代数"},
             {"concept": "特征值", "topic": "线性代数"},
@@ -528,7 +528,7 @@ class TestAdaptiveDifficulty:
     @pytest.mark.asyncio
     async def test_adaptive_difficulty_hard_when_no_mistakes(self):
         """0 wrong answers should produce hard difficulty."""
-        tracker = TrackerAgent(db=AsyncMock(), llm_service=AsyncMock())
-        tracker.db.query = AsyncMock(return_value=[])
+        tracker = TrackerAgent(mistake_repository=AsyncMock(), llm_service=AsyncMock())
+        tracker.mistakes.list_for_user = AsyncMock(return_value=[])
         signal = await tracker.get_adaptive_difficulty("test-user", "量子力学")
         assert signal >= 0.7

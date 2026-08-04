@@ -4,6 +4,7 @@ import {
   EventStreamContentType,
 } from "@microsoft/fetch-event-source";
 import { API_BASE } from "@/lib/config";
+import { getCsrfToken, refreshSession, signalAuthRequired } from "@/lib/api";
 import { useChatStore } from "@/stores/chatStore";
 import { useQuizStore } from "@/stores/quizStore";
 import type { Message } from "@/types";
@@ -11,6 +12,8 @@ import type { Message } from "@/types";
 interface UseChatStreamOptions {
   onConversationChange?: () => void;
 }
+
+class StreamAuthenticationError extends Error {}
 
 export function useChatStream({
   onConversationChange,
@@ -50,10 +53,14 @@ export function useChatStream({
       const controller = new AbortController();
       abortRef.current = controller;
 
-      try {
-        await fetchEventSource(`${API_BASE}/api/chat`, {
+      const connect = () =>
+        fetchEventSource(`${API_BASE}/api/chat`, {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
+          credentials: "include",
+          headers: {
+            "Content-Type": "application/json",
+            "X-CSRF-Token": getCsrfToken(),
+          },
           body: JSON.stringify({
             message: content,
             conversation_id: conversationId ?? undefined,
@@ -62,6 +69,9 @@ export function useChatStream({
           }),
           signal: controller.signal,
           async onopen(response) {
+            if (response.status === 401) {
+              throw new StreamAuthenticationError();
+            }
             if (
               response.ok &&
               response.headers
@@ -103,7 +113,29 @@ export function useChatStream({
             throw err;
           },
         });
-      } catch {
+
+      try {
+        try {
+          await connect();
+        } catch (error) {
+          if (
+            !(error instanceof StreamAuthenticationError) ||
+            controller.signal.aborted
+          ) {
+            throw error;
+          }
+          try {
+            await refreshSession();
+          } catch {
+            signalAuthRequired();
+            throw error;
+          }
+          await connect();
+        }
+      } catch (error) {
+        if (error instanceof StreamAuthenticationError) {
+          signalAuthRequired();
+        }
         assistantMsg.content = controller.signal.aborted
           ? "已停止生成。"
           : "请求失败，请稍后再试。";

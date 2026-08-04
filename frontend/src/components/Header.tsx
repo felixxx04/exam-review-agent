@@ -1,8 +1,18 @@
 "use client";
 
+import { useState } from "react";
+import { useRouter } from "next/navigation";
 import { useChatStore } from "@/stores/chatStore";
 import { useCreateConversation } from "@/hooks/useCreateConversation";
-import { BarChart3, BookOpen, MessageCircle, Plus } from "lucide-react";
+import { api } from "@/lib/api";
+import {
+  BarChart3,
+  BookOpen,
+  Loader2,
+  LogOut,
+  MessageCircle,
+  Plus,
+} from "lucide-react";
 import type { AppMode } from "@/types";
 
 const modes: { key: AppMode; label: string; icon: React.ReactNode }[] = [
@@ -16,8 +26,20 @@ interface HeaderProps {
 }
 
 export function Header({ onConversationChange }: HeaderProps) {
+  const router = useRouter();
   const { mode, isStreaming, setMode } = useChatStore();
   const handleNewConversation = useCreateConversation(onConversationChange);
+  const [loggingOut, setLoggingOut] = useState(false);
+
+  async function handleLogout() {
+    setLoggingOut(true);
+    try {
+      await api.auth.logout();
+      router.replace("/login");
+    } finally {
+      setLoggingOut(false);
+    }
+  }
 
   return (
     <header className="app-header">
@@ -81,6 +103,21 @@ export function Header({ onConversationChange }: HeaderProps) {
           >
             <Plus size={16} />
             <span className="hidden sm:inline">新会话</span>
+          </button>
+
+          <button
+            type="button"
+            className="header-icon-action"
+            aria-label="退出登录"
+            title="退出登录"
+            onClick={handleLogout}
+            disabled={loggingOut}
+          >
+            {loggingOut ? (
+              <Loader2 className="animate-spin" size={18} aria-hidden="true" />
+            ) : (
+              <LogOut size={18} aria-hidden="true" />
+            )}
           </button>
         </div>
       </div>

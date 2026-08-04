@@ -33,7 +33,11 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
         path = request.url.path
         method = request.method
 
-        if path == "/api/chat":
+        if path in {"/api/auth/login", "/api/auth/register"} and method == "POST":
+            limit, window = 5, 60
+        elif path == "/api/auth/refresh" and method == "POST":
+            limit, window = 20, 60
+        elif path == "/api/chat":
             limit, window = 30, 60
         elif path == "/api/materials" and method == "POST":
             limit, window = 10, 60
@@ -51,7 +55,15 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
 
             return JSONResponse(
                 status_code=429,
-                content={"detail": "请求过于频繁，请稍后再试"},
+                content={
+                    "success": False,
+                    "data": None,
+                    "error": {
+                        "code": "RATE_LIMITED",
+                        "message": "请求过于频繁，请稍后再试",
+                    },
+                    "meta": None,
+                },
             )
 
         self._requests[key].append(now)
