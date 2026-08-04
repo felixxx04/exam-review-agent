@@ -104,7 +104,9 @@ async def test_course_input_boundaries_are_validated(client_with_db: AsyncClient
 async def test_course_names_are_unique_within_one_private_tenant(
     client_with_db: AsyncClient,
 ):
-    assert (await client_with_db.post("/api/courses", json=COURSE_PAYLOAD)).status_code == 200
+    assert (
+        await client_with_db.post("/api/courses", json=COURSE_PAYLOAD)
+    ).status_code == 200
 
     duplicate = await client_with_db.post("/api/courses", json=COURSE_PAYLOAD)
 
@@ -159,13 +161,35 @@ async def test_course_ids_and_bulk_lists_are_scoped_to_authenticated_user(
             f"/api/courses/{owner_course['id']}",
             json={"name": "越权修改"},
         )
-        deleted = await client_with_db.delete(
-            f"/api/courses/{owner_course['id']}"
+        deleted = await client_with_db.delete(f"/api/courses/{owner_course['id']}")
+        foreign_conversation = await client_with_db.post(
+            "/api/conversations",
+            json={"course_id": owner_course["id"]},
+        )
+        foreign_materials = await client_with_db.get(
+            "/api/materials", params={"course_id": owner_course["id"]}
+        )
+        foreign_quiz = await client_with_db.post(
+            "/api/quiz/generate",
+            json={"topic": "越权课程", "course_id": owner_course["id"]},
+        )
+        foreign_memory = await client_with_db.get(
+            "/api/memory/profile", params={"course_id": owner_course["id"]}
+        )
+        foreign_study_plan = await client_with_db.post(
+            "/api/review/study-plan",
+            params={"course_id": owner_course["id"]},
+            json={"exam_date": "2026-12-31"},
         )
 
         assert guessed.status_code == 404
         assert patched.status_code == 404
         assert deleted.status_code == 404
+        assert foreign_conversation.status_code == 404
+        assert foreign_materials.status_code == 404
+        assert foreign_quiz.status_code == 404
+        assert foreign_memory.status_code == 404
+        assert foreign_study_plan.status_code == 404
         assert [item["id"] for item in bulk.json()["data"]["courses"]] == [
             own_course["id"]
         ]
@@ -183,9 +207,9 @@ async def test_conversation_can_override_default_course_session_minutes(
     client_with_db: AsyncClient,
     db_session,
 ):
-    course = (
-        await client_with_db.post("/api/courses", json=COURSE_PAYLOAD)
-    ).json()["data"]
+    course = (await client_with_db.post("/api/courses", json=COURSE_PAYLOAD)).json()[
+        "data"
+    ]
 
     response = await client_with_db.post(
         "/api/conversations",
@@ -205,3 +229,65 @@ async def test_conversation_can_override_default_course_session_minutes(
     assert persisted is not None
     assert persisted.course_id == course["id"]
     assert persisted.available_minutes_override == 25
+
+
+@pytest.mark.asyncio
+async def test_course_update_can_clear_exam_fields_and_preserve_a_default(
+    client_with_db: AsyncClient,
+):
+    first = (await client_with_db.post("/api/courses", json=COURSE_PAYLOAD)).json()[
+        "data"
+    ]
+    second = (
+        await client_with_db.post(
+            "/api/courses",
+            json={"name": "软件工程", "daily_available_minutes": 40},
+        )
+    ).json()["data"]
+
+    updated_response = await client_with_db.patch(
+        f"/api/courses/{first['id']}",
+        json={
+            "name": "数据库原理",
+            "description": None,
+            "exam_date": None,
+            "long_term_goal": None,
+            "is_default": False,
+        },
+    )
+
+    assert updated_response.status_code == 200
+    updated = updated_response.json()["data"]
+    assert updated["name"] == "数据库原理"
+    assert updated["description"] is None
+    assert updated["exam_date"] is None
+    assert updated["long_term_goal"] is None
+    assert updated["is_default"] is True
+
+    duplicate = await client_with_db.patch(
+        f"/api/courses/{second['id']}",
+        json={"name": "数据库原理"},
+    )
+    assert duplicate.status_code == 409
+
+
+@pytest.mark.asyncio
+async def test_legacy_client_recreates_default_after_last_course_is_deleted(
+    client_with_db: AsyncClient,
+):
+    course = (await client_with_db.post("/api/courses", json=COURSE_PAYLOAD)).json()[
+        "data"
+    ]
+    assert (
+        await client_with_db.delete(f"/api/courses/{course['id']}")
+    ).status_code == 200
+
+    conversation_response = await client_with_db.post("/api/conversations")
+
+    assert conversation_response.status_code == 200
+    conversation = conversation_response.json()["data"]
+    listed = (await client_with_db.get("/api/courses")).json()["data"]
+    assert listed["total"] == 1
+    assert listed["courses"][0]["name"] == "默认课程"
+    assert listed["courses"][0]["is_default"] is True
+    assert conversation["course_id"] == listed["courses"][0]["id"]

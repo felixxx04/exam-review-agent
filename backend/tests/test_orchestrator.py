@@ -102,13 +102,23 @@ async def test_orchestrator_routes_to_quiz(monkeypatch):
 async def test_orchestrator_routes_to_review(monkeypatch):
     mock_tracker = AsyncMock()
     mock_tracker.get_weak_concepts = AsyncMock(
-        return_value=[{"concept": "事务隔离级别", "topic": "数据库", "accuracy": 0.0, "attempt_count": 2}]
+        return_value=[
+            {
+                "concept": "事务隔离级别",
+                "topic": "数据库",
+                "accuracy": 0.0,
+                "attempt_count": 2,
+            }
+        ]
     )
-    monkeypatch.setattr("app.orchestrator.graph._build_tracker_agent", lambda: mock_tracker)
+    monkeypatch.setattr(
+        "app.orchestrator.graph._build_tracker_agent", lambda: mock_tracker
+    )
 
-    result = await run_orchestrator("查看我的错题", "user-1")
+    result = await run_orchestrator("查看我的错题", "user-1", course_id=42)
     assert result["intent"] == "review"
     assert any("事务隔离级别" in m.content for m in result["messages"])
+    mock_tracker.get_weak_concepts.assert_awaited_once_with("user-1", course_id=42)
 
 
 @pytest.mark.asyncio
@@ -117,7 +127,9 @@ async def test_orchestrator_passes_extra_kwargs(monkeypatch):
     mock_agent.answer = AsyncMock(return_value=AgentResponse(content="测试回答"))
     monkeypatch.setattr("app.orchestrator.graph._build_rag_agent", lambda: mock_agent)
 
-    result = await run_orchestrator("什么是薛定谔方程", "user-1", material_scope=["chapter-3"])
+    result = await run_orchestrator(
+        "什么是薛定谔方程", "user-1", material_scope=["chapter-3"]
+    )
     assert result.get("material_scope") == ["chapter-3"]
 
 
@@ -143,7 +155,9 @@ async def test_orchestrator_accepts_memory_context(monkeypatch):
         },
     )
 
-    assert result["memory_context"]["learning_profile"]["current_subject"] == "数据库系统"
+    assert (
+        result["memory_context"]["learning_profile"]["current_subject"] == "数据库系统"
+    )
     assert any("继续解释幻读" in message.content for message in result["messages"])
     mock_agent.answer.assert_awaited_once()
     assert mock_agent.answer.await_args.kwargs["memory_context"]["summary"] == (

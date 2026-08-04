@@ -214,12 +214,27 @@ class TestTrackerWeakConcepts:
         mock_llm = AsyncMock()
         mock_db.list_for_user = AsyncMock(
             return_value=[
-                {"user_id": "u1", "concept": "特征值", "topic": "线性代数",
-                 "wrong_answer": "A", "correct_answer": "B"},
-                {"user_id": "u1", "concept": "特征值", "topic": "线性代数",
-                 "wrong_answer": "C", "correct_answer": "D"},
-                {"user_id": "u1", "concept": "导数", "topic": "微积分",
-                 "wrong_answer": "1", "correct_answer": "2"},
+                {
+                    "user_id": "u1",
+                    "concept": "特征值",
+                    "topic": "线性代数",
+                    "wrong_answer": "A",
+                    "correct_answer": "B",
+                },
+                {
+                    "user_id": "u1",
+                    "concept": "特征值",
+                    "topic": "线性代数",
+                    "wrong_answer": "C",
+                    "correct_answer": "D",
+                },
+                {
+                    "user_id": "u1",
+                    "concept": "导数",
+                    "topic": "微积分",
+                    "wrong_answer": "1",
+                    "correct_answer": "2",
+                },
             ]
         )
         tracker = TrackerAgent(mistake_repository=mock_db, llm_service=mock_llm)
@@ -314,15 +329,19 @@ class TestTrackerWeakConcepts:
                 },
             ]
         )
-        mock_llm.invoke = AsyncMock(return_value='[{"day":1,"topics":["错题回顾"],"tasks":["重做相关错题"]}]')
+        mock_llm.invoke = AsyncMock(
+            return_value='[{"day":1,"topics":["错题回顾"],"tasks":["重做相关错题"]}]'
+        )
         tracker = TrackerAgent(mistake_repository=mock_db, llm_service=mock_llm)
 
         result = await tracker.generate_study_plan(
             user_id="u1",
             exam_date="2026-07-13",
             days_before_exam=7,
+            course_id=17,
         )
 
+        mock_db.list_for_user.assert_awaited_once_with("u1", course_id=17)
         prompt = mock_llm.invoke.call_args[0][0][0]["content"]
         assert "随便为我" not in prompt
         assert "错题：在数据库事务中" in prompt
@@ -346,7 +365,9 @@ class TestTrackerWeakConcepts:
             ]
         )
         mock_llm.invoke = AsyncMock(
-            side_effect=LLMProviderError("config", "No usable LLM providers are configured.")
+            side_effect=LLMProviderError(
+                "config", "No usable LLM providers are configured."
+            )
         )
         tracker = TrackerAgent(mistake_repository=mock_db, llm_service=mock_llm)
 
@@ -385,14 +406,24 @@ class TestMistakeSummarizer:
     async def test_summarize_few_mistakes_full_mode(self):
         """Fewer than 5 mistakes triggers full rewrite mode."""
         mock_llm = AsyncMock()
-        mock_llm.invoke = AsyncMock(return_value="薄弱点：特征值理解不深，需要加强练习。")
+        mock_llm.invoke = AsyncMock(
+            return_value="薄弱点：特征值理解不深，需要加强练习。"
+        )
         summarizer = MistakeSummarizer(llm_service=mock_llm)
 
         mistakes = [
-            {"concept": "特征值", "topic": "线性代数",
-             "wrong_answer": "A", "correct_answer": "B"},
-            {"concept": "导数", "topic": "微积分",
-             "wrong_answer": "1", "correct_answer": "2"},
+            {
+                "concept": "特征值",
+                "topic": "线性代数",
+                "wrong_answer": "A",
+                "correct_answer": "B",
+            },
+            {
+                "concept": "导数",
+                "topic": "微积分",
+                "wrong_answer": "1",
+                "correct_answer": "2",
+            },
         ]
 
         result = await summarizer.summarize(mistakes, mode="full")
@@ -408,8 +439,12 @@ class TestMistakeSummarizer:
         summarizer = MistakeSummarizer(llm_service=mock_llm)
 
         mistakes = [
-            {"concept": f"概念{i}", "topic": "测试",
-             "wrong_answer": "X", "correct_answer": "Y"}
+            {
+                "concept": f"概念{i}",
+                "topic": "测试",
+                "wrong_answer": "X",
+                "correct_answer": "Y",
+            }
             for i in range(5)
         ]
 
@@ -426,8 +461,12 @@ class TestMistakeSummarizer:
         summarizer = MistakeSummarizer(llm_service=mock_llm)
 
         mistakes = [
-            {"concept": f"概念{i}", "topic": "测试",
-             "wrong_answer": "X", "correct_answer": "Y"}
+            {
+                "concept": f"概念{i}",
+                "topic": "测试",
+                "wrong_answer": "X",
+                "correct_answer": "Y",
+            }
             for i in range(10)
         ]
 
@@ -448,8 +487,12 @@ class TestMistakeSummarizer:
         summarizer = MistakeSummarizer(llm_service=mock_llm)
 
         mistakes = [
-            {"concept": "概念1", "topic": "测试",
-             "wrong_answer": "A", "correct_answer": "B"},
+            {
+                "concept": "概念1",
+                "topic": "测试",
+                "wrong_answer": "A",
+                "correct_answer": "B",
+            },
         ]
 
         result = await summarizer.summarize(mistakes)
@@ -467,8 +510,12 @@ class TestMistakeSummarizer:
         summarizer = MistakeSummarizer(llm_service=mock_llm)
 
         mistakes = [
-            {"concept": f"概念{i}", "topic": "测试",
-             "wrong_answer": "X", "correct_answer": "Y"}
+            {
+                "concept": f"概念{i}",
+                "topic": "测试",
+                "wrong_answer": "X",
+                "correct_answer": "Y",
+            }
             for i in range(7)
         ]
 
@@ -497,7 +544,7 @@ class TestScoreResultDataclass:
             is_correct=False,
             mistake_recorded=True,
             score=0.0,
-            feedback="请复习特征值的定义。"
+            feedback="请复习特征值的定义。",
         )
         assert sr.is_correct is False
         assert sr.mistake_recorded is True
@@ -512,16 +559,17 @@ class TestScoreResultDataclass:
 
 
 class TestAdaptiveDifficulty:
-
     @pytest.mark.asyncio
     async def test_adaptive_difficulty_easy_after_many_wrong(self):
         """3+ wrong answers on a concept should produce easy difficulty."""
         tracker = TrackerAgent(mistake_repository=AsyncMock(), llm_service=AsyncMock())
-        tracker.mistakes.list_for_user = AsyncMock(return_value=[
-            {"concept": "特征值", "topic": "线性代数"},
-            {"concept": "特征值", "topic": "线性代数"},
-            {"concept": "特征值", "topic": "线性代数"},
-        ])
+        tracker.mistakes.list_for_user = AsyncMock(
+            return_value=[
+                {"concept": "特征值", "topic": "线性代数"},
+                {"concept": "特征值", "topic": "线性代数"},
+                {"concept": "特征值", "topic": "线性代数"},
+            ]
+        )
         signal = await tracker.get_adaptive_difficulty("test-user", "特征值")
         assert signal <= 0.3
 
