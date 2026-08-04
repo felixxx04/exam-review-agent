@@ -12,11 +12,14 @@ def test_v2_migrations_form_a_clean_chain():
     assert [path.name for path in versions] == [
         "20260803_0001_v2_postgres_pgvector.py",
         "20260804_0002_auth_sessions.py",
+        "20260805_0003_private_courses.py",
     ]
     initial = versions[0].read_text(encoding="utf-8")
     auth = versions[1].read_text(encoding="utf-8")
+    courses = versions[2].read_text(encoding="utf-8")
     assert "down_revision = None" in initial
     assert 'down_revision = "20260803_0001"' in auth
+    assert 'down_revision = "20260804_0002"' in courses
 
 
 def test_v2_migration_enables_pgvector_and_retrieval_indexes():
@@ -55,3 +58,29 @@ def test_auth_migration_adds_sessions_invites_and_tenant_rls():
     assert "is_disabled" in source
     assert "ENABLE ROW LEVEL SECURITY" in source
     assert "current_setting('app.current_user_id', true)" in source
+
+
+def test_course_migration_adds_private_course_domain_and_ownership():
+    source = (
+        BACKEND_ROOT
+        / "alembic"
+        / "versions"
+        / "20260805_0003_private_courses.py"
+    ).read_text(encoding="utf-8")
+
+    for table in ("courses", "exams", "study_availabilities", "concept_masteries"):
+        assert table in source
+    for table in (
+        "conversations",
+        "learning_profiles",
+        "materials",
+        "quiz_sessions",
+        "answer_records",
+        "mistake_records",
+        "concepts",
+    ):
+        assert f'"{table}"' in source
+        assert "course_id" in source
+    assert "available_minutes_override" in source
+    assert "ENABLE ROW LEVEL SECURITY" in source
+    assert "FORCE ROW LEVEL SECURITY" in source
