@@ -108,4 +108,5 @@ def test_deletion_migration_adds_quotas_and_queryable_account_jobs():
     assert "storage_limit_bytes" in source
     assert "account_deletion_jobs" in source
     assert "status_token_hash" in source
+    assert "uq_account_deletion_jobs_active_user" in source
     assert "ON DELETE SET NULL" in source or 'ondelete="SET NULL"' in source
