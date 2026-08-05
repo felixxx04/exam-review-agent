@@ -14,13 +14,16 @@ def test_v2_migrations_form_a_clean_chain():
         "20260803_0001_v2_postgres_pgvector.py",
         "20260804_0002_auth_sessions.py",
         "20260805_0003_private_courses.py",
+        "20260805_0004_deletion_quotas.py",
     ]
     initial = versions[0].read_text(encoding="utf-8")
     auth = versions[1].read_text(encoding="utf-8")
     courses = versions[2].read_text(encoding="utf-8")
+    deletion = versions[3].read_text(encoding="utf-8")
     assert "down_revision = None" in initial
     assert 'down_revision = "20260803_0001"' in auth
     assert 'down_revision = "20260804_0002"' in courses
+    assert 'down_revision = "20260805_0003"' in deletion
 
 
 def test_v2_migration_enables_pgvector_and_retrieval_indexes():
@@ -94,3 +97,15 @@ def test_course_migration_refuses_legacy_graph_loss_and_safely_collapses_downgra
     assert "DELETE FROM concepts" not in upgrade
     assert "_collapse_learning_profiles_for_legacy_schema()" in downgrade
     assert "_delete_private_concepts_for_legacy_schema()" in downgrade
+
+
+def test_deletion_migration_adds_quotas_and_queryable_account_jobs():
+    source = (
+        BACKEND_ROOT / "alembic" / "versions" / "20260805_0004_deletion_quotas.py"
+    ).read_text(encoding="utf-8")
+
+    assert "file_limit" in source
+    assert "storage_limit_bytes" in source
+    assert "account_deletion_jobs" in source
+    assert "status_token_hash" in source
+    assert "ON DELETE SET NULL" in source or 'ondelete="SET NULL"' in source
