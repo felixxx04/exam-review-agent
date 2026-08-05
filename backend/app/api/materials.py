@@ -19,6 +19,7 @@ from app.db.models import FileType, Material, MaterialChunk, ProcessingStatus
 from app.schemas.common import ApiResponse
 from app.schemas.materials import MaterialListResponse, MaterialResponse
 from app.services.course_service import CourseService
+from app.services.quota_service import QuotaService
 
 router = APIRouter(prefix="/api/materials", tags=["materials"])
 
@@ -71,6 +72,8 @@ async def upload_material(
             status_code=400,
             detail=f"文件大小超过限制 ({settings.max_upload_size_mb}MB)",
         )
+
+    await QuotaService(db).ensure_upload_allowed(current_user.id, file_size)
 
     storage_name = f"{uuid.uuid4().hex}_{file.filename}"
     UPLOAD_DIR.mkdir(exist_ok=True)

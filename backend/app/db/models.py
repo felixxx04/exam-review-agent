@@ -5,6 +5,7 @@ import uuid
 from pgvector.sqlalchemy import Vector
 from sqlalchemy import (
     JSON,
+    BigInteger,
     Boolean,
     CheckConstraint,
     Date,
@@ -91,6 +92,10 @@ class User(Base):
     __tablename__ = "users"
     __table_args__ = (
         CheckConstraint("role IN ('admin', 'user')", name="ck_users_role"),
+        CheckConstraint("file_limit >= 0", name="ck_users_file_limit"),
+        CheckConstraint(
+            "storage_limit_bytes >= 0", name="ck_users_storage_limit_bytes"
+        ),
     )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
@@ -104,6 +109,10 @@ class User(Base):
     display_name: Mapped[str] = mapped_column(String(100), nullable=False)
     role: Mapped[str] = mapped_column(String(16), default="user", nullable=False)
     is_disabled: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    file_limit: Mapped[int] = mapped_column(Integer, default=100, nullable=False)
+    storage_limit_bytes: Mapped[int] = mapped_column(
+        BigInteger, default=2 * 1024 * 1024 * 1024, nullable=False
+    )
     disabled_at: Mapped[datetime.datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )
@@ -135,6 +144,11 @@ class User(Base):
     refresh_tokens = relationship(
         "RefreshToken", back_populates="user", cascade="all, delete-orphan"
     )
+    account_deletion_jobs = relationship(
+        "AccountDeletionJob",
+        back_populates="user",
+        passive_deletes=True,
+    )
 
 
 class InviteCode(Base):
@@ -151,8 +165,8 @@ class InviteCode(Base):
     code_hash: Mapped[str] = mapped_column(
         String(64), unique=True, nullable=False, index=True
     )
-    created_by_user_id: Mapped[int] = mapped_column(
-        Integer, ForeignKey("users.id", ondelete="RESTRICT"), nullable=False, index=True
+    created_by_user_id: Mapped[int | None] = mapped_column(
+        Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True
     )
     max_uses: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
     use_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
@@ -210,6 +224,52 @@ class RefreshToken(Base):
         foreign_keys=[replaced_by_token_id],
         post_update=True,
     )
+
+
+class AccountDeletionJob(Base):
+    __tablename__ = "account_deletion_jobs"
+    __table_args__ = (
+        CheckConstraint(
+            "status IN ('pending', 'running', 'succeeded', 'failed')",
+            name="ck_account_deletion_jobs_status",
+        ),
+        CheckConstraint(
+            "attempt_count >= 0", name="ck_account_deletion_jobs_attempt_count"
+        ),
+        Index("ix_account_deletion_jobs_user_status", "user_id", "status"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    public_id: Mapped[str] = mapped_column(
+        String(64), default=_public_id, unique=True, nullable=False, index=True
+    )
+    user_id: Mapped[int | None] = mapped_column(
+        Integer,
+        ForeignKey("users.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
+    status_token_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    status: Mapped[str] = mapped_column(
+        String(16), default="pending", nullable=False, index=True
+    )
+    attempt_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    error_code: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    error_message: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    created_at: Mapped[datetime.datetime] = mapped_column(
+        DateTime(timezone=True), default=_utcnow, nullable=False
+    )
+    started_at: Mapped[datetime.datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    completed_at: Mapped[datetime.datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    updated_at: Mapped[datetime.datetime] = mapped_column(
+        DateTime(timezone=True), default=_utcnow, onupdate=_utcnow, nullable=False
+    )
+
+    user = relationship("User", back_populates="account_deletion_jobs")
 
 
 class Course(Base):

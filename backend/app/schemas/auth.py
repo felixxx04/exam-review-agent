@@ -25,6 +25,8 @@ class UserResponse(BaseModel):
     display_name: str
     role: str
     is_disabled: bool
+    file_limit: int
+    storage_limit_bytes: int
     created_at: datetime.datetime
 
 
@@ -52,5 +54,7 @@ class InviteUpdateRequest(BaseModel):
     disabled: bool
 
 
-class UserStatusRequest(BaseModel):
-    disabled: bool
+class UserUpdateRequest(BaseModel):
+    disabled: bool | None = None
+    file_limit: int | None = Field(default=None, ge=0)
+    storage_limit_bytes: int | None = Field(default=None, ge=0)

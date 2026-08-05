@@ -59,6 +59,8 @@ class MistakeRepository(Protocol):
         updates: Mapping[str, Any],
     ) -> MistakeData | None: ...
 
+    async def delete(self, user_id: str, mistake_id: str) -> bool: ...
+
 
 class SqlAlchemyMistakeRepository:
     _UPDATE_FIELDS = frozenset(
@@ -198,6 +200,23 @@ class SqlAlchemyMistakeRepository:
         await self._session.refresh(record)
         return self._to_data(record, user_id)
 
+    async def delete(self, user_id: str, mistake_id: str) -> bool:
+        user = await self._users.get_by_subject(user_id)
+        if user is None:
+            return False
+        result = await self._session.execute(
+            select(MistakeRecord).where(
+                MistakeRecord.user_id == user.id,
+                MistakeRecord.public_id == mistake_id,
+            )
+        )
+        record = result.scalar_one_or_none()
+        if record is None:
+            return False
+        await self._session.delete(record)
+        await self._session.commit()
+        return True
+
     @staticmethod
     def _optional_string(value: Any) -> str | None:
         return str(value) if value not in (None, "") else None
@@ -291,4 +310,11 @@ class SessionFactoryMistakeRepository:
             await bind_tenant_context(session, user_id)
             return await SqlAlchemyMistakeRepository(session).update(
                 user_id, mistake_id, updates
+            )
+
+    async def delete(self, user_id: str, mistake_id: str) -> bool:
+        async with self._session_factory() as session:
+            await bind_tenant_context(session, user_id)
+            return await SqlAlchemyMistakeRepository(session).delete(
+                user_id, mistake_id
             )

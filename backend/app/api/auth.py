@@ -25,7 +25,7 @@ from app.schemas.auth import (
     RegisterRequest,
     SessionResponse,
     UserResponse,
-    UserStatusRequest,
+    UserUpdateRequest,
 )
 from app.schemas.common import ApiResponse
 from app.services.auth_service import AuthService, CsrfError, IssuedSession
@@ -150,8 +150,10 @@ async def refresh(
     refresh_token = request.cookies.get(REFRESH_COOKIE_NAME, "")
     csrf_cookie = request.cookies.get(CSRF_COOKIE_NAME, "")
     csrf_header = request.headers.get(CSRF_HEADER_NAME, "")
-    if not csrf_cookie or not csrf_header or not secrets.compare_digest(
-        csrf_cookie, csrf_header
+    if (
+        not csrf_cookie
+        or not csrf_header
+        or not secrets.compare_digest(csrf_cookie, csrf_header)
     ):
         raise CsrfError()
     user_agent, ip_address = _request_metadata(request)
@@ -174,8 +176,10 @@ async def logout(
     refresh_token = request.cookies.get(REFRESH_COOKIE_NAME, "")
     csrf_cookie = request.cookies.get(CSRF_COOKIE_NAME, "")
     csrf_header = request.headers.get(CSRF_HEADER_NAME, "")
-    if not csrf_cookie or not csrf_header or not secrets.compare_digest(
-        csrf_cookie, csrf_header
+    if (
+        not csrf_cookie
+        or not csrf_header
+        or not secrets.compare_digest(csrf_cookie, csrf_header)
     ):
         raise CsrfError()
     await AuthService(db).logout(
@@ -243,14 +247,16 @@ async def update_invite(
 @router.patch("/users/{user_id}")
 async def update_user_status(
     user_id: int,
-    payload: UserStatusRequest,
+    payload: UserUpdateRequest,
     current: AuthenticatedUser = Depends(require_admin),
     db: AsyncSession = Depends(get_db),
 ):
     actor = await db.get(User, current.id)
-    user = await AuthService(db).set_user_disabled(
+    user = await AuthService(db).update_user(
         actor=actor,
         user_id=user_id,
         disabled=payload.disabled,
+        file_limit=payload.file_limit,
+        storage_limit_bytes=payload.storage_limit_bytes,
     )
     return ApiResponse.ok(data=UserResponse.model_validate(user))

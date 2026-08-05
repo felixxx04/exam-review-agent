@@ -2,6 +2,7 @@ import uuid
 from typing import Optional
 
 import chromadb
+from chromadb.errors import NotFoundError
 
 from app.core.config import settings
 
@@ -92,7 +93,7 @@ class VectorStore:
         name = self._collection_name(user_id)
         try:
             self._client.delete_collection(name)
-        except Exception:
+        except NotFoundError:
             pass
 
     def count(self, user_id: str) -> int:

@@ -7,6 +7,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 from app.api.chat import router as chat_router
+from app.api.account import router as account_router
 from app.api.auth import router as auth_router
 from app.api.conversations import router as conversations_router
 from app.api.courses import router as courses_router
@@ -48,6 +49,7 @@ EXCEPTION_STATUS: dict[str, int] = {
     "FORBIDDEN": 403,
     "NOT_FOUND": 404,
     "CONFLICT": 409,
+    "QUOTA_EXCEEDED": 409,
 }
 
 
@@ -96,6 +98,7 @@ app.add_middleware(
 app.add_middleware(RateLimitMiddleware)
 
 app.include_router(auth_router)
+app.include_router(account_router)
 app.include_router(courses_router)
 app.include_router(materials_router)
 app.include_router(chat_router)

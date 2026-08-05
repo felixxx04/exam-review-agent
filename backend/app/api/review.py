@@ -295,6 +295,18 @@ async def get_mistake(
     raise HTTPException(status_code=404, detail="Mistake not found")
 
 
+@router.delete("/mistakes/{mistake_id}")
+async def delete_mistake(
+    mistake_id: str,
+    current_user: AuthenticatedUser = Depends(get_current_user),
+    repository: MistakeRepository = Depends(get_mistake_repository),
+):
+    deleted = await repository.delete(current_user.subject, mistake_id)
+    if not deleted:
+        raise HTTPException(status_code=404, detail="Mistake not found")
+    return ApiResponse.ok(data={"detail": "已删除"})
+
+
 @router.patch("/mistakes/{mistake_id}")
 async def update_mistake(
     mistake_id: str,

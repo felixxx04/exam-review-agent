@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from fastapi import APIRouter, Body, Depends, HTTPException
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.agents.quiz_agent import QuizAgent
@@ -8,6 +9,7 @@ from app.agents.tracker_agent import TrackerAgent
 from app.api.dependencies import get_mistake_repository
 from app.core.auth import AuthenticatedUser, get_current_user
 from app.db.database import get_db
+from app.db.models import QuizSession
 from app.repositories.mistakes import MistakeRepository
 from app.schemas.common import ApiResponse
 from app.schemas.quiz import QuizRequest, QuizSubmitRequest, to_quiz_payload
@@ -24,6 +26,26 @@ def _build_quiz_agent() -> QuizAgent:
     retrieval = RetrievalService()
     generator = QuizGenerator(llm)
     return QuizAgent(retrieval, generator)
+
+
+@router.delete("/{quiz_session_id}")
+async def delete_quiz_session(
+    quiz_session_id: int,
+    current_user: AuthenticatedUser = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    result = await db.execute(
+        select(QuizSession).where(
+            QuizSession.id == quiz_session_id,
+            QuizSession.user_id == current_user.id,
+        )
+    )
+    quiz_session = result.scalar_one_or_none()
+    if quiz_session is None:
+        raise HTTPException(status_code=404, detail="Quiz session not found")
+    await db.delete(quiz_session)
+    await db.commit()
+    return ApiResponse.ok(data={"detail": "已删除"})
 
 
 @router.post("/generate")

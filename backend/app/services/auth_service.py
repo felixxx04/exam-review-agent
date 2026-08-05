@@ -135,7 +135,9 @@ class AuthService:
         if not 1 <= max_uses <= 100:
             raise InvalidInviteError()
         now = self._now()
-        expiry = self._aware(expires_at) if expires_at else now + DEFAULT_INVITE_LIFETIME
+        expiry = (
+            self._aware(expires_at) if expires_at else now + DEFAULT_INVITE_LIFETIME
+        )
         if expiry <= now:
             raise InvalidInviteError()
 
@@ -330,14 +332,38 @@ class AuthService:
     async def set_user_disabled(
         self, *, actor: User, user_id: int, disabled: bool
     ) -> User:
+        return await self.update_user(
+            actor=actor,
+            user_id=user_id,
+            disabled=disabled,
+        )
+
+    async def update_user(
+        self,
+        *,
+        actor: User,
+        user_id: int,
+        disabled: bool | None = None,
+        file_limit: int | None = None,
+        storage_limit_bytes: int | None = None,
+    ) -> User:
         self._require_admin(actor)
-        user = await self.db.get(User, user_id)
+        result = await self.db.execute(
+            select(User).where(User.id == user_id).with_for_update()
+        )
+        user = result.scalar_one_or_none()
         if user is None:
             raise ResourceNotFoundError()
-        now = self._now()
-        user.is_disabled = disabled
-        user.disabled_at = now if disabled else None
-        if disabled:
+
+        if file_limit is not None:
+            user.file_limit = file_limit
+        if storage_limit_bytes is not None:
+            user.storage_limit_bytes = storage_limit_bytes
+        if disabled is not None:
+            now = self._now()
+            user.is_disabled = disabled
+            user.disabled_at = now if disabled else None
+        if disabled is True:
             await self.db.execute(
                 update(RefreshToken)
                 .where(
@@ -374,7 +400,9 @@ class AuthService:
         ip_address: str | None,
     ) -> tuple[IssuedSession, RefreshToken]:
         now = self._now()
-        access_expires_at = now + datetime.timedelta(minutes=settings.access_token_minutes)
+        access_expires_at = now + datetime.timedelta(
+            minutes=settings.access_token_minutes
+        )
         refresh_expires_at = now + datetime.timedelta(days=settings.refresh_token_days)
         raw_refresh = secrets.token_urlsafe(48)
         raw_csrf = secrets.token_urlsafe(32)
@@ -430,9 +458,7 @@ class AuthService:
         )
 
     @staticmethod
-    def _invite_is_available(
-        invite: InviteCode | None, now: datetime.datetime
-    ) -> bool:
+    def _invite_is_available(invite: InviteCode | None, now: datetime.datetime) -> bool:
         return bool(
             invite is not None
             and invite.disabled_at is None
