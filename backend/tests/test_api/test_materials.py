@@ -9,10 +9,11 @@ import pytest
 from unittest.mock import AsyncMock
 
 from sqlalchemy import select
+from sqlalchemy.exc import SQLAlchemyError
 
 from app.api import materials as materials_api
 from app.core.middleware import RateLimitMiddleware
-from app.db.models import Material, MaterialChunk, User
+from app.db.models import Material, MaterialChunk, ProcessingStatus, User
 
 
 def _data(response):
@@ -115,6 +116,81 @@ class TestMaterialsUpload:
         )
 
         assert response.status_code == 200
+
+    @pytest.mark.asyncio
+    async def test_database_processing_error_keeps_storage_accurately_reserved(
+        self, client_with_db, db_session, tmp_path, monkeypatch
+    ):
+        class ParserStub:
+            async def parse(self, file_path, file_type=None):
+                raise SQLAlchemyError("processing database unavailable")
+
+        monkeypatch.setattr(materials_api, "UPLOAD_DIR", tmp_path)
+        monkeypatch.setattr(
+            "app.services.parser_service.ParserService", lambda: ParserStub()
+        )
+        content = b"durable reservation"
+
+        with pytest.raises(SQLAlchemyError):
+            await client_with_db.post(
+                "/api/materials",
+                files={"file": ("database-error.pdf", content, "application/pdf")},
+            )
+
+        material = await db_session.scalar(select(Material))
+        assert material is not None
+        await db_session.refresh(material)
+        assert material.processing_status == ProcessingStatus.PENDING
+        assert material.file_size == len(content)
+        assert material.hash == hashlib.sha256(content).hexdigest()
+        assert Path(material.storage_path).exists()
+
+    @pytest.mark.asyncio
+    async def test_final_commit_error_keeps_storage_accurately_reserved(
+        self, client_with_db, db_session, tmp_path, monkeypatch
+    ):
+        class ParserStub:
+            async def parse(self, file_path, file_type=None):
+                raise ValueError("invalid document")
+
+        monkeypatch.setattr(materials_api, "UPLOAD_DIR", tmp_path)
+        monkeypatch.setattr(
+            "app.services.parser_service.ParserService", lambda: ParserStub()
+        )
+        original_commit = db_session.commit
+
+        async def fail_processing_commit():
+            material = next(
+                (
+                    instance
+                    for instance in db_session.identity_map.values()
+                    if isinstance(instance, Material)
+                ),
+                None,
+            )
+            if (
+                material is not None
+                and material.processing_status != ProcessingStatus.PENDING
+            ):
+                raise SQLAlchemyError("final commit unavailable")
+            await original_commit()
+
+        monkeypatch.setattr(db_session, "commit", fail_processing_commit)
+        content = b"meter this file"
+
+        with pytest.raises(SQLAlchemyError):
+            await client_with_db.post(
+                "/api/materials",
+                files={"file": ("final-error.pdf", content, "application/pdf")},
+            )
+
+        material = await db_session.scalar(select(Material))
+        assert material is not None
+        await db_session.refresh(material)
+        assert material.processing_status == ProcessingStatus.PENDING
+        assert material.file_size == len(content)
+        assert material.hash == hashlib.sha256(content).hexdigest()
+        assert Path(material.storage_path).exists()
 
     @pytest.mark.asyncio
     async def test_upload_stores_material_metadata(self, client_with_db, db_session):

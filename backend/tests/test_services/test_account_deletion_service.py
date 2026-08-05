@@ -3,9 +3,10 @@ from __future__ import annotations
 import datetime
 
 import pytest
+from sqlalchemy.exc import SQLAlchemyError
 
 from app.core.exceptions import AppException
-from app.db.models import Course, InviteCode, Material, User
+from app.db.models import AccountDeletionJob, Course, InviteCode, Material, User
 from app.services.quota_service import QuotaService
 
 
@@ -58,8 +59,15 @@ async def test_account_deletion_removes_database_files_and_vector_scopes(
     vector_store = RecordingVectorStore()
     cleaner = AccountArtifactCleaner(tmp_path, vector_store)
 
-    result = await AccountDeletionService(db_session, cleaner).request(user.id)
-    status = await AccountDeletionService(db_session, cleaner).get_status(
+    service = AccountDeletionService(db_session, cleaner)
+    result = await service.request(user.id)
+
+    assert result.job.status == "pending"
+    assert await db_session.get(User, user.id) is not None
+    assert vector_store.deleted == []
+
+    await service.execute(result.job.public_id)
+    status = await service.get_status(
         result.job.public_id, result.status_token
     )
 
@@ -97,6 +105,9 @@ async def test_failed_account_deletion_is_visible_retryable_and_idempotent(
 
     requested = await service.request(user.id)
 
+    assert requested.job.status == "pending"
+    await service.execute(requested.job.public_id)
+
     assert requested.job.status == "failed"
     assert requested.job.attempt_count == 1
     assert requested.job.error_code == "ARTIFACT_CLEANUP_FAILED"
@@ -124,13 +135,21 @@ async def test_failed_account_deletion_is_visible_retryable_and_idempotent(
 
 
 @pytest.mark.asyncio
-async def test_account_deletion_api_returns_queryable_status_token(client_with_db):
+async def test_account_deletion_api_returns_queryable_status_token(
+    client_with_db, monkeypatch
+):
+    from unittest.mock import AsyncMock
+
+    execute_deletion = AsyncMock()
+    monkeypatch.setattr("app.api.account._execute_deletion", execute_deletion)
+
     response = await client_with_db.post("/api/account/deletion")
 
     assert response.status_code == 202
     created = response.json()["data"]
-    assert created["status"] == "succeeded"
+    assert created["status"] == "pending"
     assert created["status_token"]
+    execute_deletion.assert_awaited_once_with(created["job_id"])
 
     status = await client_with_db.get(
         f"/api/account/deletions/{created['job_id']}",
@@ -142,7 +161,7 @@ async def test_account_deletion_api_returns_queryable_status_token(client_with_d
     )
 
     assert status.status_code == 200
-    assert status.json()["data"]["status"] == "succeeded"
+    assert status.json()["data"]["status"] == "pending"
     assert "status_token" not in status.json()["data"]
     assert rejected.status_code == 404
 
@@ -191,3 +210,123 @@ async def test_account_artifact_cleaner_rejects_paths_outside_upload_root(tmp_pa
         assert vector_store.deleted == []
     finally:
         outside.unlink(missing_ok=True)
+
+
+@pytest.mark.asyncio
+async def test_request_returns_queryable_token_when_deletion_preparation_fails(
+    db_session, tmp_path, monkeypatch
+):
+    from app.services.account_deletion_service import (
+        AccountArtifactCleaner,
+        AccountDeletionService,
+    )
+
+    user, _, _ = await _user_with_material(
+        db_session, tmp_path, "delete_prepare_failure"
+    )
+    original_execute = db_session.execute
+    failed_once = False
+
+    async def fail_course_snapshot(statement, *args, **kwargs):
+        nonlocal failed_once
+        if not failed_once and "FROM courses" in str(statement):
+            failed_once = True
+            raise RuntimeError("database snapshot unavailable")
+        return await original_execute(statement, *args, **kwargs)
+
+    monkeypatch.setattr(db_session, "execute", fail_course_snapshot)
+    service = AccountDeletionService(
+        db_session,
+        AccountArtifactCleaner(tmp_path, RecordingVectorStore()),
+    )
+
+    requested = await service.request(user.id)
+    await service.execute(requested.job.public_id)
+    status = await service.get_status(requested.job.public_id, requested.status_token)
+
+    assert failed_once is True
+    assert requested.status_token
+    assert status.status == "failed"
+    assert status.error_code == "DATABASE_DELETION_FAILED"
+    assert status.attempt_count == 1
+
+
+@pytest.mark.asyncio
+async def test_committed_success_is_not_downgraded_when_commit_result_is_uncertain(
+    db_session, tmp_path, monkeypatch
+):
+    from app.services.account_deletion_service import (
+        AccountArtifactCleaner,
+        AccountDeletionService,
+    )
+
+    user, _, _ = await _user_with_material(
+        db_session, tmp_path, "delete_commit_uncertain"
+    )
+    original_commit = db_session.commit
+    raised_once = False
+
+    async def commit_then_report_failure():
+        nonlocal raised_once
+        should_raise = not raised_once and any(
+            isinstance(instance, AccountDeletionJob) and instance.status == "succeeded"
+            for instance in db_session.identity_map.values()
+        )
+        await original_commit()
+        if should_raise:
+            raised_once = True
+            raise RuntimeError("commit acknowledgement lost")
+
+    monkeypatch.setattr(db_session, "commit", commit_then_report_failure)
+    service = AccountDeletionService(
+        db_session,
+        AccountArtifactCleaner(tmp_path, RecordingVectorStore()),
+    )
+
+    requested = await service.request(user.id)
+    await service.execute(requested.job.public_id)
+    status = await service.get_status(requested.job.public_id, requested.status_token)
+
+    assert raised_once is True
+    assert status.status == "succeeded"
+    assert status.user_id is None
+
+
+@pytest.mark.asyncio
+async def test_execution_recovery_failure_leaves_the_delivered_token_retryable(
+    db_session, tmp_path, monkeypatch
+):
+    from app.services.account_deletion_service import (
+        AccountArtifactCleaner,
+        AccountDeletionService,
+    )
+
+    user, _, _ = await _user_with_material(
+        db_session, tmp_path, "delete_recovery_failure"
+    )
+    service = AccountDeletionService(
+        db_session,
+        AccountArtifactCleaner(tmp_path, RecordingVectorStore()),
+    )
+    requested = await service.request(user.id)
+    original_commit = db_session.commit
+
+    async def fail_final_commit():
+        if any(
+            isinstance(instance, AccountDeletionJob) and instance.status == "succeeded"
+            for instance in db_session.identity_map.values()
+        ):
+            raise SQLAlchemyError("database deletion unavailable")
+        await original_commit()
+
+    async def fail_status_reload(_job_id):
+        raise SQLAlchemyError("status recovery unavailable")
+
+    monkeypatch.setattr(db_session, "commit", fail_final_commit)
+    monkeypatch.setattr(service, "_reload_job", fail_status_reload)
+
+    await service.execute(requested.job.public_id)
+    status = await service.get_status(requested.job.public_id, requested.status_token)
+
+    assert status.status == "pending"
+    assert status.user_id == user.id

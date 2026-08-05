@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import datetime
 import os
 import uuid
@@ -11,10 +12,12 @@ from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
 from app.db.database import bind_tenant_context
 from app.db.models import AccountDeletionJob, Course, InviteCode, Material, User
+from app.core.exceptions import AppException
 from app.services.account_deletion_service import (
     AccountArtifactCleaner,
     AccountDeletionService,
 )
+from app.services.quota_service import QuotaService
 
 
 POSTGRES_INTEGRATION_URL = os.getenv("POSTGRES_INTEGRATION_URL")
@@ -74,6 +77,25 @@ async def test_postgres_quotas_and_account_deletion_cascade(tmp_path):
                 file_limit=-1,
             )
             session.add(invalid)
+            with pytest.raises(IntegrityError):
+                await session.commit()
+            await session.rollback()
+
+        async with session_factory() as session:
+            session.add_all(
+                [
+                    AccountDeletionJob(
+                        public_id=f"duplicate-a-{suffix}",
+                        user_id=user_id,
+                        status_token_hash="a" * 64,
+                    ),
+                    AccountDeletionJob(
+                        public_id=f"duplicate-b-{suffix}",
+                        user_id=user_id,
+                        status_token_hash="b" * 64,
+                    ),
+                ]
+            )
             with pytest.raises(IntegrityError):
                 await session.commit()
             await session.rollback()
@@ -160,6 +182,194 @@ async def test_postgres_quotas_and_account_deletion_cascade(tmp_path):
                 if job is not None:
                     await session.delete(job)
             if user_id is not None:
+                user = await session.get(User, user_id)
+                if user is not None:
+                    await session.delete(user)
+            await session.commit()
+        await engine.dispose()
+
+
+@pytest.mark.asyncio
+async def test_account_deletion_waits_for_an_upload_holding_the_user_lock(tmp_path):
+    assert POSTGRES_INTEGRATION_URL is not None
+    engine = create_async_engine(POSTGRES_INTEGRATION_URL)
+    session_factory = async_sessionmaker(engine, expire_on_commit=False)
+    suffix = uuid.uuid4().hex[:12]
+    upload_locked = asyncio.Event()
+    release_upload = asyncio.Event()
+    user_id: int | None = None
+    job_public_id: str | None = None
+    upload_task: asyncio.Task[None] | None = None
+    deletion_task: asyncio.Task | None = None
+    filename = f"concurrent-{suffix}.pdf"
+    vector_store = RecordingVectorStore()
+
+    try:
+        async with session_factory() as session:
+            user = User(
+                username=f"concurrent_deletion_{suffix}",
+                hashed_password="integration-test-hash",
+                display_name="Concurrent Deletion",
+            )
+            session.add(user)
+            await session.commit()
+            user_id = user.id
+
+        assert user_id is not None
+        async with session_factory() as session:
+            await bind_tenant_context(session, user_id)
+            course = Course(
+                user_id=user_id,
+                name=f"Concurrent course {suffix}",
+                is_default=True,
+            )
+            session.add(course)
+            await session.commit()
+            course_id = course.id
+
+        async def finish_upload() -> None:
+            async with session_factory() as session:
+                await bind_tenant_context(session, user_id)
+                await QuotaService(session).ensure_upload_allowed(user_id, 7)
+                (tmp_path / filename).write_bytes(b"pending")
+                session.add(
+                    Material(
+                        user_id=user_id,
+                        course_id=course_id,
+                        filename=filename,
+                        original_filename=filename,
+                        file_type="pdf",
+                        file_size=7,
+                    )
+                )
+                upload_locked.set()
+                await release_upload.wait()
+                await session.commit()
+
+        async def delete_account():
+            async with session_factory() as session:
+                return await AccountDeletionService(
+                    session,
+                    AccountArtifactCleaner(tmp_path, vector_store),
+                ).request(user_id)
+
+        upload_task = asyncio.create_task(finish_upload())
+        await upload_locked.wait()
+        deletion_task = asyncio.create_task(delete_account())
+        with pytest.raises(TimeoutError):
+            await asyncio.wait_for(asyncio.shield(deletion_task), timeout=0.2)
+
+        release_upload.set()
+        await upload_task
+        result = await deletion_task
+        job_public_id = result.job.public_id
+
+        assert result.job.status == "succeeded"
+        assert not (tmp_path / filename).exists()
+        assert vector_store.deleted == [
+            str(user_id),
+            f"{user_id}_course_{course_id}",
+        ]
+        async with session_factory() as session:
+            assert await session.get(User, user_id) is None
+    finally:
+        release_upload.set()
+        pending_tasks = [
+            task
+            for task in (upload_task, deletion_task)
+            if task is not None and not task.done()
+        ]
+        if pending_tasks:
+            await asyncio.gather(*pending_tasks, return_exceptions=True)
+        async with session_factory() as session:
+            if job_public_id is not None:
+                job = await session.scalar(
+                    select(AccountDeletionJob).where(
+                        AccountDeletionJob.public_id == job_public_id
+                    )
+                )
+                if job is not None:
+                    await session.delete(job)
+            if user_id is not None:
+                user = await session.get(User, user_id)
+                if user is not None:
+                    await session.delete(user)
+            await session.commit()
+        (tmp_path / filename).unlink(missing_ok=True)
+        await engine.dispose()
+
+
+@pytest.mark.asyncio
+async def test_concurrent_account_deletion_requests_create_one_active_job(tmp_path):
+    assert POSTGRES_INTEGRATION_URL is not None
+    engine = create_async_engine(POSTGRES_INTEGRATION_URL)
+    session_factory = async_sessionmaker(engine, expire_on_commit=False)
+    suffix = uuid.uuid4().hex[:12]
+    start = asyncio.Event()
+    user_id: int | None = None
+
+    try:
+        async with session_factory() as session:
+            user = User(
+                username=f"concurrent_request_{suffix}",
+                hashed_password="integration-test-hash",
+                display_name="Concurrent Request",
+            )
+            session.add(user)
+            await session.commit()
+            user_id = user.id
+
+        assert user_id is not None
+
+        async def request_deletion() -> str:
+            async with session_factory() as session:
+                await start.wait()
+                try:
+                    await AccountDeletionService(
+                        session,
+                        AccountArtifactCleaner(tmp_path, RecordingVectorStore()),
+                    ).request(user_id)
+                    return "created"
+                except AppException as exc:
+                    return exc.code
+
+        requests = [
+            asyncio.create_task(request_deletion()),
+            asyncio.create_task(request_deletion()),
+        ]
+        start.set()
+        outcomes = await asyncio.gather(*requests)
+
+        assert sorted(outcomes) == ["CONFLICT", "created"]
+        async with session_factory() as session:
+            jobs = (
+                (
+                    await session.execute(
+                        select(AccountDeletionJob).where(
+                            AccountDeletionJob.user_id == user_id
+                        )
+                    )
+                )
+                .scalars()
+                .all()
+            )
+            assert len(jobs) == 1
+    finally:
+        async with session_factory() as session:
+            if user_id is not None:
+                jobs = (
+                    (
+                        await session.execute(
+                            select(AccountDeletionJob).where(
+                                AccountDeletionJob.user_id == user_id
+                            )
+                        )
+                    )
+                    .scalars()
+                    .all()
+                )
+                for job in jobs:
+                    await session.delete(job)
                 user = await session.get(User, user_id)
                 if user is not None:
                     await session.delete(user)
