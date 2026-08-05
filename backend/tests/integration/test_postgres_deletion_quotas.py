@@ -126,11 +126,14 @@ async def test_postgres_quotas_and_account_deletion_cascade(tmp_path):
             session.add(material)
             await session.commit()
 
-            result = await AccountDeletionService(
+            service = AccountDeletionService(
                 session,
                 AccountArtifactCleaner(tmp_path, vector_store),
-            ).request(user_id)
+            )
+            result = await service.request(user_id)
             job_public_id = result.job.public_id
+            assert result.job.status == "pending"
+            await service.execute(result.job.public_id)
 
             assert result.job.status == "succeeded"
             assert result.job.user_id is None
@@ -248,10 +251,13 @@ async def test_account_deletion_waits_for_an_upload_holding_the_user_lock(tmp_pa
 
         async def delete_account():
             async with session_factory() as session:
-                return await AccountDeletionService(
+                service = AccountDeletionService(
                     session,
                     AccountArtifactCleaner(tmp_path, vector_store),
-                ).request(user_id)
+                )
+                result = await service.request(user_id)
+                await service.execute(result.job.public_id)
+                return result
 
         upload_task = asyncio.create_task(finish_upload())
         await upload_locked.wait()

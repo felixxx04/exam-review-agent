@@ -2,7 +2,7 @@
 
 面向大学生期末复习场景的 AI 学习助手。用户可以上传课件或讲义，基于资料进行问答、生成练习题、查看薄弱点，并在 `Ask / Quiz / Review` 三种模式之间切换完成复习闭环。
 
-当前仓库已进入 V2 Phase 1。Task 1.1 已将业务默认数据库切换为 PostgreSQL，建立 pgvector Schema、SQLAlchemy Repository 边界和错题持久化；Task 1.2 已实现邀请码认证和安全会话；Task 1.3 已实现私人多课程领域模型及课程级数据隔离，正在等待验收。账号删除和配额仍按后续 Task 逐项实施。
+当前仓库已完成 V2 Phase 1 的 Task 1.1～1.4，正在等待 Phase 1 验收。业务默认数据库已切换为 PostgreSQL，现已具备邀请码认证、安全会话、私人多课程隔离、用户数据删除和上传配额；未经验收不会开始 Phase 2 的对象存储与可靠任务流水线。
 
 ## 核心功能
 
@@ -11,6 +11,8 @@
 - 智能问答：围绕上传资料进行问答
 - 题目生成：按知识点、难度和数量生成练习题
 - 错题分析：记录答题结果并输出薄弱点视图
+- 数据控制：删除会话、资料、测验、错题和课程记忆；账号注销提供可查询、可重试的删除任务
+- 上传配额：默认每用户 100 个文件、2 GiB，管理员可按用户覆盖
 - 学习工作台：提供 `Ask / Quiz / Review` 三种模式
 
 ## 当前架构
@@ -23,7 +25,8 @@ frontend (Next.js 15 / React 19)
 
 backend (FastAPI / Python 3.11-3.12)
   -> 邀请码 / Argon2id / JWT / Refresh 轮换 / CSRF
-  -> courses / chat / materials / quiz / review API
+  -> courses / chat / materials / quiz / review / account API
+  -> 账号注销任务 / 本地文件与 Chroma 清理 / 用户配额
   -> RAG Agent / Quiz Agent / Tracker Agent
   -> PostgreSQL 17（私人课程、业务数据、错题和资料块元数据）
   -> pgvector 0.8.1 Schema（Phase 3 切换检索实现）
@@ -118,11 +121,11 @@ python -m pytest tests -q --cov=app
 python -m bandit -r app -c pyproject.toml -ll
 ```
 
-PostgreSQL 容器运行时可额外执行真实 RLS 集成测试：
+PostgreSQL 容器运行时可额外执行真实 RLS、删除和配额集成测试：
 
 ```powershell
 $env:POSTGRES_INTEGRATION_URL="postgresql+asyncpg://exam_review:exam-review-dev@localhost:5432/exam_review"
-python -m pytest tests/integration/test_postgres_rls.py -q
+python -m pytest tests/integration/test_postgres_rls.py tests/integration/test_postgres_deletion_quotas.py -q
 ```
 
 前端完整基线：

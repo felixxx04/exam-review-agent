@@ -50,6 +50,7 @@ EXCEPTION_STATUS: dict[str, int] = {
     "NOT_FOUND": 404,
     "CONFLICT": 409,
     "QUOTA_EXCEEDED": 409,
+    "ACCOUNT_DELETION_IN_PROGRESS": 409,
 }
 
 

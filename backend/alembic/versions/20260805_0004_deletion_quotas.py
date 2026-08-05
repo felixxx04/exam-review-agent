@@ -82,9 +82,10 @@ def upgrade() -> None:
         ["status"],
     )
     op.create_index(
-        "ix_account_deletion_jobs_user_id",
+        "uq_account_deletion_jobs_active_user",
         "account_deletion_jobs",
         ["user_id"],
+        unique=True,
     )
     op.create_index(
         "ix_account_deletion_jobs_user_status",
@@ -98,7 +99,8 @@ def downgrade() -> None:
         "ix_account_deletion_jobs_user_status", table_name="account_deletion_jobs"
     )
     op.drop_index(
-        "ix_account_deletion_jobs_user_id", table_name="account_deletion_jobs"
+        "uq_account_deletion_jobs_active_user",
+        table_name="account_deletion_jobs",
     )
     op.drop_index("ix_account_deletion_jobs_status", table_name="account_deletion_jobs")
     op.drop_index(

@@ -1,11 +1,13 @@
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, Header, status
+import logging
+
+from fastapi import APIRouter, BackgroundTasks, Depends, Header, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api import materials as materials_api
 from app.core.auth import AuthenticatedUser, get_current_user
-from app.db.database import get_db
+from app.db.database import AsyncSessionLocal, get_db
 from app.db.models import AccountDeletionJob
 from app.db.vector_store import VectorStore
 from app.schemas.account import (
@@ -22,10 +24,23 @@ from app.services.quota_service import QuotaService
 
 
 router = APIRouter(prefix="/api/account", tags=["account"])
+logger = logging.getLogger(__name__)
 
 
 def _cleaner() -> AccountArtifactCleaner:
     return AccountArtifactCleaner(materials_api.UPLOAD_DIR, VectorStore())
+
+
+async def _execute_deletion(job_id: str) -> None:
+    try:
+        async with AsyncSessionLocal() as db:
+            await AccountDeletionService(db, _cleaner()).execute(job_id)
+    except Exception as exc:
+        logger.exception(
+            "Background account deletion failed job_id=%s error_type=%s",
+            job_id,
+            type(exc).__name__,
+        )
 
 
 def _status_response(job: AccountDeletionJob) -> AccountDeletionStatusResponse:
@@ -53,10 +68,12 @@ async def get_quota(
 
 @router.post("/deletion", status_code=status.HTTP_202_ACCEPTED)
 async def request_account_deletion(
+    background_tasks: BackgroundTasks,
     current_user: AuthenticatedUser = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
     result = await AccountDeletionService(db, _cleaner()).request(current_user.id)
+    background_tasks.add_task(_execute_deletion, result.job.public_id)
     return ApiResponse.ok(
         data=AccountDeletionCreatedResponse(
             job_id=result.job.public_id,

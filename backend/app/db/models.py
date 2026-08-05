@@ -236,6 +236,11 @@ class AccountDeletionJob(Base):
         CheckConstraint(
             "attempt_count >= 0", name="ck_account_deletion_jobs_attempt_count"
         ),
+        Index(
+            "uq_account_deletion_jobs_active_user",
+            "user_id",
+            unique=True,
+        ),
         Index("ix_account_deletion_jobs_user_status", "user_id", "status"),
     )
 
@@ -247,7 +252,6 @@ class AccountDeletionJob(Base):
         Integer,
         ForeignKey("users.id", ondelete="SET NULL"),
         nullable=True,
-        index=True,
     )
     status_token_hash: Mapped[str] = mapped_column(String(64), nullable=False)
     status: Mapped[str] = mapped_column(

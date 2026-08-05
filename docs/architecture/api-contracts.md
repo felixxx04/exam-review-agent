@@ -51,6 +51,8 @@
 | `NOT_FOUND` | 404 | 资源不存在或不属于当前用户 |
 | `INSUFFICIENT_MATERIAL` | 422 | 资料不足，需要补充或澄清 |
 | `CONFLICT` | 409 | 状态冲突或重复操作 |
+| `QUOTA_EXCEEDED` | 409 | 文件数量或存储容量超过用户配额 |
+| `ACCOUNT_DELETION_IN_PROGRESS` | 409 | 账号注销已冻结新的用户数据写入 |
 | `RATE_LIMITED` | 429 | 达到速率或费用限制 |
 | `DEPENDENCY_UNAVAILABLE` | 503 | 数据库、队列、存储或模型暂不可用 |
 | `RUN_FAILED` | 500 | Run 已以可审计失败结束 |
@@ -94,6 +96,26 @@
 - Material、Conversation、Quiz、Review、Memory Profile 和 Study Plan 接口接受可选 `course_id`。传入时必须验证课程归属；旧客户端省略时使用默认课程，并在用户尚无课程时安全地懒创建兼容课程。
 - Conversation Create 可通过 `session_available_minutes` 覆盖当前会话可用时长；该值只属于会话，不修改课程的 `daily_available_minutes`。
 - 检索、错题、学习画像、知识图谱和掌握度必须继承已解析的 `user_id + course_id`，不得退化为仅按用户或资源 ID 查询。
+
+### 2.3 删除与配额
+
+| 方法与路径 | 权限 | 行为 |
+|---|---|---|
+| `GET /api/account/quota` | 已认证 | 返回文件数量与存储容量的限制和已用量 |
+| `POST /api/account/deletion` | 已认证 | 冻结账号并创建删除任务；返回一次性明文状态令牌 |
+| `GET /api/account/deletions/{job_id}` | `X-Deletion-Status-Token` | 查询删除任务终态、尝试次数和安全错误摘要 |
+| `POST /api/account/deletions/{job_id}/retry` | `X-Deletion-Status-Token` | 重试 `failed` 删除任务 |
+| `DELETE /api/conversations/{conversation_id}` | 已认证 | 删除当前用户会话及其消息 |
+| `DELETE /api/materials/{material_id}` | 已认证 | 删除资料元数据、派生块、临时向量和本地原文件 |
+| `DELETE /api/quiz/{quiz_session_id}` | 已认证 | 删除测验及其课程范围派生记录 |
+| `DELETE /api/review/mistakes/{mistake_id}` | 已认证 | 删除当前用户错题 |
+| `DELETE /api/memory/profile?course_id=...` | 已认证 | 删除指定私人课程的学习画像 |
+
+- 用户默认限制 100 个文件、2 GiB；管理员可通过既有 `PATCH /api/auth/users/{id}` 的 `file_limit` 与 `storage_limit_bytes` 覆盖。数量和容量均以 PostgreSQL Material 记录为事实源。
+- 上传在读取正文前先提交 `pending` Material 预留。文件使用服务端随机名流式写入，超限、写入或数据库失败必须删除预留与文件；上传与账号注销以同一用户行锁串行化。
+- 删除任务状态为 `pending -> running -> succeeded | failed`。创建接口返回 `202` 与 `status="pending"`；响应发送后，进程内后台执行器使用独立数据库 Session 开始清理。进程中断时数据库保留可查询、可重试状态，阶段 2 再迁移到可靠 Worker。状态令牌只保存哈希，丢失后不能由服务端还原。
+- 注销创建后账号立即禁用，活动 Refresh Token 被撤销，管理员创建的邀请码被禁用。相同用户已有删除任务时返回 `CONFLICT`；失败任务使用原 `job_id` 和状态令牌重试。
+- 删除任务公开错误只包含稳定 `error_code` 和安全摘要，不返回路径、数据库异常、令牌、资料内容或堆栈。
 
 ## 2. 游标分页
 

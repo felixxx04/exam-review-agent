@@ -2,7 +2,7 @@
 
 - 状态：Accepted
 - 日期：2026-08-03
-- 实现：Task 1.2、Task 1.3 已完成，Task 1.3 等待验收（2026-08-05）
+- 实现：Task 1.2、Task 1.3、Task 1.4 已完成，等待 Phase 1 验收（2026-08-05）
 
 ## 背景
 
@@ -46,7 +46,7 @@ Task 1.2 之前，路由固定使用 `user_id="default"`，Bearer Token 只是�
 - 现有 Chat、Conversation、Material、Quiz、Review 和 Memory API 已从可信认证上下文获取用户；直接租户表在 PostgreSQL 中启用并强制执行 RLS。每次新事务自动重绑租户上下文，独立 SessionFactory 也必须显式绑定可信用户。
 - 本地 PostgreSQL 使用独立 bootstrap 管理员创建 `NOSUPERUSER NOBYPASSRLS` 的 `exam_review` 应用角色；Alembic 与运行时都使用应用角色，避免超级用户绕过 RLS。
 - PostgreSQL 17.8 + pgvector 0.8.1 已完成在线 migration 往返、跨事务 RLS、越权写拒绝和 readiness 联调。
-- Task 1.2 的原始边界不包含私人多课程；该能力已在 Task 1.3 完成。账号删除/配额、对象存储或 Agent Runtime 仍不在当前任务范围。
+- Task 1.2 的原始边界不包含私人多课程；该能力已在 Task 1.3 完成。账号删除和配额已在 Task 1.4 完成；对象存储与 Agent Runtime 仍不在 Phase 1 范围。
 
 ## Task 1.3 实现说明
 
@@ -54,4 +54,12 @@ Task 1.2 之前，路由固定使用 `user_id="default"`，Bearer Token 只是�
 - 旧客户端不提供 `course_id` 时解析用户默认课程；会话请求可临时覆盖每日可用分钟数，不改变课程默认值。删除默认课程时在同一事务中提升剩余课程；删除最后一门课程后，下一次兼容请求会在用户锁内懒创建默认课程。
 - 课程范围从 API 进入 Conversation、Material、Quiz、Review、Memory、Study Plan、Tracker、RAG、Chroma 和 BM25。所有课程相关 `course_id` 列为非空；每位用户最多一个默认课程由 PostgreSQL 部分唯一索引保证。
 - 迁移 `20260805_0003` 明确处理旧 Schema 的私有概念数据：升级前若存在无法安全归属的旧全局概念会失败并回滚；有数据 downgrade 会折叠课程画像并清理无法表达课程范围的私人概念，避免回滚后跨租户泄露。
-- Task 1.3 不包含账号全量删除、配额、S3/ARQ、pgvector 检索切换或持久化 Planner/Agent Runtime。
+- Task 1.3 不包含账号全量删除、配额、S3/ARQ、pgvector 检索切换或持久化 Planner/Agent Runtime；其中账号删除和配额已由 Task 1.4 补齐。
+
+## Task 1.4 实现说明
+
+- 删除会话、资料、测验、错题和课程记忆时继续按认证用户与课程限定资源；数据库外键级联负责关系数据，本地文件与 Chroma collection 由显式清理器处理。
+- 账号注销以用户行锁冻结新上传和新注销请求，立即禁用账号、撤销活动 Refresh Token，并禁用该管理员创建的邀请码。每位用户只允许一个未完成删除任务；用户删除后任务的 `user_id` 置空，以保留不可反查账号的状态与失败摘要。
+- 删除任务状态为 `pending -> running -> succeeded | failed`。服务只保存状态令牌 SHA-256 哈希；创建接口先返回 `pending` 与明文令牌，响应发送后才由独立数据库 Session 执行，查询与重试必须提供该令牌。一般数据库或清理异常会写入安全错误码；若连失败状态也暂时无法写入，事务回滚后保留 `pending` 供重试；已提交的成功状态不会因提交确认丢失被降级。
+- 默认配额为 100 个文件、2 GiB。上传先提交归属明确的 `pending` Material 预留，再在同一用户行锁边界内流式写文件、复核容量并解析；注销会等待持锁上传，并能清理崩溃后仍有数据库归属的预留文件。
+- 两项后续纵深防御不改变当前契约：永久注销可增加近期密码或 step-up authentication；尽管清理已推迟到响应发送后，仍可为创建响应本身未送达的极端传输失败提供用户自助恢复通道。

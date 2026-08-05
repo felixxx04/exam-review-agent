@@ -67,9 +67,7 @@ async def test_account_deletion_removes_database_files_and_vector_scopes(
     assert vector_store.deleted == []
 
     await service.execute(result.job.public_id)
-    status = await service.get_status(
-        result.job.public_id, result.status_token
-    )
+    status = await service.get_status(result.job.public_id, result.status_token)
 
     assert result.job.status == "succeeded"
     assert status.status == "succeeded"
@@ -309,6 +307,8 @@ async def test_execution_recovery_failure_leaves_the_delivered_token_retryable(
         AccountArtifactCleaner(tmp_path, RecordingVectorStore()),
     )
     requested = await service.request(user.id)
+    job_id = requested.job.public_id
+    user_id = user.id
     original_commit = db_session.commit
 
     async def fail_final_commit():
@@ -325,8 +325,8 @@ async def test_execution_recovery_failure_leaves_the_delivered_token_retryable(
     monkeypatch.setattr(db_session, "commit", fail_final_commit)
     monkeypatch.setattr(service, "_reload_job", fail_status_reload)
 
-    await service.execute(requested.job.public_id)
-    status = await service.get_status(requested.job.public_id, requested.status_token)
+    await service.execute(job_id)
+    status = await service.get_status(job_id, requested.status_token)
 
     assert status.status == "pending"
-    assert status.user_id == user.id
+    assert status.user_id == user_id

@@ -11,17 +11,18 @@
 
 1. `docs/superpowers/plans/2026-08-03-exam-review-agent-v2-optimization.md`
 2. `docs/architecture/adr/0001-postgres-pgvector.md`
-3. `docs/architecture/adr/0004-auth-and-tenancy.md`
-4. 与下一任务有关的当前代码和测试
+3. `docs/architecture/adr/0003-object-storage.md`
+4. `docs/architecture/adr/0004-auth-and-tenancy.md`
+5. 与下一任务有关的当前代码和测试
 
-先向用户汇报以下三点，不要立即修改代码：
+先向用户汇报以下内容，不要立即修改代码：
 
 - 对当前完成状态的理解
-- Task 1.3 的实现、验证结果和剩余风险
-- Task 1.3 的真实 PostgreSQL 在线迁移、RLS、复合外键和并发验证证据
-- Task 1.4 的实施边界和明确非目标
+- Task 1.4 的实现、验证结果和剩余风险
+- Task 1.4 的真实 PostgreSQL 在线迁移、RLS、级联和并发验证证据
+- Phase 1 的完成状态、Task 2.1 的实施边界和明确非目标
 
-当前审批点是 **Task 1.3 验收**。未经用户确认，不得开始 Task 1.4 或更后面的工作。
+当前审批点是 **Phase 1 验收**。未经用户确认，不得开始 Task 2.1 或更后面的工作。
 
 不要推送 GitHub。不要重置、清理或覆盖当前工作树中的任何已有改动。
 
@@ -31,14 +32,14 @@
 - 阶段 1 已获准开始。
 - 阶段 1 的 **Task 1.1（PostgreSQL + pgvector）已完成实现**。
 - 阶段 1 的 **Task 1.2（邀请码认证和会话安全）已由用户确认**。
-- 阶段 1 的 **Task 1.3（私人多课程领域模型）已完成实现，等待用户验收**。
-- Task 1.4 及之后的任务均未开始。
-- Task 1.3 采用三个 RED TDD checkpoint 和一个 GREEN checkpoint；本交接对应的本地 GREEN checkpoint 以当前 HEAD 为准。
+- 阶段 1 的 **Task 1.3（私人多课程领域模型）已由用户确认**。
+- 阶段 1 的 **Task 1.4（用户数据删除与配额）已完成实现，等待 Phase 1 验收**。
+- Task 1.4 采用连续 RED/GREEN checkpoint；`17cbda7`、`7eed32d`、`64e4a8a`、`6ce7ce0`、`726d2c2`、`c153644` 记录契约、首轮实现与多轮并发/恢复安全 RED，最终 GREEN checkpoint 为本交接对应的当前 HEAD。
 - 全局 Git 身份已配置为 `felixxx04 <rifuturech@163.com>`；用户只授权本地提交，不得推送。
 - 用户要求成果只保存在本地，不上传 GitHub。
 - 仓库根目录目前没有 `.codegraph/`，因此无需使用 CodeGraph；如果新会话发现该目录后来出现，再按 `AGENTS.md` 先使用 CodeGraph。
 
-实施计划的 Task 1.3 checkbox、完成记录和第 13 节审批门均已更新。下一项只有在用户确认后才能开始 Task 1.4。
+实施计划的 Task 1.4 checkbox、完成记录和第 13 节审批门均已更新。下一项只有在用户确认 Phase 1 后才能开始 Task 2.1。
 
 ## 3. 项目定位与目标架构
 
@@ -186,7 +187,38 @@
 
 Task 1.3 不包含账号全量删除与配额、S3/ARQ、pgvector 检索切换、Planner/Agent Runtime 或全面视觉改造。Pyright 未安装，项目也没有现成 Python 类型检查命令；这不是本任务新增的失败门。`npm audit --omit=dev` 为 0 漏洞，但 2026-08-05 的全依赖审计新报告 1 个开发链路 `undici` 高危公告；它不进入生产依赖，后续依赖维护应升级并复跑前端门。
 
-## 8. Task 1.1/1.2 验证证据和剩余风险
+## 8. Task 1.4 已完成工作
+
+### 资源删除与配额
+
+- 会话、资料、测验、错题和课程记忆均提供租户隔离的删除路径；资料删除同步清理 MaterialChunk、本地原文件与 Chroma collection。
+- 用户默认配额为 100 个文件、2 GiB，管理员可通过用户管理接口覆盖文件数和容量。`GET /api/account/quota` 返回限制与已用量。
+- 上传先在用户行锁内提交 `pending/file_size=0` Material 预留，再流式写入随机服务端文件名；随后重新锁用户检查容量、解析并索引。失败时清理预留和文件，进程崩溃后的文件仍有数据库归属，可被注销清理。
+- 上传与注销共享用户行锁。注销冻结用户后，新的上传会返回 `ACCOUNT_DELETION_IN_PROGRESS`；已持锁上传完成后，注销快照能够发现并清理该资料。
+
+### 账号注销任务
+
+- `POST /api/account/deletion` 锁定并禁用用户、撤销活动 Refresh Token、禁用该管理员创建的邀请码，并创建只保存令牌哈希的 `pending` 删除任务；API 返回明文令牌后，响应后台任务才使用独立数据库 Session 执行清理。
+- `GET /api/account/deletions/{job_id}` 与 `POST /api/account/deletions/{job_id}/retry` 使用 `X-Deletion-Status-Token` 查询和重试；状态为 `pending -> running -> succeeded | failed`。
+- PostgreSQL 级联清理账户业务数据；本地文件和 Chroma collection 由清理器幂等处理。用户删除后 job 的 `user_id` 置空并保留安全状态，邀请码创建者外键也置空。
+- 每个用户只允许一个仍关联账号的删除任务，真实双 Session 并发请求只会创建一个。准备查询失败会回滚并记录 `failed`；若失败状态也暂时无法提交，则保留已交付令牌可重试的 `pending`。已提交的 `succeeded` 不会因提交确认丢失被降级；日志只记录 job/user ID 和异常类型，不泄露资料或令牌。
+
+### 迁移与验证
+
+- 新增 `backend/alembic/versions/20260805_0004_deletion_quotas.py`；数据库已完成在线 `0004 -> 0003 -> 0004` 往返，当前 revision 为 `20260805_0004 (head)`，`alembic check` 无漂移。
+- 后端完整回归：`285 passed, 8 skipped`，综合覆盖率 `80.23%`。8 个 skip 中 6 个需要显式 PostgreSQL URL，2 个需要真实 LLM。
+- 真实 PostgreSQL + RLS 集成测试：`6 passed`，覆盖配额 CHECK、删除任务唯一索引与双 Session 并发请求、邀请创建者置空与邀请码冻结、账户级联、删除 job 保留、上传/注销共享锁、准备失败状态恢复和提交确认丢失保护。
+- Task 定向 Ruff、Bandit 中高风险、`compileall`、`pip check`、Compose 配置和 `git diff --check` 通过。迁移往返和测试完成后，用户、课程、资料、删除任务、邀请码与 Refresh Token 探针计数均为 0。
+- Python 最终复审与安全复审均为 APPROVE，无 Critical/High 阻断项；复审指出的 Ruff format 差异已修复并复跑全绿。
+
+### 已知非阻塞风险
+
+- 永久注销目前依赖有效会话，尚未要求近期密码或 step-up authentication；这会改变已确认 API 契约，留待后续安全加固。
+- 清理已推迟到创建响应发送后，但若创建响应本身发生极端传输失败，用户仍没有自助恢复唯一明文状态令牌的通道。
+- PostgreSQL 并发测试通过配额服务模拟完整上传的行锁边界，尚未以真实 HTTP 上传覆盖两个锁窗口；代码审查未发现竞态，后续可补完整 API 并发回归。
+- S3/MinIO、ARQ Worker 与崩溃预留回收扫描属于 Phase 2；Task 1.4 只实现本地文件和临时 Chroma 的可靠过渡边界。
+
+## 9. Task 1.1/1.2 验证证据和剩余风险
 
 上一个会话完成实现后记录的验证结果：
 
@@ -220,15 +252,15 @@ Task 1.2 当前验证记录：
 
 已知但不阻断 Task 1.2 验收的后续加固项：当前认证限速是单进程内存/IP 维度，阶段 8 再迁移为 Redis 共享限速；安全响应头/CSP 和认证管理审计日志也按阶段 8 的安全与可观测性任务统一实施。
 
-Task 1.1/1.2 的真实 PostgreSQL 验证缺口已关闭。当前容器与 revision 状态以 Task 1.3 验证记录为准。
+Task 1.1/1.2 的真实 PostgreSQL 验证缺口已关闭。当前容器与 revision 状态以 Task 1.4 验证记录为准。
 
-## 9. 下一步审批门
+## 10. 下一步审批门
 
-Task 1.3 完成后必须停止。下一项只有在用户确认后才是 **Task 1.4：用户数据删除与配额**。
+Task 1.4 完成后必须停止。下一项只有在用户确认 Phase 1 后才是 **Task 2.1：S3 对象存储抽象**。
 
-Task 1.4 的边界以实施计划为准：会话、资料、测验、错题和记忆删除；账号注销的可追踪删除任务；每用户默认文件数和容量配额。S3/ARQ 属于阶段 2，pgvector 检索切换属于阶段 3，Planner/Agent Runtime 和全面视觉改造也不是 Task 1.4 范围。
+Task 2.1 的边界以实施计划与 ADR-0003 为准：建立 S3 兼容 `ObjectStorage` 接口、本地 MinIO 适配、私有对象 Key 与签名 URL 安全边界，并把资料上传/下载/删除从本地磁盘迁移到对象存储。ARQ 任务流水线属于 Task 2.2；pgvector 检索切换属于阶段 3；Planner/Agent Runtime 和全面视觉改造也不是 Task 2.1 范围。
 
-## 10. 新会话的工作规则
+## 11. 新会话的工作规则
 
 1. 每次只实施计划中的一个 Task。
 2. 先写失败测试或可验证契约，再做最小实现。
@@ -236,11 +268,11 @@ Task 1.4 的边界以实施计划为准：会话、资料、测验、错题和�
 4. 修改代码后使用对应语言的 Reviewer 检查，并修复有效问题。
 5. 不提前实现后续任务，不重构无关模块。
 6. 所有已有修改都视为用户资产，禁止 reset、checkout、删除或覆盖。
-7. Git 身份已全局配置；Task 1.3 GREEN checkpoint 为本交接对应的当前 HEAD。
+7. Git 身份已全局配置；Task 1.4 GREEN checkpoint 为本交接对应的当前 HEAD。
 8. 未经明确要求不得推送 GitHub。
-9. 完成 Task 1.3 后必须停在审批门，汇报实现、测试、风险和未完成验证，等待用户确认。
+9. 完成 Task 1.4 后必须停在 Phase 1 审批门，汇报实现、测试、风险和未完成验证，等待用户确认。
 
-## 11. 关键文件索引
+## 12. 关键文件索引
 
 - 总实施计划：`docs/superpowers/plans/2026-08-03-exam-review-agent-v2-optimization.md`
 - 架构入口：`docs/architecture/README.md`
@@ -249,6 +281,7 @@ Task 1.4 的边界以实施计划为准：会话、资料、测验、错题和�
 - API/Agent 契约：`docs/architecture/api-contracts.md`
 - V2 初始迁移：`backend/alembic/versions/20260803_0001_v2_postgres_pgvector.py`
 - 私人课程迁移：`backend/alembic/versions/20260805_0003_private_courses.py`
+- 删除与配额迁移：`backend/alembic/versions/20260805_0004_deletion_quotas.py`
 - 数据模型：`backend/app/db/models.py`
 - 数据库配置：`backend/app/db/database.py`
 - 错题 Repository：`backend/app/repositories/mistakes.py`
@@ -261,26 +294,31 @@ Task 1.4 的边界以实施计划为准：会话、资料、测验、错题和�
 - 课程 API：`backend/app/api/courses.py`
 - 课程 Service：`backend/app/services/course_service.py`
 - 课程 Schema：`backend/app/schemas/courses.py`
+- 账号 API：`backend/app/api/account.py`
+- 账号删除服务：`backend/app/services/account_deletion_service.py`
+- 配额服务：`backend/app/services/quota_service.py`
 - 课程与隔离测试：`backend/tests/test_api/test_courses.py`、`backend/tests/integration/test_postgres_rls.py`
+- 删除与配额测试：`backend/tests/test_api/test_deletion_and_quotas.py`、`backend/tests/test_services/test_account_deletion_service.py`、`backend/tests/integration/test_postgres_deletion_quotas.py`
 - 认证测试：`backend/tests/test_api/test_auth.py`、`backend/tests/test_core_auth.py`、`backend/tests/test_services/test_auth_service.py`
 - 前端认证：`frontend/src/app/(auth)/`、`frontend/src/components/auth/`、`frontend/src/lib/api.ts`
 - 错题 Repository 测试：`backend/tests/test_repositories/test_mistakes.py`
 - 迁移契约测试：`backend/tests/test_migrations.py`
 - 健康检查测试：`backend/tests/test_health.py`、`backend/tests/test_services/test_health.py`
 
-## 12. 推荐的新会话启动提示
+## 13. 推荐的新会话启动提示
 
 ```text
 请先完整阅读项目根目录 SESSION_HANDOFF.md，以及
 docs/superpowers/plans/2026-08-03-exam-review-agent-v2-optimization.md、
-docs/architecture/adr/0001-postgres-pgvector.md 和
+docs/architecture/adr/0001-postgres-pgvector.md、
+docs/architecture/adr/0003-object-storage.md、
 docs/architecture/adr/0004-auth-and-tenancy.md。
 
-随后检查当前 git status 和 Task 1.3 的实际实现。先向我汇报：
-1. 你对 Task 1.1/1.2/1.3 当前完成状态的理解；
-2. Task 1.3 的 PostgreSQL 在线迁移、RLS、复合外键和并发验证证据；
-3. Task 1.3 的已实现范围、剩余风险和 Task 1.4 非目标。
+随后检查当前 git status 和 Task 1.4 的实际实现。先向我汇报：
+1. 你对 Phase 1 Task 1.1～1.4 当前完成状态的理解；
+2. Task 1.4 的 PostgreSQL 在线迁移、删除级联、配额和并发验证证据；
+3. Task 1.4 的已实现范围、剩余风险和 Task 2.1 非目标。
 
-Task 1.3 未经验收不得开始 Task 1.4 或更后面的工作；
+Phase 1 未经验收不得开始 Task 2.1 或更后面的工作；
 不要覆盖现有改动，也不要推送 GitHub。
 ```
