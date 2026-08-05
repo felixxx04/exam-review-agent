@@ -9,6 +9,7 @@ from fastapi.responses import JSONResponse
 from app.api.chat import router as chat_router
 from app.api.auth import router as auth_router
 from app.api.conversations import router as conversations_router
+from app.api.courses import router as courses_router
 from app.api.materials import router as materials_router
 from app.api.memory import router as memory_router
 from app.api.quiz import router as quiz_router
@@ -65,10 +66,7 @@ def _validate_settings_on_startup() -> None:
         missing.append(attr.upper())
 
     jwt_secret = settings.jwt_secret.strip()
-    if (
-        jwt_secret in INSECURE_JWT_SECRETS
-        or len(jwt_secret) < MIN_JWT_SECRET_LENGTH
-    ):
+    if jwt_secret in INSECURE_JWT_SECRETS or len(jwt_secret) < MIN_JWT_SECRET_LENGTH:
         missing.append("JWT_SECRET (must not be the default value)")
     if missing:
         msg = f"Missing or invalid required settings: {', '.join(missing)}"
@@ -98,6 +96,7 @@ app.add_middleware(
 app.add_middleware(RateLimitMiddleware)
 
 app.include_router(auth_router)
+app.include_router(courses_router)
 app.include_router(materials_router)
 app.include_router(chat_router)
 app.include_router(conversations_router)
@@ -135,13 +134,17 @@ async def unhandled_exception_handler(request, exc: Exception):
     logger.exception("Unhandled exception")
     return JSONResponse(
         status_code=500,
-        content=ApiResponse.fail(code="INTERNAL_ERROR", message="Internal server error").model_dump(),
+        content=ApiResponse.fail(
+            code="INTERNAL_ERROR", message="Internal server error"
+        ).model_dump(),
     )
 
 
 @app.get("/api/health")
 async def health():
-    return ApiResponse.ok(data={"status": "ok", "default_provider": settings.default_llm_provider})
+    return ApiResponse.ok(
+        data={"status": "ok", "default_provider": settings.default_llm_provider}
+    )
 
 
 @app.get("/health/live")

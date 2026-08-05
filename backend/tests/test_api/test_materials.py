@@ -28,7 +28,6 @@ def reset_rate_limit():
 
 
 class TestMaterialsUpload:
-
     @pytest.mark.asyncio
     async def test_upload_material_returns_pending_status(self, client_with_db):
         response = await client_with_db.post(
@@ -105,8 +104,12 @@ class TestMaterialsUpload:
         retrieval = AsyncMock()
         retrieval.index_chunks = AsyncMock(return_value=["chunk-1"])
 
-        monkeypatch.setattr("app.services.parser_service.ParserService", lambda: ParserStub())
-        monkeypatch.setattr("app.services.retrieval_service.RetrievalService", lambda: retrieval)
+        monkeypatch.setattr(
+            "app.services.parser_service.ParserService", lambda: ParserStub()
+        )
+        monkeypatch.setattr(
+            "app.services.retrieval_service.RetrievalService", lambda: retrieval
+        )
 
         response = await client_with_db.post(
             "/api/materials",
@@ -208,10 +211,14 @@ class TestMaterialsUpload:
             "normalized window two",
         ]
         rows = (
-            await db_session.execute(
-                select(MaterialChunk).order_by(MaterialChunk.chunk_id.asc())
+            (
+                await db_session.execute(
+                    select(MaterialChunk).order_by(MaterialChunk.chunk_id.asc())
+                )
             )
-        ).scalars().all()
+            .scalars()
+            .all()
+        )
         assert [row.text_preview for row in rows] == [
             "normalized window one",
             "normalized window two",
@@ -220,15 +227,14 @@ class TestMaterialsUpload:
             "normalized window one",
             "normalized window two",
         ]
-        assert rows[0].content_hash == hashlib.sha256(
-            b"normalized window one"
-        ).hexdigest()
+        assert (
+            rows[0].content_hash == hashlib.sha256(b"normalized window one").hexdigest()
+        )
         assert rows[0].lexical_tokens
         assert rows[0].chunk_metadata["source"] == "Redis.docx"
 
 
 class TestMaterialsList:
-
     @pytest.mark.asyncio
     async def test_list_materials_returns_empty_list(self, client_with_db):
         response = await client_with_db.get("/api/materials")
@@ -251,7 +257,6 @@ class TestMaterialsList:
 
 
 class TestMaterialsDetail:
-
     @pytest.mark.asyncio
     async def test_get_material_not_found(self, client_with_db):
         response = await client_with_db.get("/api/materials/999")
@@ -263,7 +268,8 @@ class TestMaterialsDetail:
             "/api/materials",
             files={"file": ("test.pdf", b"fake pdf", "application/pdf")},
         )
-        material_id = _data(upload_resp)["id"]
+        material_data = _data(upload_resp)
+        material_id = material_data["id"]
 
         response = await client_with_db.get(f"/api/materials/{material_id}")
         assert response.status_code == 200
@@ -272,7 +278,6 @@ class TestMaterialsDetail:
 
 
 class TestMaterialsDelete:
-
     @pytest.mark.asyncio
     async def test_delete_material(self, client_with_db):
         upload_resp = await client_with_db.post(
@@ -298,10 +303,13 @@ class TestMaterialsDelete:
             "/api/materials",
             files={"file": ("test.pdf", b"fake pdf", "application/pdf")},
         )
-        material_id = _data(upload_resp)["id"]
+        material_data = _data(upload_resp)
+        material_id = material_data["id"]
         db_session.add(
             MaterialChunk(
                 material_id=material_id,
+                user_id=1,
+                course_id=material_data["course_id"],
                 chunk_id="chunk-delete-test",
                 text_preview="preview",
                 page_number=1,
@@ -325,10 +333,13 @@ class TestMaterialsDelete:
             "/api/materials",
             files={"file": ("test.pdf", b"fake pdf", "application/pdf")},
         )
-        material_id = _data(upload_resp)["id"]
+        material_data = _data(upload_resp)
+        material_id = material_data["id"]
         db_session.add(
             MaterialChunk(
                 material_id=material_id,
+                user_id=1,
+                course_id=material_data["course_id"],
                 chunk_id="chunk-vector-delete-test",
                 text_preview="preview",
                 page_number=1,
@@ -340,7 +351,9 @@ class TestMaterialsDelete:
 
         retrieval = AsyncMock()
         retrieval.delete_chunks = AsyncMock()
-        monkeypatch.setattr("app.services.retrieval_service.RetrievalService", lambda: retrieval)
+        monkeypatch.setattr(
+            "app.services.retrieval_service.RetrievalService", lambda: retrieval
+        )
 
         response = await client_with_db.delete(f"/api/materials/{material_id}")
 
@@ -348,11 +361,11 @@ class TestMaterialsDelete:
         retrieval.delete_chunks.assert_awaited_once_with(
             user_id="1",
             chunk_ids=["chunk-vector-delete-test"],
+            course_id=1,
         )
 
 
 class TestMaterialsReprocess:
-
     @pytest.mark.asyncio
     async def test_reprocess_resets_to_pending(self, client_with_db):
         upload_resp = await client_with_db.post(
@@ -361,8 +374,6 @@ class TestMaterialsReprocess:
         )
         material_id = _data(upload_resp)["id"]
 
-        response = await client_with_db.post(
-            f"/api/materials/{material_id}/reprocess"
-        )
+        response = await client_with_db.post(f"/api/materials/{material_id}/reprocess")
         assert response.status_code == 200
         assert _data(response)["processing_status"] == "pending"

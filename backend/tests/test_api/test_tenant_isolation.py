@@ -8,6 +8,7 @@ from app.db.database import get_db
 from app.db.models import Base, Conversation, Material, MistakeRecord, User
 from app.main import app
 from app.services.auth_service import AuthService, IssuedSession, hash_password
+from app.services.course_service import CourseService
 
 
 def _apply_session(client: AsyncClient, issued: IssuedSession) -> dict[str, str]:
@@ -53,10 +54,16 @@ async def test_resource_ids_are_scoped_to_authenticated_tenant():
             password="Student-pass-123",
             invite_code=invite_b.code,
         )
+        course = await CourseService(session).resolve_course(user_a.user.id, None)
 
-        conversation = Conversation(user_id=user_a.user.id, title="A only")
+        conversation = Conversation(
+            user_id=user_a.user.id,
+            course_id=course.id,
+            title="A only",
+        )
         material = Material(
             user_id=user_a.user.id,
+            course_id=course.id,
             filename="a.pdf",
             original_filename="a.pdf",
             file_type="pdf",
@@ -65,6 +72,7 @@ async def test_resource_ids_are_scoped_to_authenticated_tenant():
         mistake = MistakeRecord(
             public_id="a-mistake",
             user_id=user_a.user.id,
+            course_id=course.id,
             source_question_id="a-question",
             wrong_answer="A",
             correct_answer="B",
@@ -84,7 +92,9 @@ async def test_resource_ids_are_scoped_to_authenticated_tenant():
                     f"/api/conversations/{conversation.id}", headers=csrf
                 )
             ).status_code == 404
-            assert (await client.get(f"/api/materials/{material.id}")).status_code == 404
+            assert (
+                await client.get(f"/api/materials/{material.id}")
+            ).status_code == 404
             assert (
                 await client.post(
                     f"/api/materials/{material.id}/reprocess", headers=csrf

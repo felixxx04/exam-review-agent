@@ -142,6 +142,7 @@ async def handle_qa_node(state: AgentState) -> dict[str, Any]:
     response = await agent.answer(
         question=question,
         user_id=state["user_id"],
+        course_id=state.get("course_id"),
         material_scope=state.get("material_scope"),
         memory_context=state.get("memory_context"),
     )
@@ -162,6 +163,7 @@ async def handle_quiz_node(state: AgentState) -> dict[str, Any]:
     response = await agent.generate_quiz(
         user_id=state["user_id"],
         topic=topic,
+        course_id=state.get("course_id"),
         difficulty=difficulty,
         count=count,
         material_scope=state.get("material_scope"),
@@ -171,7 +173,9 @@ async def handle_quiz_node(state: AgentState) -> dict[str, Any]:
     if quiz_payload["total"] == 0:
         content = "暂时没能从当前资料里提取出可用题目。请确认资料已经处理完成，或换一个更具体的知识点再试一次。"
     else:
-        content = f"已根据当前资料生成 {quiz_payload['total']} 道题，正在切换到测验模式。"
+        content = (
+            f"已根据当前资料生成 {quiz_payload['total']} 道题，正在切换到测验模式。"
+        )
 
     return {
         "messages": [AIMessage(content=content)],
@@ -182,7 +186,9 @@ async def handle_quiz_node(state: AgentState) -> dict[str, Any]:
 async def handle_review_node(state: AgentState) -> dict[str, Any]:
     """Summarize the user's current weak points."""
     tracker = _build_tracker_agent()
-    concepts = await tracker.get_weak_concepts(state["user_id"])
+    concepts = await tracker.get_weak_concepts(
+        state["user_id"], course_id=state.get("course_id")
+    )
     return {"messages": [AIMessage(content=_summarize_review(concepts))]}
 
 

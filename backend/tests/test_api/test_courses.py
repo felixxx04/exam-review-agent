@@ -4,10 +4,10 @@ import datetime
 
 import pytest
 from httpx import AsyncClient
-from sqlalchemy import select
+from sqlalchemy import delete, select
 
 from app.core.auth import AuthenticatedUser, get_current_user
-from app.db.models import User
+from app.db.models import Exam, StudyAvailability, User
 from app.main import app
 
 
@@ -262,7 +262,11 @@ async def test_course_update_can_clear_exam_fields_and_preserve_a_default(
     assert updated["description"] is None
     assert updated["exam_date"] is None
     assert updated["long_term_goal"] is None
-    assert updated["is_default"] is True
+    assert updated["is_default"] is False
+    replacement = (await client_with_db.get(f"/api/courses/{second['id']}")).json()[
+        "data"
+    ]
+    assert replacement["is_default"] is True
 
     duplicate = await client_with_db.patch(
         f"/api/courses/{second['id']}",
@@ -291,3 +295,54 @@ async def test_legacy_client_recreates_default_after_last_course_is_deleted(
     assert listed["courses"][0]["name"] == "默认课程"
     assert listed["courses"][0]["is_default"] is True
     assert conversation["course_id"] == listed["courses"][0]["id"]
+
+
+@pytest.mark.asyncio
+async def test_deleting_default_course_promotes_oldest_remaining_course(
+    client_with_db: AsyncClient,
+):
+    first = (await client_with_db.post("/api/courses", json=COURSE_PAYLOAD)).json()[
+        "data"
+    ]
+    second = (
+        await client_with_db.post(
+            "/api/courses",
+            json={"name": "编译原理", "daily_available_minutes": 35},
+        )
+    ).json()["data"]
+    switched = await client_with_db.patch(
+        f"/api/courses/{second['id']}", json={"is_default": True}
+    )
+    assert switched.status_code == 200
+
+    deleted = await client_with_db.delete(f"/api/courses/{second['id']}")
+    remaining = await client_with_db.get(f"/api/courses/{first['id']}")
+
+    assert deleted.status_code == 200
+    assert remaining.status_code == 200
+    assert remaining.json()["data"]["is_default"] is True
+
+
+@pytest.mark.asyncio
+async def test_course_update_repairs_missing_exam_and_availability_rows(
+    client_with_db: AsyncClient,
+    db_session,
+):
+    course = (await client_with_db.post("/api/courses", json=COURSE_PAYLOAD)).json()[
+        "data"
+    ]
+    await db_session.execute(delete(Exam).where(Exam.course_id == course["id"]))
+    await db_session.execute(
+        delete(StudyAvailability).where(StudyAvailability.course_id == course["id"])
+    )
+    await db_session.commit()
+
+    response = await client_with_db.patch(
+        f"/api/courses/{course['id']}",
+        json={"exam_date": "2027-01-10", "daily_available_minutes": 75},
+    )
+
+    assert response.status_code == 200
+    repaired = response.json()["data"]
+    assert repaired["exam_date"] == "2027-01-10"
+    assert repaired["daily_available_minutes"] == 75

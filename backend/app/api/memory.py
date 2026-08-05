@@ -7,6 +7,7 @@ from app.core.auth import AuthenticatedUser, get_current_user
 from app.db.database import get_db
 from app.schemas.common import ApiResponse
 from app.schemas.memory import LearningProfileResponse
+from app.services.course_service import CourseService
 from app.services.memory_service import MemoryService
 
 router = APIRouter(prefix="/api/memory", tags=["memory"])
@@ -14,9 +15,11 @@ router = APIRouter(prefix="/api/memory", tags=["memory"])
 
 @router.get("/profile")
 async def get_memory_profile(
+    course_id: int | None = None,
     current_user: AuthenticatedUser = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
+    course = await CourseService(db).resolve_course(current_user.id, course_id)
     service = MemoryService(db)
-    profile = await service.get_or_create_learning_profile(current_user.id)
+    profile = await service.get_or_create_learning_profile(current_user.id, course.id)
     return ApiResponse.ok(data=LearningProfileResponse.model_validate(profile))

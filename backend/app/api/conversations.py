@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Body, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 
@@ -10,24 +10,31 @@ from app.db.models import Conversation
 from app.schemas.common import ApiResponse
 from app.schemas.conversations import (
     ConversationListResponse,
+    ConversationCreateRequest,
     ConversationMessageResponse,
     ConversationMessagesResponse,
     ConversationResponse,
 )
 from app.services.memory_service import MemoryService
+from app.services.course_service import CourseService
 
 router = APIRouter(prefix="/api/conversations", tags=["conversations"])
 
 
 @router.get("")
 async def list_conversations(
+    course_id: int | None = None,
     current_user: AuthenticatedUser = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
     service = MemoryService(db)
+    course = await CourseService(db).resolve_course(current_user.id, course_id)
     result = await db.execute(
         select(Conversation)
-        .where(Conversation.user_id == current_user.id)
+        .where(
+            Conversation.user_id == current_user.id,
+            Conversation.course_id == course.id,
+        )
         .order_by(Conversation.updated_at.desc(), Conversation.id.desc())
     )
     conversations = list(result.scalars().all())
@@ -46,21 +53,30 @@ async def list_conversations(
 
 @router.get("/active")
 async def get_active_conversation(
+    course_id: int | None = None,
     current_user: AuthenticatedUser = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
     service = MemoryService(db)
-    conversation = await service.get_or_create_active_conversation(current_user.id)
+    conversation = await service.get_or_create_active_conversation(
+        current_user.id, course_id
+    )
     return ApiResponse.ok(data=ConversationResponse.model_validate(conversation))
 
 
 @router.post("")
 async def create_conversation(
+    request: ConversationCreateRequest | None = Body(default=None),
     current_user: AuthenticatedUser = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
     service = MemoryService(db)
-    conversation = await service.create_conversation(current_user.id)
+    request = request or ConversationCreateRequest()
+    conversation = await service.create_conversation(
+        current_user.id,
+        course_id=request.course_id,
+        available_minutes_override=request.available_minutes_override,
+    )
     return ApiResponse.ok(data=ConversationResponse.model_validate(conversation))
 
 

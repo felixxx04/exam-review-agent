@@ -77,6 +77,24 @@
 - Refresh Token 只保存不可逆哈希，每次成功刷新后轮换。过期、撤销、重用、账号禁用或 CSRF 不匹配均拒绝会话。
 - 不存在与跨租户资源统一返回 `NOT_FOUND`；客户端传入的 `user_id` 永远不构成权限依据。
 
+### 2.2 私人课程
+
+课程接口统一使用通用 Envelope，并只接受认证上下文中的用户身份：
+
+| 方法与路径 | 行为 |
+|---|---|
+| `GET /api/courses` | 返回当前用户课程；可重复传入 `ids` 做批量 ID 过滤 |
+| `POST /api/courses` | 创建课程，以及对应考试和每日可用时间记录 |
+| `GET /api/courses/{course_id}` | 返回属于当前用户的课程详情 |
+| `PATCH /api/courses/{course_id}` | 更新名称、说明、考试日期、长期目标、每日可用时间或默认课程 |
+| `DELETE /api/courses/{course_id}` | 删除课程及其课程范围数据；必要时提升替代默认课程 |
+
+- 课程名称在单个用户内唯一；每个用户最多有一个默认课程。跨用户 ID、批量 ID 和删除请求不会暴露其他用户资源。
+- Course Response 包含 `id`、`name`、`description`、`exam_date`、`long_term_goal`、`daily_available_minutes`、`is_default`、`created_at` 和 `updated_at`。
+- Material、Conversation、Quiz、Review、Memory Profile 和 Study Plan 接口接受可选 `course_id`。传入时必须验证课程归属；旧客户端省略时使用默认课程，并在用户尚无课程时安全地懒创建兼容课程。
+- Conversation Create 可通过 `session_available_minutes` 覆盖当前会话可用时长；该值只属于会话，不修改课程的 `daily_available_minutes`。
+- 检索、错题、学习画像、知识图谱和掌握度必须继承已解析的 `user_id + course_id`，不得退化为仅按用户或资源 ID 查询。
+
 ## 2. 游标分页
 
 列表接口使用不透明游标，不以不断变化的数据集做页码分页：

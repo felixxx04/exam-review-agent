@@ -8,6 +8,7 @@ class AgentState(TypedDict):
     messages: Annotated[list, add_messages]
     intent: str
     user_id: str
+    course_id: NotRequired[int]
     material_scope: NotRequired[list[str] | None]
     active_session: NotRequired[dict | None]
     citations: NotRequired[list[dict]]

@@ -2,7 +2,7 @@
 
 - 状态：Accepted
 - 日期：2026-08-03
-- 实现：Task 1.2 已完成，等待验收（2026-08-04）
+- 实现：Task 1.2、Task 1.3 已完成，Task 1.3 等待验收（2026-08-05）
 
 ## 背景
 
@@ -19,7 +19,8 @@ Task 1.2 之前，路由固定使用 `user_id="default"`，Bearer Token 只是�
 
 ## 数据访问规则
 
-- 每个用户拥有私人课程，课程、资料、Chunk、会话、测验、复习、记忆和 Run 不跨用户共享。
+- 每个用户拥有私人课程，课程、考试日期、长期目标、可用时间、资料、Chunk、会话、测验、复习、记忆和掌握度不跨用户共享；同一用户的不同课程也不混用。
+- 课程相关子表同时保存 `user_id` 与 `course_id`，通过复合所有权外键和 `FORCE ROW LEVEL SECURITY` 保证父资源和敏感子资源属于同一用户/课程范围。
 - 所有查询先按认证用户限定父实体，再解析子资源；不存在与无权访问统一返回 `404`，避免枚举资源。
 - 向量、全文检索、对象 Key、缓存键、Job Payload 和 Agent 工具调用都必须携带同一可信租户范围。
 - 缓存不得只用资源 ID 作为 Key；至少包含用户 ID 和资源版本。
@@ -45,4 +46,12 @@ Task 1.2 之前，路由固定使用 `user_id="default"`，Bearer Token 只是�
 - 现有 Chat、Conversation、Material、Quiz、Review 和 Memory API 已从可信认证上下文获取用户；直接租户表在 PostgreSQL 中启用并强制执行 RLS。每次新事务自动重绑租户上下文，独立 SessionFactory 也必须显式绑定可信用户。
 - 本地 PostgreSQL 使用独立 bootstrap 管理员创建 `NOSUPERUSER NOBYPASSRLS` 的 `exam_review` 应用角色；Alembic 与运行时都使用应用角色，避免超级用户绕过 RLS。
 - PostgreSQL 17.8 + pgvector 0.8.1 已完成在线 migration 往返、跨事务 RLS、越权写拒绝和 readiness 联调。
-- Task 1.2 不包含私人多课程、账号删除/配额、对象存储或 Agent Runtime。
+- Task 1.2 的原始边界不包含私人多课程；该能力已在 Task 1.3 完成。账号删除/配额、对象存储或 Agent Runtime 仍不在当前任务范围。
+
+## Task 1.3 实现说明
+
+- 新增 `/api/courses` 课程列表、创建、详情、更新和删除接口。课程响应包含考试日期、长期目标、每日可用分钟数和默认标记；列表支持按多个 ID 查询并继续按认证用户隔离。
+- 旧客户端不提供 `course_id` 时解析用户默认课程；会话请求可临时覆盖每日可用分钟数，不改变课程默认值。删除默认课程时在同一事务中提升剩余课程；删除最后一门课程后，下一次兼容请求会在用户锁内懒创建默认课程。
+- 课程范围从 API 进入 Conversation、Material、Quiz、Review、Memory、Study Plan、Tracker、RAG、Chroma 和 BM25。所有课程相关 `course_id` 列为非空；每位用户最多一个默认课程由 PostgreSQL 部分唯一索引保证。
+- 迁移 `20260805_0003` 明确处理旧 Schema 的私有概念数据：升级前若存在无法安全归属的旧全局概念会失败并回滚；有数据 downgrade 会折叠课程画像并清理无法表达课程范围的私人概念，避免回滚后跨租户泄露。
+- Task 1.3 不包含账号全量删除、配额、S3/ARQ、pgvector 检索切换或持久化 Planner/Agent Runtime。

@@ -10,11 +10,13 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from app.db.database import bind_tenant_context
 from app.db.models import MistakeRecord
 from app.repositories.users import UserRepository
+from app.services.course_service import CourseService
 
 
 class MistakeData(TypedDict):
     id: str
     user_id: str
+    course_id: int
     question_id: str
     question_text: str
     question_type: str
@@ -41,6 +43,7 @@ class MistakeRepository(Protocol):
         self,
         user_id: str,
         *,
+        course_id: int | None = None,
         concept: str | None = None,
         status: str | None = None,
         topic: str | None = None,
@@ -85,10 +88,16 @@ class SqlAlchemyMistakeRepository:
         user = await self._users.get_by_subject(user_reference)
         if user is None:
             raise ValueError("Authenticated user does not exist")
+        requested_course_id = values.get("course_id")
+        course = await CourseService(self._session).resolve_course(
+            user.id,
+            int(requested_course_id) if requested_course_id is not None else None,
+        )
         question_reference = str(values.get("question_id") or "")
         record = MistakeRecord(
             public_id=str(values.get("id") or question_reference),
             user_id=user.id,
+            course_id=course.id,
             question_id=values.get("persisted_question_id"),
             source_question_id=question_reference,
             question_text=str(values.get("question_text") or ""),
@@ -118,6 +127,7 @@ class SqlAlchemyMistakeRepository:
         self,
         user_id: str,
         *,
+        course_id: int | None = None,
         concept: str | None = None,
         status: str | None = None,
         topic: str | None = None,
@@ -128,6 +138,8 @@ class SqlAlchemyMistakeRepository:
             return []
 
         statement = select(MistakeRecord).where(MistakeRecord.user_id == user.id)
+        if course_id is not None:
+            statement = statement.where(MistakeRecord.course_id == course_id)
         for column, value in (
             (MistakeRecord.concept, concept),
             (MistakeRecord.status, status),
@@ -211,6 +223,7 @@ class SqlAlchemyMistakeRepository:
         return MistakeData(
             id=record.public_id,
             user_id=user_id,
+            course_id=record.course_id,
             question_id=record.source_question_id,
             question_text=record.question_text,
             question_type=record.question_type,
@@ -246,6 +259,7 @@ class SessionFactoryMistakeRepository:
         self,
         user_id: str,
         *,
+        course_id: int | None = None,
         concept: str | None = None,
         status: str | None = None,
         topic: str | None = None,
@@ -255,6 +269,7 @@ class SessionFactoryMistakeRepository:
             await bind_tenant_context(session, user_id)
             return await SqlAlchemyMistakeRepository(session).list_for_user(
                 user_id,
+                course_id=course_id,
                 concept=concept,
                 status=status,
                 topic=topic,

@@ -10,6 +10,7 @@ from app.db.models import (
     Base,
     Concept,
     ConceptDependency,
+    Course,
     Conversation,
     ConversationMessage,
     FileType,
@@ -42,6 +43,13 @@ async def session(engine):
         yield s
 
 
+async def _create_course(session: AsyncSession, user: User, name: str) -> Course:
+    course = Course(user_id=user.id, name=name, is_default=True)
+    session.add(course)
+    await session.flush()
+    return course
+
+
 @pytest.mark.asyncio
 async def test_create_user(session):
     user = User(
@@ -64,10 +72,16 @@ async def test_create_user(session):
 @pytest.mark.asyncio
 async def test_user_unique_email(session):
     user1 = User(
-        username="dup-one", email="dup@example.com", hashed_password="pw1", display_name="U1"
+        username="dup-one",
+        email="dup@example.com",
+        hashed_password="pw1",
+        display_name="U1",
     )
     user2 = User(
-        username="dup-two", email="dup@example.com", hashed_password="pw2", display_name="U2"
+        username="dup-two",
+        email="dup@example.com",
+        hashed_password="pw2",
+        display_name="U2",
     )
     session.add_all([user1, user2])
     with pytest.raises(Exception):
@@ -77,13 +91,18 @@ async def test_user_unique_email(session):
 @pytest.mark.asyncio
 async def test_create_conversation(session):
     user = User(
-        username="convuser", email="convuser@example.com", hashed_password="pw", display_name="CU"
+        username="convuser",
+        email="convuser@example.com",
+        hashed_password="pw",
+        display_name="CU",
     )
     session.add(user)
     await session.commit()
+    course = await _create_course(session, user, "Physics")
 
     conv = Conversation(
         user_id=user.id,
+        course_id=course.id,
         title="Physics Review",
         mode="quiz",
         material_scope=[1, 2, 3],
@@ -103,13 +122,18 @@ async def test_create_conversation(session):
 @pytest.mark.asyncio
 async def test_create_material(session):
     user = User(
-        username="matuser", email="matuser@example.com", hashed_password="pw", display_name="MU"
+        username="matuser",
+        email="matuser@example.com",
+        hashed_password="pw",
+        display_name="MU",
     )
     session.add(user)
     await session.commit()
+    course = await _create_course(session, user, "Materials")
 
     mat = Material(
         user_id=user.id,
+        course_id=course.id,
         filename="phys101_upload.pdf",
         original_filename="Physics Chapter 1.pdf",
         file_type="pdf",
@@ -129,13 +153,18 @@ async def test_create_material(session):
 @pytest.mark.asyncio
 async def test_create_quiz_session(session):
     user = User(
-        username="quizuser", email="quizuser@example.com", hashed_password="pw", display_name="QU"
+        username="quizuser",
+        email="quizuser@example.com",
+        hashed_password="pw",
+        display_name="QU",
     )
     session.add(user)
     await session.commit()
+    course = await _create_course(session, user, "Quiz")
 
     quiz = QuizSession(
         user_id=user.id,
+        course_id=course.id,
         material_scope=[1, 2],
         question_count=10,
         correct_count=0,
@@ -153,13 +182,18 @@ async def test_create_quiz_session(session):
 @pytest.mark.asyncio
 async def test_create_question(session):
     user = User(
-        username="qsuser", email="qsuser@example.com", hashed_password="pw", display_name="QSU"
+        username="qsuser",
+        email="qsuser@example.com",
+        hashed_password="pw",
+        display_name="QSU",
     )
     session.add(user)
     await session.commit()
+    course = await _create_course(session, user, "Questions")
 
     quiz = QuizSession(
         user_id=user.id,
+        course_id=course.id,
         material_scope=[1],
         question_count=1,
         correct_count=0,
@@ -171,6 +205,8 @@ async def test_create_question(session):
 
     question = Question(
         quiz_session_id=quiz.id,
+        user_id=user.id,
+        course_id=course.id,
         question_text="What is the speed of light?",
         question_type="multiple_choice",
         options=["3e8 m/s", "3e6 m/s", "3e10 m/s"],
@@ -193,13 +229,18 @@ async def test_create_question(session):
 @pytest.mark.asyncio
 async def test_create_answer_record(session):
     user = User(
-        username="aruser", email="aruser@example.com", hashed_password="pw", display_name="ARU"
+        username="aruser",
+        email="aruser@example.com",
+        hashed_password="pw",
+        display_name="ARU",
     )
     session.add(user)
     await session.commit()
+    course = await _create_course(session, user, "Answers")
 
     quiz = QuizSession(
         user_id=user.id,
+        course_id=course.id,
         material_scope=[1],
         question_count=1,
         correct_count=0,
@@ -211,6 +252,8 @@ async def test_create_answer_record(session):
 
     question = Question(
         quiz_session_id=quiz.id,
+        user_id=user.id,
+        course_id=course.id,
         question_text="What is 2+2?",
         question_type="multiple_choice",
         options=["3", "4", "5"],
@@ -227,6 +270,7 @@ async def test_create_answer_record(session):
     record = AnswerRecord(
         question_id=question.id,
         user_id=user.id,
+        course_id=course.id,
         student_answer="4",
         is_correct=True,
         time_spent_seconds=12.5,
@@ -243,13 +287,18 @@ async def test_create_answer_record(session):
 @pytest.mark.asyncio
 async def test_create_mistake_record(session):
     user = User(
-        username="mruser", email="mruser@example.com", hashed_password="pw", display_name="MRU"
+        username="mruser",
+        email="mruser@example.com",
+        hashed_password="pw",
+        display_name="MRU",
     )
     session.add(user)
     await session.commit()
+    course = await _create_course(session, user, "Mistakes")
 
     quiz = QuizSession(
         user_id=user.id,
+        course_id=course.id,
         material_scope=[1],
         question_count=1,
         correct_count=0,
@@ -261,6 +310,8 @@ async def test_create_mistake_record(session):
 
     question = Question(
         quiz_session_id=quiz.id,
+        user_id=user.id,
+        course_id=course.id,
         question_text="What is h2o?",
         question_type="fill_blank",
         options=[],
@@ -276,6 +327,7 @@ async def test_create_mistake_record(session):
 
     mistake = MistakeRecord(
         user_id=user.id,
+        course_id=course.id,
         question_id=question.id,
         concept="water",
         topic="chemistry",
@@ -295,14 +347,38 @@ async def test_create_mistake_record(session):
 
 @pytest.mark.asyncio
 async def test_create_concept_and_dependency(session):
-    prereq = Concept(topic="math", name="Algebra", description="Basic algebra concepts")
+    user = User(
+        username="concept-user",
+        email="concept@example.com",
+        hashed_password="pw",
+        display_name="Concept User",
+    )
+    session.add(user)
+    await session.flush()
+    course = await _create_course(session, user, "Mathematics")
+    prereq = Concept(
+        user_id=user.id,
+        course_id=course.id,
+        topic="math",
+        name="Algebra",
+        description="Basic algebra concepts",
+    )
     dependent = Concept(
-        topic="math", name="Calculus", description="Differential and integral calculus"
+        user_id=user.id,
+        course_id=course.id,
+        topic="math",
+        name="Calculus",
+        description="Differential and integral calculus",
     )
     session.add_all([prereq, dependent])
     await session.commit()
 
-    dep = ConceptDependency(prerequisite_id=prereq.id, dependent_id=dependent.id)
+    dep = ConceptDependency(
+        user_id=user.id,
+        course_id=course.id,
+        prerequisite_id=prereq.id,
+        dependent_id=dependent.id,
+    )
     session.add(dep)
     await session.commit()
     await session.refresh(dep)
@@ -323,9 +399,14 @@ async def test_user_cascade_conversations(session):
     )
     session.add(user)
     await session.commit()
+    course = await _create_course(session, user, "Cascade")
 
     conv = Conversation(
-        user_id=user.id, title="Test", mode="ask", material_scope=[]
+        user_id=user.id,
+        course_id=course.id,
+        title="Test",
+        mode="ask",
+        material_scope=[],
     )
     session.add(conv)
     await session.commit()
@@ -344,13 +425,18 @@ async def test_user_cascade_conversations(session):
 @pytest.mark.asyncio
 async def test_material_processing_status_transition(session):
     user = User(
-        username="status", email="status@example.com", hashed_password="pw", display_name="ST"
+        username="status",
+        email="status@example.com",
+        hashed_password="pw",
+        display_name="ST",
     )
     session.add(user)
     await session.commit()
+    course = await _create_course(session, user, "Status")
 
     mat = Material(
         user_id=user.id,
+        course_id=course.id,
         filename="test.docx",
         original_filename="test.docx",
         file_type="docx",
@@ -381,13 +467,20 @@ async def test_conversation_message_model(session):
     )
     session.add(user)
     await session.flush()
+    course = await _create_course(session, user, "Memory")
 
-    conversation = Conversation(user_id=user.id, title="复习数据库")
+    conversation = Conversation(
+        user_id=user.id,
+        course_id=course.id,
+        title="复习数据库",
+    )
     session.add(conversation)
     await session.flush()
 
     message = ConversationMessage(
         conversation_id=conversation.id,
+        user_id=user.id,
+        course_id=course.id,
         role="user",
         content="刚才那个概念再举个例子",
         material_scope=["database.pdf"],
@@ -413,9 +506,11 @@ async def test_learning_profile_model(session):
     )
     session.add(user)
     await session.flush()
+    course = await _create_course(session, user, "Profile")
 
     profile = LearningProfile(
         user_id=user.id,
+        course_id=course.id,
         current_subject="数据库系统",
         review_goal="理解事务隔离级别",
         weak_concepts=["幻读"],
@@ -442,9 +537,11 @@ async def test_material_chunk_and_extended_fields(session):
     )
     session.add(user)
     await session.flush()
+    course = await _create_course(session, user, "Chunks")
 
     material = Material(
         user_id=user.id,
+        course_id=course.id,
         filename="stored.pdf",
         original_filename="database.pdf",
         file_type=FileType.PDF,
@@ -459,6 +556,8 @@ async def test_material_chunk_and_extended_fields(session):
 
     chunk = MaterialChunk(
         material_id=material.id,
+        user_id=user.id,
+        course_id=course.id,
         chunk_id="chunk-1",
         text_preview="事务隔离级别",
         page_number=3,
@@ -541,13 +640,20 @@ async def test_answer_record_extended_fields(session):
     )
     session.add(user)
     await session.flush()
+    course = await _create_course(session, user, "Extended Answers")
 
-    quiz = QuizSession(user_id=user.id, question_count=1)
+    quiz = QuizSession(
+        user_id=user.id,
+        course_id=course.id,
+        question_count=1,
+    )
     session.add(quiz)
     await session.flush()
 
     question = Question(
         quiz_session_id=quiz.id,
+        user_id=user.id,
+        course_id=course.id,
         question_text="事务的 I 代表什么？",
         question_type=QuestionType.FILL_BLANK,
         correct_answer="Isolation",
@@ -559,6 +665,7 @@ async def test_answer_record_extended_fields(session):
         question_id=question.id,
         quiz_session_id=quiz.id,
         user_id=user.id,
+        course_id=course.id,
         student_answer="Isolation",
         is_correct=True,
         feedback="回答正确",

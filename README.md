@@ -2,11 +2,12 @@
 
 面向大学生期末复习场景的 AI 学习助手。用户可以上传课件或讲义，基于资料进行问答、生成练习题、查看薄弱点，并在 `Ask / Quiz / Review` 三种模式之间切换完成复习闭环。
 
-当前仓库已进入 V2 Phase 1。Task 1.1 已将业务默认数据库切换为 PostgreSQL，建立 pgvector Schema、SQLAlchemy Repository 边界和错题持久化；Task 1.2 已实现邀请码注册、用户名/密码登录、安全 Cookie 会话、Refresh Token 轮换、账号禁用和租户隔离，正在等待验收。私人课程和配额仍按后续 Task 逐项实施。
+当前仓库已进入 V2 Phase 1。Task 1.1 已将业务默认数据库切换为 PostgreSQL，建立 pgvector Schema、SQLAlchemy Repository 边界和错题持久化；Task 1.2 已实现邀请码认证和安全会话；Task 1.3 已实现私人多课程领域模型及课程级数据隔离，正在等待验收。账号删除和配额仍按后续 Task 逐项实施。
 
 ## 核心功能
 
 - 资料上传：文本型 `PDF / DOCX / PPTX`
+- 私人课程：课程、考试日期、长期目标、每日可用时长和会话临时时长
 - 智能问答：围绕上传资料进行问答
 - 题目生成：按知识点、难度和数量生成练习题
 - 错题分析：记录答题结果并输出薄弱点视图
@@ -22,9 +23,9 @@ frontend (Next.js 15 / React 19)
 
 backend (FastAPI / Python 3.11-3.12)
   -> 邀请码 / Argon2id / JWT / Refresh 轮换 / CSRF
-  -> chat / materials / quiz / review API
+  -> courses / chat / materials / quiz / review API
   -> RAG Agent / Quiz Agent / Tracker Agent
-  -> PostgreSQL 17（业务数据、错题和资料块元数据）
+  -> PostgreSQL 17（私人课程、业务数据、错题和资料块元数据）
   -> pgvector 0.8.1 Schema（Phase 3 切换检索实现）
   -> Chroma（Phase 3 前的临时 Dense Retrieval 实现）
 

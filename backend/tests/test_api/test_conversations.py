@@ -58,10 +58,13 @@ async def test_list_conversations_names_legacy_default_title_from_first_user_mes
     db_session,
 ):
     created = await client_with_db.post("/api/conversations")
-    conversation_id = _data(created)["id"]
+    created_data = _data(created)
+    conversation_id = created_data["id"]
     db_session.add(
         ConversationMessage(
             conversation_id=conversation_id,
+            user_id=1,
+            course_id=created_data["course_id"],
             role=MessageRole.USER,
             content="请解释二叉树遍历的区别。",
             material_scope=None,
@@ -83,12 +86,15 @@ async def test_list_conversations_repairs_legacy_ellipsized_title(
     db_session,
 ):
     created = await client_with_db.post("/api/conversations")
-    conversation_id = _data(created)["id"]
+    created_data = _data(created)
+    conversation_id = created_data["id"]
     conversation = await db_session.get(Conversation, conversation_id)
     conversation.title = "马上要面试了，给我出一道..."
     db_session.add(
         ConversationMessage(
             conversation_id=conversation_id,
+            user_id=1,
+            course_id=created_data["course_id"],
             role=MessageRole.USER,
             content="我马上要面试了，给我出一道最可能考到的数据库事务题。",
             material_scope=None,
@@ -101,16 +107,22 @@ async def test_list_conversations_repairs_legacy_ellipsized_title(
 
     assert response.status_code == 200
     data = _data(response)
-    assert data["conversations"][0]["title"] == "马上要面试了，给我出一道最可能考到的数据库事务题"
+    assert (
+        data["conversations"][0]["title"]
+        == "马上要面试了，给我出一道最可能考到的数据库事务题"
+    )
 
 
 @pytest.mark.asyncio
 async def test_delete_conversation_removes_messages(client_with_db, db_session):
     created = await client_with_db.post("/api/conversations")
-    conversation_id = _data(created)["id"]
+    created_data = _data(created)
+    conversation_id = created_data["id"]
     db_session.add(
         ConversationMessage(
             conversation_id=conversation_id,
+            user_id=1,
+            course_id=created_data["course_id"],
             role=MessageRole.USER,
             content="要删除的历史消息",
             material_scope=["MQ.docx"],
@@ -122,7 +134,9 @@ async def test_delete_conversation_removes_messages(client_with_db, db_session):
     response = await client_with_db.delete(f"/api/conversations/{conversation_id}")
 
     assert response.status_code == 200
-    messages = await client_with_db.get(f"/api/conversations/{conversation_id}/messages")
+    messages = await client_with_db.get(
+        f"/api/conversations/{conversation_id}/messages"
+    )
     assert messages.status_code == 404
 
 
@@ -131,7 +145,9 @@ async def test_get_conversation_messages(client_with_db):
     active = await client_with_db.get("/api/conversations/active")
     conversation_id = _data(active)["id"]
 
-    response = await client_with_db.get(f"/api/conversations/{conversation_id}/messages")
+    response = await client_with_db.get(
+        f"/api/conversations/{conversation_id}/messages"
+    )
 
     assert response.status_code == 200
     data = _data(response)

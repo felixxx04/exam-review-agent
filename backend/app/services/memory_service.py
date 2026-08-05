@@ -8,8 +8,15 @@ from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.db.models import Conversation, ConversationMessage, LearningProfile, MessageRole, User
+from app.db.models import (
+    Conversation,
+    ConversationMessage,
+    LearningProfile,
+    MessageRole,
+    User,
+)
 from app.repositories.users import UserRepository
+from app.services.course_service import CourseService
 
 
 DEFAULT_CONVERSATION_TITLE = "新的复习会话"
@@ -38,12 +45,16 @@ class MemoryService:
         return user
 
     async def get_or_create_active_conversation(
-        self, user_id: str | int
+        self, user_id: str | int, course_id: int | None = None
     ) -> Conversation:
         user = await self.get_user(user_id)
+        course = await CourseService(self.db).resolve_course(user.id, course_id)
         result = await self.db.execute(
             select(Conversation)
-            .where(Conversation.user_id == user.id)
+            .where(
+                Conversation.user_id == user.id,
+                Conversation.course_id == course.id,
+            )
             .order_by(Conversation.updated_at.desc())
             .limit(1)
         )
@@ -51,7 +62,11 @@ class MemoryService:
         if conversation is not None:
             return conversation
 
-        conversation = Conversation(user_id=user.id, title="默认复习会话")
+        conversation = Conversation(
+            user_id=user.id,
+            course_id=course.id,
+            title="默认复习会话",
+        )
         self.db.add(conversation)
         await self.db.commit()
         await self.db.refresh(conversation)
@@ -61,20 +76,32 @@ class MemoryService:
         self,
         user_id: str | int,
         title: str = DEFAULT_CONVERSATION_TITLE,
+        course_id: int | None = None,
+        available_minutes_override: int | None = None,
     ) -> Conversation:
         user = await self.get_user(user_id)
-        conversation = Conversation(user_id=user.id, title=title)
+        course = await CourseService(self.db).resolve_course(user.id, course_id)
+        conversation = Conversation(
+            user_id=user.id,
+            course_id=course.id,
+            title=title,
+            available_minutes_override=available_minutes_override,
+        )
         self.db.add(conversation)
         await self.db.commit()
         await self.db.refresh(conversation)
         return conversation
 
     async def get_or_create_learning_profile(
-        self, user_id: str | int
+        self, user_id: str | int, course_id: int | None = None
     ) -> LearningProfile:
         user = await self.get_user(user_id)
+        course = await CourseService(self.db).resolve_course(user.id, course_id)
         result = await self.db.execute(
-            select(LearningProfile).where(LearningProfile.user_id == user.id)
+            select(LearningProfile).where(
+                LearningProfile.user_id == user.id,
+                LearningProfile.course_id == course.id,
+            )
         )
         profile = result.scalar_one_or_none()
         if profile is not None:
@@ -82,6 +109,7 @@ class MemoryService:
 
         profile = LearningProfile(
             user_id=user.id,
+            course_id=course.id,
             weak_concepts=[],
             frequent_questions=[],
             active_materials=[],
@@ -107,6 +135,8 @@ class MemoryService:
         role_value = MessageRole(role)
         message = ConversationMessage(
             conversation_id=conversation_id,
+            user_id=conversation.user_id,
+            course_id=conversation.course_id,
             role=role_value,
             content=content,
             material_scope=material_scope,
@@ -140,8 +170,14 @@ class MemoryService:
             return []
         result = await self.db.execute(
             select(ConversationMessage)
-            .where(ConversationMessage.conversation_id == conversation_id)
-            .order_by(ConversationMessage.created_at.desc(), ConversationMessage.id.desc())
+            .where(
+                ConversationMessage.conversation_id == conversation_id,
+                ConversationMessage.user_id == conversation.user_id,
+                ConversationMessage.course_id == conversation.course_id,
+            )
+            .order_by(
+                ConversationMessage.created_at.desc(), ConversationMessage.id.desc()
+            )
             .limit(limit)
         )
         return list(reversed(result.scalars().all()))
@@ -191,10 +227,14 @@ class MemoryService:
         material_scope: list[str] | None = None,
     ) -> dict[str, Any]:
         conversation = await self.get_conversation(user_id, conversation_id)
-        profile = await self.get_or_create_learning_profile(user_id)
+        profile = await self.get_or_create_learning_profile(
+            user_id,
+            conversation.course_id if conversation is not None else None,
+        )
         recent = await self.get_recent_messages(user_id, conversation_id)
         return {
             "conversation_id": conversation_id,
+            "course_id": conversation.course_id if conversation else None,
             "summary": conversation.summary if conversation else None,
             "recent_messages": [
                 {
@@ -230,13 +270,15 @@ class MemoryService:
         profile: LearningProfile,
         extracted: dict[str, Any],
     ) -> LearningProfile:
-        if isinstance(extracted.get("current_subject"), str) and extracted[
-            "current_subject"
-        ].strip():
+        if (
+            isinstance(extracted.get("current_subject"), str)
+            and extracted["current_subject"].strip()
+        ):
             profile.current_subject = extracted["current_subject"].strip()
-        if isinstance(extracted.get("review_goal"), str) and extracted[
-            "review_goal"
-        ].strip():
+        if (
+            isinstance(extracted.get("review_goal"), str)
+            and extracted["review_goal"].strip()
+        ):
             profile.review_goal = extracted["review_goal"].strip()
         profile.weak_concepts = self._merge_list(
             profile.weak_concepts,

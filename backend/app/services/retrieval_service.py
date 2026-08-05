@@ -5,7 +5,6 @@ from typing import Optional
 import numpy as np
 from rank_bm25 import BM25Okapi
 
-from app.core.config import settings
 from app.db.vector_store import VectorStore
 from app.services.embedding_service import EmbeddingService
 
@@ -34,7 +33,9 @@ class RetrievalService:
         self._rrf_k = rrf_k
         self._vector_store = vector_store
         self._embedding_service = embedding_service
-        self._bm25_indices: dict[str, tuple[BM25Okapi, list[str], list[dict], list[str]]] = {}
+        self._bm25_indices: dict[
+            str, tuple[BM25Okapi, list[str], list[dict], list[str]]
+        ] = {}
 
     # ------------------------------------------------------------------
     # Cross-encoder (lazy singleton)
@@ -56,6 +57,8 @@ class RetrievalService:
         self,
         user_id: str,
         chunks: list[dict],
+        *,
+        course_id: int | None = None,
     ) -> list[str]:
         """Index chunks into the vector store and BM25 index.
 
@@ -64,6 +67,9 @@ class RetrievalService:
         """
         texts = [chunk["text"] for chunk in chunks]
         metadatas = [chunk.get("metadata", {}) for chunk in chunks]
+        if course_id is not None:
+            metadatas = [{**metadata, "course_id": course_id} for metadata in metadatas]
+        scope_key = self._scope_key(user_id, course_id)
 
         # Generate embeddings
         embeddings = self._get_embedding_service().embed_documents(texts)
@@ -75,7 +81,7 @@ class RetrievalService:
 
         # Store in vector DB
         self._get_vector_store().add(
-            user_id=user_id,
+            user_id=scope_key,
             embeddings=embeddings,
             documents=texts,
             metadatas=metadatas,
@@ -84,20 +90,20 @@ class RetrievalService:
 
         # Update BM25 index
         tokenized = [self._tokenize(t) for t in texts]
-        if user_id in self._bm25_indices:
-            old_bm25, old_texts, old_metas, old_ids = self._bm25_indices[user_id]
+        if scope_key in self._bm25_indices:
+            old_bm25, old_texts, old_metas, old_ids = self._bm25_indices[scope_key]
             combined_texts = old_texts + texts
             combined_metas = old_metas + metadatas
             combined_ids = old_ids + chunk_ids
             combined_tokens = [self._tokenize(t) for t in combined_texts]
-            self._bm25_indices[user_id] = (
+            self._bm25_indices[scope_key] = (
                 BM25Okapi(combined_tokens),
                 combined_texts,
                 combined_metas,
                 combined_ids,
             )
         else:
-            self._bm25_indices[user_id] = (
+            self._bm25_indices[scope_key] = (
                 BM25Okapi(tokenized),
                 texts,
                 metadatas,
@@ -117,11 +123,13 @@ class RetrievalService:
         top_k: int = 5,
         metadata_filter: Optional[dict] = None,
         apply_quality_gate: bool = True,
+        course_id: int | None = None,
     ) -> list[SearchResult]:
         """Hybrid search: BM25 + dense vector search + RRF fusion + rerank + quality gate."""
         # 1. Dual retrieval
-        bm25_results = self._bm25_search(user_id, query, top_k * 2, metadata_filter)
-        dense_results = self._dense_search(user_id, query, top_k * 2, metadata_filter)
+        scope_key = self._scope_key(user_id, course_id)
+        bm25_results = self._bm25_search(scope_key, query, top_k * 2, metadata_filter)
+        dense_results = self._dense_search(scope_key, query, top_k * 2, metadata_filter)
 
         # 2. Reciprocal rank fusion (RRF)
         fused = self._rrf_fusion(bm25_results, dense_results, top_k * 2)
@@ -147,20 +155,32 @@ class RetrievalService:
     # Deletion
     # ------------------------------------------------------------------
 
-    async def delete_chunks(self, user_id: str, chunk_ids: list[str]) -> None:
+    async def delete_chunks(
+        self,
+        user_id: str,
+        chunk_ids: list[str],
+        *,
+        course_id: int | None = None,
+    ) -> None:
         """Delete chunks from both stores."""
-        self._get_vector_store().delete(user_id, chunk_ids)
-        if user_id in self._bm25_indices:
-            bm25, texts, metas, ids = self._bm25_indices[user_id]
+        scope_key = self._scope_key(user_id, course_id)
+        self._get_vector_store().delete(scope_key, chunk_ids)
+        if scope_key in self._bm25_indices:
+            bm25, texts, metas, ids = self._bm25_indices[scope_key]
             keep_indices = [i for i, cid in enumerate(ids) if cid not in chunk_ids]
             if keep_indices:
                 new_texts = [texts[i] for i in keep_indices]
                 new_metas = [metas[i] for i in keep_indices]
                 new_ids = [ids[i] for i in keep_indices]
                 tokenized = [self._tokenize(t) for t in new_texts]
-                self._bm25_indices[user_id] = (BM25Okapi(tokenized), new_texts, new_metas, new_ids)
+                self._bm25_indices[scope_key] = (
+                    BM25Okapi(tokenized),
+                    new_texts,
+                    new_metas,
+                    new_ids,
+                )
             else:
-                del self._bm25_indices[user_id]
+                del self._bm25_indices[scope_key]
 
     # ------------------------------------------------------------------
     # Internal helpers
@@ -175,6 +195,12 @@ class RetrievalService:
         if self._vector_store is None:
             self._vector_store = VectorStore()
         return self._vector_store
+
+    @staticmethod
+    def _scope_key(user_id: str, course_id: int | None) -> str:
+        if course_id is None:
+            return user_id
+        return f"{user_id}_course_{course_id}"
 
     @staticmethod
     def _tokenize(text: str) -> list[str]:
@@ -205,13 +231,15 @@ class RetrievalService:
         results = []
         for idx in top_indices:
             if scores[idx] > 0 and self._metadata_matches(metas[idx], metadata_filter):
-                results.append({
-                    "text": texts[idx],
-                    "metadata": metas[idx],
-                    "id": ids[idx],
-                    "score": float(scores[idx]),
-                    "source": "bm25",
-                })
+                results.append(
+                    {
+                        "text": texts[idx],
+                        "metadata": metas[idx],
+                        "id": ids[idx],
+                        "score": float(scores[idx]),
+                        "source": "bm25",
+                    }
+                )
         return results
 
     @staticmethod
@@ -230,7 +258,11 @@ class RetrievalService:
         return True
 
     def _dense_search(
-        self, user_id: str, query: str, top_k: int, metadata_filter: Optional[dict] = None
+        self,
+        user_id: str,
+        query: str,
+        top_k: int,
+        metadata_filter: Optional[dict] = None,
     ) -> list[dict]:
         """Dense vector search via ChromaDB."""
         query_embedding = self._get_embedding_service().embed_query(query)
@@ -240,13 +272,15 @@ class RetrievalService:
         results = []
         for item in raw_results:
             similarity = 1.0 - item["distance"]
-            results.append({
-                "text": item["document"],
-                "metadata": item["metadata"],
-                "id": item["id"],
-                "score": float(similarity),
-                "source": "dense",
-            })
+            results.append(
+                {
+                    "text": item["document"],
+                    "metadata": item["metadata"],
+                    "id": item["id"],
+                    "score": float(similarity),
+                    "source": "dense",
+                }
+            )
         return results
 
     def _rrf_fusion(
@@ -271,12 +305,12 @@ class RetrievalService:
                 rrf_scores[doc_id]["score"] += rrf
             else:
                 rrf_scores[doc_id] = {**item, "score": rrf}
-        sorted_items = sorted(rrf_scores.values(), key=lambda x: x["score"], reverse=True)
+        sorted_items = sorted(
+            rrf_scores.values(), key=lambda x: x["score"], reverse=True
+        )
         return sorted_items[:top_k]
 
-    def _rerank(
-        self, query: str, candidates: list[dict], top_k: int
-    ) -> list[dict]:
+    def _rerank(self, query: str, candidates: list[dict], top_k: int) -> list[dict]:
         """Cross-encoder reranking."""
         if not candidates:
             return []

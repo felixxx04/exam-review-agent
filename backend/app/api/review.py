@@ -13,6 +13,9 @@ from app.api.dependencies import get_mistake_repository
 from app.core.auth import AuthenticatedUser, get_current_user
 from app.core.exceptions import LLMProviderError
 from app.repositories.mistakes import MistakeData, MistakeRepository
+from app.services.course_service import CourseService
+from app.db.database import get_db
+from sqlalchemy.ext.asyncio import AsyncSession
 from app.schemas.common import ApiResponse
 from app.schemas.review import (
     DailySessionRequest,
@@ -86,6 +89,7 @@ async def _mistake_records(
     repository: MistakeRepository,
     user_id: str,
     *,
+    course_id: int | None = None,
     status: str | None = None,
     concept: str | None = None,
     topic: str | None = None,
@@ -93,6 +97,7 @@ async def _mistake_records(
 ) -> list[MistakeData]:
     return await repository.list_for_user(
         user_id,
+        course_id=course_id,
         status=status,
         concept=concept,
         topic=topic,
@@ -111,10 +116,13 @@ async def _find_mistake_record(
 def _summary(mistakes: list[MistakeRecord]) -> ReviewSummary:
     return ReviewSummary(
         total_count=len(mistakes),
-        pending_count=len([
-            m for m in mistakes
-            if m.status in {"unreviewed", "needs_requiz", "corrected"}
-        ]),
+        pending_count=len(
+            [
+                m
+                for m in mistakes
+                if m.status in {"unreviewed", "needs_requiz", "corrected"}
+            ]
+        ),
         mastered_count=len([m for m in mistakes if m.status == "mastered"]),
         corrected_count=len([m for m in mistakes if m.status == "corrected"]),
         needs_requiz_count=len([m for m in mistakes if m.status == "needs_requiz"]),
@@ -142,13 +150,15 @@ def _matches_search(mistake: MistakeRecord, search: str) -> bool:
     text = search.lower().strip()
     if not text:
         return True
-    haystack = " ".join([
-        mistake.question_text,
-        mistake.concept,
-        mistake.topic,
-        mistake.wrong_answer,
-        mistake.correct_answer,
-    ]).lower()
+    haystack = " ".join(
+        [
+            mistake.question_text,
+            mistake.concept,
+            mistake.topic,
+            mistake.wrong_answer,
+            mistake.correct_answer,
+        ]
+    ).lower()
     return text in haystack
 
 
@@ -163,63 +173,74 @@ def _next_review_at(status: str, now: datetime) -> str | None:
 def _markdown_export(mistakes: list[MistakeRecord]) -> str:
     lines = ["# 错题导出", ""]
     for mistake in mistakes:
-        lines.extend([
-            f"## {mistake.question_text}",
-            "",
-            f"- 知识点: {mistake.concept}",
-            f"- 主题: {mistake.topic}",
-            f"- 错误答案: {mistake.wrong_answer}",
-            f"- 正确答案: {mistake.correct_answer}",
-            f"- 状态: {mistake.status}",
-            f"- 订正: {mistake.correction_note or '未填写'}",
-            "",
-        ])
+        lines.extend(
+            [
+                f"## {mistake.question_text}",
+                "",
+                f"- 知识点: {mistake.concept}",
+                f"- 主题: {mistake.topic}",
+                f"- 错误答案: {mistake.wrong_answer}",
+                f"- 正确答案: {mistake.correct_answer}",
+                f"- 状态: {mistake.status}",
+                f"- 订正: {mistake.correction_note or '未填写'}",
+                "",
+            ]
+        )
     return "\n".join(lines)
 
 
 def _csv_export(mistakes: list[MistakeRecord]) -> str:
     output = StringIO()
     writer = csv.writer(output)
-    writer.writerow([
-        "question",
-        "concept",
-        "topic",
-        "wrong_answer",
-        "correct_answer",
-        "status",
-        "correction_note",
-    ])
+    writer.writerow(
+        [
+            "question",
+            "concept",
+            "topic",
+            "wrong_answer",
+            "correct_answer",
+            "status",
+            "correction_note",
+        ]
+    )
     for mistake in mistakes:
-        writer.writerow([
-            mistake.question_text,
-            mistake.concept,
-            mistake.topic,
-            mistake.wrong_answer,
-            mistake.correct_answer,
-            mistake.status,
-            mistake.correction_note,
-        ])
+        writer.writerow(
+            [
+                mistake.question_text,
+                mistake.concept,
+                mistake.topic,
+                mistake.wrong_answer,
+                mistake.correct_answer,
+                mistake.status,
+                mistake.correction_note,
+            ]
+        )
     return output.getvalue()
 
 
 @router.get("/weak-points")
 async def get_weak_points(
+    course_id: int | None = None,
     current_user: AuthenticatedUser = Depends(get_current_user),
     repository: MistakeRepository = Depends(get_mistake_repository),
+    db: AsyncSession = Depends(get_db),
 ):
+    course = await CourseService(db).resolve_course(current_user.id, course_id)
     tracker = _build_tracker(repository)
-    concepts = await tracker.get_weak_concepts(current_user.subject)
-    return ApiResponse.ok(data=WeakPointsResponse(
-        weak_concepts=[
-            WeakConcept(
-                concept=c["concept"],
-                topic=c.get("topic", ""),
-                accuracy=c["accuracy"],
-                attempt_count=c["attempt_count"],
-            )
-            for c in concepts
-        ]
-    ))
+    concepts = await tracker.get_weak_concepts(current_user.subject, course.id)
+    return ApiResponse.ok(
+        data=WeakPointsResponse(
+            weak_concepts=[
+                WeakConcept(
+                    concept=c["concept"],
+                    topic=c.get("topic", ""),
+                    accuracy=c["accuracy"],
+                    attempt_count=c["attempt_count"],
+                )
+                for c in concepts
+            ]
+        )
+    )
 
 
 @router.get("/mistakes")
@@ -228,16 +249,20 @@ async def list_mistakes(
     concept: str | None = None,
     topic: str | None = None,
     question_type: str | None = None,
+    course_id: int | None = None,
     search: str = "",
     sort: str = "priority",
     limit: int = 50,
     offset: int = 0,
     current_user: AuthenticatedUser = Depends(get_current_user),
     repository: MistakeRepository = Depends(get_mistake_repository),
+    db: AsyncSession = Depends(get_db),
 ):
+    course = await CourseService(db).resolve_course(current_user.id, course_id)
     records = await _mistake_records(
         repository,
         current_user.subject,
+        course_id=course.id,
         status=status,
         concept=concept,
         topic=topic,
@@ -249,11 +274,13 @@ async def list_mistakes(
         mistakes = [m for m in mistakes if _matches_search(m, search)]
 
     mistakes = _sort_mistakes(mistakes, sort)
-    paged = mistakes[offset: offset + limit]
-    return ApiResponse.ok(data=MistakeListResponse(
-        mistakes=paged,
-        summary=_summary(mistakes),
-    ))
+    paged = mistakes[offset : offset + limit]
+    return ApiResponse.ok(
+        data=MistakeListResponse(
+            mistakes=paged,
+            summary=_summary(mistakes),
+        )
+    )
 
 
 @router.get("/mistakes/{mistake_id}")
@@ -292,7 +319,9 @@ async def update_mistake(
 
     target_status = updates.get("status")
     if target_status in {"corrected", "needs_requiz"}:
-        updates["next_review_at"] = _next_review_at(target_status, datetime.fromisoformat(now))
+        updates["next_review_at"] = _next_review_at(
+            target_status, datetime.fromisoformat(now)
+        )
 
     existing = await _find_mistake_record(repository, current_user.subject, mistake_id)
     if existing is None:
@@ -300,10 +329,12 @@ async def update_mistake(
 
     history = list(existing.get("review_history") or [])
     if updates:
-        history.append({
-            "event": updates.get("status", existing.get("status", "updated")),
-            "at": now,
-        })
+        history.append(
+            {
+                "event": updates.get("status", existing.get("status", "updated")),
+                "at": now,
+            }
+        )
         updates["review_history"] = history
 
     updated = await repository.update(current_user.subject, mistake_id, updates)
@@ -313,12 +344,17 @@ async def update_mistake(
 @router.get("/export")
 async def export_mistakes(
     format: str = "markdown",
+    course_id: int | None = None,
     current_user: AuthenticatedUser = Depends(get_current_user),
     repository: MistakeRepository = Depends(get_mistake_repository),
+    db: AsyncSession = Depends(get_db),
 ):
+    course = await CourseService(db).resolve_course(current_user.id, course_id)
     mistakes = [
         _normalize_mistake(record)
-        for record in await _mistake_records(repository, current_user.subject)
+        for record in await _mistake_records(
+            repository, current_user.subject, course_id=course.id
+        )
     ]
     if format == "csv":
         content = _csv_export(mistakes)
@@ -327,27 +363,36 @@ async def export_mistakes(
         format = "markdown"
         content = _markdown_export(mistakes)
         filename = "mistakes.md"
-    return ApiResponse.ok(data=MistakeExportResponse(
-        format=format,
-        filename=filename,
-        content=content,
-    ))
+    return ApiResponse.ok(
+        data=MistakeExportResponse(
+            format=format,
+            filename=filename,
+            content=content,
+        )
+    )
 
 
 @router.post("/daily-session")
 async def create_daily_session(
     request: DailySessionRequest,
+    course_id: int | None = None,
     current_user: AuthenticatedUser = Depends(get_current_user),
     repository: MistakeRepository = Depends(get_mistake_repository),
+    db: AsyncSession = Depends(get_db),
 ):
-    records = await _mistake_records(repository, current_user.subject)
+    course = await CourseService(db).resolve_course(current_user.id, course_id)
+    records = await _mistake_records(
+        repository, current_user.subject, course_id=course.id
+    )
     mistakes = [_normalize_mistake(record) for record in records]
     reviewable = [mistake for mistake in mistakes if mistake.status != "mastered"]
     selected = _sort_mistakes(reviewable, "priority")[: max(request.limit, 1)]
-    return ApiResponse.ok(data=DailySessionResponse(
-        mistakes=selected,
-        message="今日复习已准备好" if selected else "暂无需要复习的错题",
-    ))
+    return ApiResponse.ok(
+        data=DailySessionResponse(
+            mistakes=selected,
+            message="今日复习已准备好" if selected else "暂无需要复习的错题",
+        )
+    )
 
 
 @router.post("/mistakes/{mistake_id}/similar-quiz")
@@ -372,16 +417,19 @@ async def create_similar_quiz(
             "D. 只适用于特殊情况的说法",
         ],
         "correct": "B",
-        "explanation": mistake.explanation or f"复习“{mistake.concept}”时，先回到定义再判断选项。",
+        "explanation": mistake.explanation
+        or f"复习“{mistake.concept}”时，先回到定义再判断选项。",
         "difficulty": 0.4,
         "topic": mistake.concept,
         "source_chunk_ids": mistake.source_chunk_ids,
     }
-    return ApiResponse.ok(data={
-        "questions": [question],
-        "topic": mistake.concept,
-        "total": 1,
-    })
+    return ApiResponse.ok(
+        data={
+            "questions": [question],
+            "topic": mistake.concept,
+            "total": 1,
+        }
+    )
 
 
 @router.post("/mistakes/{mistake_id}/explanation")
@@ -410,24 +458,29 @@ async def explain_mistake(
 @router.post("/study-plan")
 async def generate_study_plan(
     request: StudyPlanRequest,
+    course_id: int | None = None,
     current_user: AuthenticatedUser = Depends(get_current_user),
     repository: MistakeRepository = Depends(get_mistake_repository),
+    db: AsyncSession = Depends(get_db),
 ):
+    course = await CourseService(db).resolve_course(current_user.id, course_id)
     tracker = _build_tracker(repository)
     result = await tracker.generate_study_plan(
         user_id=current_user.subject,
         exam_date=request.exam_date,
         days_before_exam=request.days_before_exam,
+        course_id=course.id,
     )
-    return ApiResponse.ok(data=StudyPlanResponse(
-        plan=[
-            StudyDay(
-                day=item["day"],
-                topics=item.get("topics", []),
-                tasks=item.get("tasks", []),
-            )
-            for item in result.get("plan", [])
-        ],
-        message=result.get("message", ""),
-    ))
-
+    return ApiResponse.ok(
+        data=StudyPlanResponse(
+            plan=[
+                StudyDay(
+                    day=item["day"],
+                    topics=item.get("topics", []),
+                    tasks=item.get("tasks", []),
+                )
+                for item in result.get("plan", [])
+            ],
+            message=result.get("message", ""),
+        )
+    )

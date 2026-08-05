@@ -8,6 +8,8 @@ from pydantic import BaseModel, ConfigDict, Field
 
 class ConversationResponse(BaseModel):
     id: int
+    course_id: int
+    available_minutes_override: int | None = None
     title: str
     summary: str | None = None
     message_count: int
@@ -21,6 +23,11 @@ class ConversationResponse(BaseModel):
 class ConversationListResponse(BaseModel):
     conversations: list[ConversationResponse]
     total: int
+
+
+class ConversationCreateRequest(BaseModel):
+    course_id: int | None = None
+    available_minutes_override: int | None = Field(default=None, ge=1, le=1440)
 
 
 class ConversationMessageResponse(BaseModel):

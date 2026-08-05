@@ -7,13 +7,17 @@ from sqlalchemy import (
     JSON,
     Boolean,
     CheckConstraint,
+    Date,
     DateTime,
     Float,
     ForeignKey,
+    ForeignKeyConstraint,
     Index,
     Integer,
     String,
     Text,
+    UniqueConstraint,
+    text,
 )
 from sqlalchemy import Enum as SAEnum
 from sqlalchemy.dialects.postgresql import JSONB
@@ -107,12 +111,27 @@ class User(Base):
         DateTime(timezone=True), default=_utcnow, nullable=False
     )
 
-    conversations = relationship("Conversation", back_populates="user", cascade="all, delete-orphan")
-    materials = relationship("Material", back_populates="user", cascade="all, delete-orphan")
-    quiz_sessions = relationship("QuizSession", back_populates="user", cascade="all, delete-orphan")
-    answer_records = relationship("AnswerRecord", back_populates="user", cascade="all, delete-orphan")
-    mistake_records = relationship("MistakeRecord", back_populates="user", cascade="all, delete-orphan")
-    learning_profiles = relationship("LearningProfile", back_populates="user", cascade="all, delete-orphan")
+    conversations = relationship(
+        "Conversation", back_populates="user", cascade="all, delete-orphan"
+    )
+    materials = relationship(
+        "Material", back_populates="user", cascade="all, delete-orphan"
+    )
+    quiz_sessions = relationship(
+        "QuizSession", back_populates="user", cascade="all, delete-orphan"
+    )
+    answer_records = relationship(
+        "AnswerRecord", back_populates="user", cascade="all, delete-orphan"
+    )
+    mistake_records = relationship(
+        "MistakeRecord", back_populates="user", cascade="all, delete-orphan"
+    )
+    learning_profiles = relationship(
+        "LearningProfile", back_populates="user", cascade="all, delete-orphan"
+    )
+    courses = relationship(
+        "Course", back_populates="user", cascade="all, delete-orphan"
+    )
     refresh_tokens = relationship(
         "RefreshToken", back_populates="user", cascade="all, delete-orphan"
     )
@@ -153,9 +172,7 @@ class InviteCode(Base):
 
 class RefreshToken(Base):
     __tablename__ = "refresh_tokens"
-    __table_args__ = (
-        Index("ix_refresh_tokens_user_session", "user_id", "session_id"),
-    )
+    __table_args__ = (Index("ix_refresh_tokens_user_session", "user_id", "session_id"),)
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     user_id: Mapped[int] = mapped_column(
@@ -195,22 +212,144 @@ class RefreshToken(Base):
     )
 
 
+class Course(Base):
+    __tablename__ = "courses"
+    __table_args__ = (
+        UniqueConstraint("id", "user_id", name="uq_courses_id_user"),
+        UniqueConstraint("user_id", "name", name="uq_courses_user_name"),
+        CheckConstraint("length(trim(name)) > 0", name="ck_courses_name_not_blank"),
+        Index("ix_courses_user_updated", "user_id", "updated_at"),
+        Index(
+            "uq_courses_one_default_per_user",
+            "user_id",
+            unique=True,
+            postgresql_where=text("is_default"),
+            sqlite_where=text("is_default = 1"),
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    user_id: Mapped[int] = mapped_column(
+        Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    name: Mapped[str] = mapped_column(String(120), nullable=False)
+    description: Mapped[str | None] = mapped_column(Text, nullable=True)
+    is_default: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    created_at: Mapped[datetime.datetime] = mapped_column(
+        DateTime(timezone=True), default=_utcnow, nullable=False
+    )
+    updated_at: Mapped[datetime.datetime] = mapped_column(
+        DateTime(timezone=True), default=_utcnow, onupdate=_utcnow, nullable=False
+    )
+
+    user = relationship("User", back_populates="courses")
+    exam = relationship(
+        "Exam", back_populates="course", cascade="all, delete-orphan", uselist=False
+    )
+    study_availability = relationship(
+        "StudyAvailability",
+        back_populates="course",
+        cascade="all, delete-orphan",
+        uselist=False,
+    )
+
+
+class Exam(Base):
+    __tablename__ = "exams"
+    __table_args__ = (
+        UniqueConstraint("user_id", "course_id", name="uq_exams_user_course"),
+        ForeignKeyConstraint(
+            ["course_id", "user_id"],
+            ["courses.id", "courses.user_id"],
+            ondelete="CASCADE",
+            name="fk_exams_course_owner",
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    user_id: Mapped[int] = mapped_column(
+        Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    course_id: Mapped[int] = mapped_column(Integer, nullable=False, index=True)
+    exam_date: Mapped[datetime.date | None] = mapped_column(Date, nullable=True)
+    long_term_goal: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime.datetime] = mapped_column(
+        DateTime(timezone=True), default=_utcnow, nullable=False
+    )
+    updated_at: Mapped[datetime.datetime] = mapped_column(
+        DateTime(timezone=True), default=_utcnow, onupdate=_utcnow, nullable=False
+    )
+
+    course = relationship("Course", back_populates="exam")
+
+
+class StudyAvailability(Base):
+    __tablename__ = "study_availabilities"
+    __table_args__ = (
+        UniqueConstraint(
+            "user_id", "course_id", name="uq_study_availability_user_course"
+        ),
+        CheckConstraint(
+            "daily_available_minutes > 0 AND daily_available_minutes <= 1440",
+            name="ck_study_availability_daily_minutes",
+        ),
+        ForeignKeyConstraint(
+            ["course_id", "user_id"],
+            ["courses.id", "courses.user_id"],
+            ondelete="CASCADE",
+            name="fk_study_availability_course_owner",
+        ),
+        Index("ix_study_availability_user_course", "user_id", "course_id"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    user_id: Mapped[int] = mapped_column(
+        Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    course_id: Mapped[int] = mapped_column(Integer, nullable=False, index=True)
+    daily_available_minutes: Mapped[int] = mapped_column(
+        Integer, default=60, nullable=False
+    )
+    updated_at: Mapped[datetime.datetime] = mapped_column(
+        DateTime(timezone=True), default=_utcnow, onupdate=_utcnow, nullable=False
+    )
+
+    course = relationship("Course", back_populates="study_availability")
+
+
 class LearningProfile(Base):
     __tablename__ = "learning_profiles"
+    __table_args__ = (
+        UniqueConstraint(
+            "user_id", "course_id", name="uq_learning_profiles_user_course"
+        ),
+        ForeignKeyConstraint(
+            ["course_id", "user_id"],
+            ["courses.id", "courses.user_id"],
+            ondelete="CASCADE",
+            name="fk_learning_profiles_course_owner",
+        ),
+    )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     user_id: Mapped[int] = mapped_column(
         Integer,
         ForeignKey("users.id", ondelete="CASCADE"),
         nullable=False,
-        unique=True,
         index=True,
     )
+    course_id: Mapped[int] = mapped_column(Integer, nullable=False, index=True)
     current_subject: Mapped[str | None] = mapped_column(String(200), nullable=True)
     review_goal: Mapped[str | None] = mapped_column(Text, nullable=True)
-    weak_concepts: Mapped[list] = mapped_column(JSON_VALUE, default=list, nullable=False)
-    frequent_questions: Mapped[list] = mapped_column(JSON_VALUE, default=list, nullable=False)
-    active_materials: Mapped[list] = mapped_column(JSON_VALUE, default=list, nullable=False)
+    weak_concepts: Mapped[list] = mapped_column(
+        JSON_VALUE, default=list, nullable=False
+    )
+    frequent_questions: Mapped[list] = mapped_column(
+        JSON_VALUE, default=list, nullable=False
+    )
+    active_materials: Mapped[list] = mapped_column(
+        JSON_VALUE, default=list, nullable=False
+    )
     preferences: Mapped[dict] = mapped_column(JSON_VALUE, default=dict, nullable=False)
     updated_at: Mapped[datetime.datetime] = mapped_column(
         DateTime(timezone=True),
@@ -220,16 +359,43 @@ class LearningProfile(Base):
     )
 
     user = relationship("User", back_populates="learning_profiles")
+    course = relationship("Course", foreign_keys=[course_id])
 
 
 class Conversation(Base):
     __tablename__ = "conversations"
+    __table_args__ = (
+        CheckConstraint(
+            "available_minutes_override IS NULL OR "
+            "(available_minutes_override > 0 AND available_minutes_override <= 1440)",
+            name="ck_conversations_available_minutes_override",
+        ),
+        ForeignKeyConstraint(
+            ["course_id", "user_id"],
+            ["courses.id", "courses.user_id"],
+            ondelete="CASCADE",
+            name="fk_conversations_course_owner",
+        ),
+        UniqueConstraint("id", "user_id", "course_id", name="uq_conversations_scope"),
+        Index(
+            "ix_conversations_user_course_updated",
+            "user_id",
+            "course_id",
+            "updated_at",
+        ),
+    )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     user_id: Mapped[int] = mapped_column(
         Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True
     )
-    title: Mapped[str] = mapped_column(String(255), nullable=False, default="New Conversation")
+    course_id: Mapped[int] = mapped_column(Integer, nullable=False, index=True)
+    available_minutes_override: Mapped[int | None] = mapped_column(
+        Integer, nullable=True
+    )
+    title: Mapped[str] = mapped_column(
+        String(255), nullable=False, default="New Conversation"
+    )
     mode: Mapped[str] = mapped_column(
         _string_enum(ConversationMode, "ck_conversations_mode"),
         default=ConversationMode.ASK,
@@ -255,19 +421,38 @@ class Conversation(Base):
     )
 
     user = relationship("User", back_populates="conversations")
-    messages = relationship("ConversationMessage", back_populates="conversation", cascade="all, delete-orphan")
+    course = relationship("Course", foreign_keys=[course_id])
+    messages = relationship(
+        "ConversationMessage",
+        back_populates="conversation",
+        cascade="all, delete-orphan",
+    )
 
 
 class ConversationMessage(Base):
     __tablename__ = "conversation_messages"
+    __table_args__ = (
+        ForeignKeyConstraint(
+            ["conversation_id", "user_id", "course_id"],
+            ["conversations.id", "conversations.user_id", "conversations.course_id"],
+            ondelete="CASCADE",
+            name="fk_conversation_messages_conversation_scope",
+        ),
+        Index(
+            "ix_conversation_messages_user_course",
+            "user_id",
+            "course_id",
+        ),
+    )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     conversation_id: Mapped[int] = mapped_column(
         Integer,
-        ForeignKey("conversations.id", ondelete="CASCADE"),
         nullable=False,
         index=True,
     )
+    user_id: Mapped[int] = mapped_column(Integer, nullable=False, index=True)
+    course_id: Mapped[int] = mapped_column(Integer, nullable=False, index=True)
     role: Mapped[str] = mapped_column(
         _string_enum(MessageRole, "ck_conversation_messages_role"),
         nullable=False,
@@ -281,20 +466,38 @@ class ConversationMessage(Base):
         DateTime(timezone=True), default=_utcnow, nullable=False
     )
 
-    conversation = relationship("Conversation", back_populates="messages")
+    conversation = relationship(
+        "Conversation",
+        back_populates="messages",
+        foreign_keys=[conversation_id, user_id, course_id],
+    )
 
 
 class Material(Base):
     __tablename__ = "materials"
     __table_args__ = (
+        ForeignKeyConstraint(
+            ["course_id", "user_id"],
+            ["courses.id", "courses.user_id"],
+            ondelete="CASCADE",
+            name="fk_materials_course_owner",
+        ),
+        UniqueConstraint("id", "user_id", "course_id", name="uq_materials_scope"),
         Index("ix_materials_user_status", "user_id", "processing_status"),
         Index("ix_materials_user_created", "user_id", "created_at"),
+        Index(
+            "ix_materials_user_course_status",
+            "user_id",
+            "course_id",
+            "processing_status",
+        ),
     )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     user_id: Mapped[int] = mapped_column(
         Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True
     )
+    course_id: Mapped[int] = mapped_column(Integer, nullable=False, index=True)
     filename: Mapped[str] = mapped_column(String(500), nullable=False)
     original_filename: Mapped[str] = mapped_column(String(500), nullable=False)
     file_type: Mapped[str] = mapped_column(
@@ -321,28 +524,41 @@ class Material(Base):
     )
 
     user = relationship("User", back_populates="materials")
-    chunks = relationship("MaterialChunk", back_populates="material", cascade="all, delete-orphan")
+    course = relationship("Course", foreign_keys=[course_id])
+    chunks = relationship(
+        "MaterialChunk", back_populates="material", cascade="all, delete-orphan"
+    )
 
 
 class MaterialChunk(Base):
     __tablename__ = "material_chunks"
     __table_args__ = (
+        ForeignKeyConstraint(
+            ["material_id", "user_id", "course_id"],
+            ["materials.id", "materials.user_id", "materials.course_id"],
+            ondelete="CASCADE",
+            name="fk_material_chunks_material_scope",
+        ),
         Index(
             "ix_material_chunks_embedding_hnsw",
             "embedding",
             postgresql_using="hnsw",
             postgresql_ops={"embedding": "vector_cosine_ops"},
         ),
+        Index("ix_material_chunks_user_course", "user_id", "course_id"),
     )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     material_id: Mapped[int] = mapped_column(
         Integer,
-        ForeignKey("materials.id", ondelete="CASCADE"),
         nullable=False,
         index=True,
     )
-    chunk_id: Mapped[str] = mapped_column(String(100), unique=True, nullable=False, index=True)
+    user_id: Mapped[int] = mapped_column(Integer, nullable=False, index=True)
+    course_id: Mapped[int] = mapped_column(Integer, nullable=False, index=True)
+    chunk_id: Mapped[str] = mapped_column(
+        String(100), unique=True, nullable=False, index=True
+    )
     content: Mapped[str] = mapped_column(Text, default="", nullable=False)
     text_preview: Mapped[str | None] = mapped_column(Text, nullable=True)
     page_number: Mapped[int | None] = mapped_column(Integer, nullable=True)
@@ -359,20 +575,37 @@ class MaterialChunk(Base):
         DateTime(timezone=True), default=_utcnow, nullable=False
     )
 
-    material = relationship("Material", back_populates="chunks")
+    material = relationship(
+        "Material",
+        back_populates="chunks",
+        foreign_keys=[material_id, user_id, course_id],
+    )
 
 
 class QuizSession(Base):
     __tablename__ = "quiz_sessions"
+    __table_args__ = (
+        ForeignKeyConstraint(
+            ["course_id", "user_id"],
+            ["courses.id", "courses.user_id"],
+            ondelete="CASCADE",
+            name="fk_quiz_sessions_course_owner",
+        ),
+        UniqueConstraint("id", "user_id", "course_id", name="uq_quiz_sessions_scope"),
+        Index("ix_quiz_sessions_user_course", "user_id", "course_id"),
+    )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     user_id: Mapped[int] = mapped_column(
         Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True
     )
+    course_id: Mapped[int] = mapped_column(Integer, nullable=False, index=True)
     material_scope: Mapped[list | None] = mapped_column(JSON_VALUE, nullable=True)
     question_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     correct_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
-    total_time_seconds: Mapped[float] = mapped_column(Float, default=0.0, nullable=False)
+    total_time_seconds: Mapped[float] = mapped_column(
+        Float, default=0.0, nullable=False
+    )
     difficulty: Mapped[str] = mapped_column(
         _string_enum(Difficulty, "ck_quiz_sessions_difficulty"),
         default=Difficulty.MEDIUM,
@@ -383,19 +616,33 @@ class QuizSession(Base):
     )
 
     user = relationship("User", back_populates="quiz_sessions")
-    questions = relationship("Question", back_populates="quiz_session", cascade="all, delete-orphan")
+    course = relationship("Course", foreign_keys=[course_id])
+    questions = relationship(
+        "Question", back_populates="quiz_session", cascade="all, delete-orphan"
+    )
 
 
 class Question(Base):
     __tablename__ = "questions"
+    __table_args__ = (
+        ForeignKeyConstraint(
+            ["quiz_session_id", "user_id", "course_id"],
+            ["quiz_sessions.id", "quiz_sessions.user_id", "quiz_sessions.course_id"],
+            ondelete="CASCADE",
+            name="fk_questions_quiz_scope",
+        ),
+        UniqueConstraint("id", "user_id", "course_id", name="uq_questions_scope"),
+        Index("ix_questions_user_course", "user_id", "course_id"),
+    )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     quiz_session_id: Mapped[int] = mapped_column(
         Integer,
-        ForeignKey("quiz_sessions.id", ondelete="CASCADE"),
         nullable=False,
         index=True,
     )
+    user_id: Mapped[int] = mapped_column(Integer, nullable=False, index=True)
+    course_id: Mapped[int] = mapped_column(Integer, nullable=False, index=True)
     question_text: Mapped[str] = mapped_column(Text, nullable=False)
     question_type: Mapped[str] = mapped_column(
         _string_enum(QuestionType, "ck_questions_question_type"), nullable=False
@@ -412,46 +659,102 @@ class Question(Base):
     concept: Mapped[str | None] = mapped_column(String(100), nullable=True)
     source_chunk_ids: Mapped[list | None] = mapped_column(JSON_VALUE, nullable=True)
 
-    quiz_session = relationship("QuizSession", back_populates="questions")
-    answer_records = relationship("AnswerRecord", back_populates="question", cascade="all, delete-orphan")
-    mistake_records = relationship("MistakeRecord", back_populates="question", cascade="all, delete-orphan")
+    quiz_session = relationship(
+        "QuizSession",
+        back_populates="questions",
+        foreign_keys=[quiz_session_id, user_id, course_id],
+    )
+    answer_records = relationship(
+        "AnswerRecord",
+        back_populates="question",
+        cascade="all, delete-orphan",
+        primaryjoin="Question.id == AnswerRecord.question_id",
+        foreign_keys="AnswerRecord.question_id",
+    )
+    mistake_records = relationship(
+        "MistakeRecord",
+        back_populates="question",
+        cascade="all, delete-orphan",
+        primaryjoin="Question.id == MistakeRecord.question_id",
+        foreign_keys="MistakeRecord.question_id",
+    )
 
 
 class AnswerRecord(Base):
     __tablename__ = "answer_records"
+    __table_args__ = (
+        ForeignKeyConstraint(
+            ["course_id", "user_id"],
+            ["courses.id", "courses.user_id"],
+            ondelete="CASCADE",
+            name="fk_answer_records_course_owner",
+        ),
+        ForeignKeyConstraint(
+            ["question_id", "user_id", "course_id"],
+            ["questions.id", "questions.user_id", "questions.course_id"],
+            ondelete="CASCADE",
+            name="fk_answer_records_question_scope",
+        ),
+        ForeignKeyConstraint(
+            ["quiz_session_id", "user_id", "course_id"],
+            ["quiz_sessions.id", "quiz_sessions.user_id", "quiz_sessions.course_id"],
+            ondelete="CASCADE",
+            name="fk_answer_records_quiz_scope",
+        ),
+        Index("ix_answer_records_user_course", "user_id", "course_id"),
+    )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     question_id: Mapped[int] = mapped_column(
         Integer,
-        ForeignKey("questions.id", ondelete="CASCADE"),
         nullable=False,
         index=True,
     )
     quiz_session_id: Mapped[int | None] = mapped_column(
         Integer,
-        ForeignKey("quiz_sessions.id", ondelete="SET NULL"),
         nullable=True,
         index=True,
     )
     user_id: Mapped[int] = mapped_column(
         Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True
     )
+    course_id: Mapped[int] = mapped_column(Integer, nullable=False, index=True)
     student_answer: Mapped[str] = mapped_column(Text, nullable=False)
     is_correct: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
-    time_spent_seconds: Mapped[float] = mapped_column(Float, default=0.0, nullable=False)
+    time_spent_seconds: Mapped[float] = mapped_column(
+        Float, default=0.0, nullable=False
+    )
     feedback: Mapped[str | None] = mapped_column(Text, nullable=True)
     score: Mapped[float | None] = mapped_column(Float, nullable=True)
     created_at: Mapped[datetime.datetime] = mapped_column(
         DateTime(timezone=True), default=_utcnow, nullable=False
     )
 
-    question = relationship("Question", back_populates="answer_records")
+    question = relationship(
+        "Question",
+        back_populates="answer_records",
+        primaryjoin="Question.id == AnswerRecord.question_id",
+        foreign_keys=[question_id],
+    )
     user = relationship("User", back_populates="answer_records")
+    course = relationship("Course", foreign_keys=[course_id])
 
 
 class MistakeRecord(Base):
     __tablename__ = "mistake_records"
     __table_args__ = (
+        ForeignKeyConstraint(
+            ["course_id", "user_id"],
+            ["courses.id", "courses.user_id"],
+            ondelete="CASCADE",
+            name="fk_mistake_records_course_owner",
+        ),
+        ForeignKeyConstraint(
+            ["question_id", "user_id", "course_id"],
+            ["questions.id", "questions.user_id", "questions.course_id"],
+            ondelete="CASCADE",
+            name="fk_mistake_records_question_scope",
+        ),
         Index(
             "ix_mistakes_user_status_review",
             "user_id",
@@ -459,6 +762,12 @@ class MistakeRecord(Base):
             "next_review_at",
         ),
         Index("ix_mistakes_user_concept", "user_id", "concept"),
+        Index(
+            "ix_mistakes_user_course_review",
+            "user_id",
+            "course_id",
+            "next_review_at",
+        ),
     )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
@@ -468,9 +777,9 @@ class MistakeRecord(Base):
     user_id: Mapped[int] = mapped_column(
         Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True
     )
+    course_id: Mapped[int] = mapped_column(Integer, nullable=False, index=True)
     question_id: Mapped[int | None] = mapped_column(
         Integer,
-        ForeignKey("questions.id", ondelete="CASCADE"),
         nullable=True,
         index=True,
     )
@@ -486,9 +795,13 @@ class MistakeRecord(Base):
     wrong_answer: Mapped[str] = mapped_column(Text, nullable=False)
     correct_answer: Mapped[str] = mapped_column(Text, nullable=False)
     explanation: Mapped[str | None] = mapped_column(Text, nullable=True)
-    source_chunk_ids: Mapped[list] = mapped_column(JSON_VALUE, default=list, nullable=False)
+    source_chunk_ids: Mapped[list] = mapped_column(
+        JSON_VALUE, default=list, nullable=False
+    )
     source_material: Mapped[str | None] = mapped_column(String(500), nullable=True)
-    status: Mapped[str] = mapped_column(String(32), default="unreviewed", nullable=False)
+    status: Mapped[str] = mapped_column(
+        String(32), default="unreviewed", nullable=False
+    )
     attempt_count: Mapped[int] = mapped_column(Integer, default=1, nullable=False)
     last_wrong_at: Mapped[datetime.datetime] = mapped_column(
         DateTime(timezone=True), default=_utcnow, nullable=False
@@ -497,7 +810,9 @@ class MistakeRecord(Base):
     mastered_at: Mapped[datetime.datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )
-    review_history: Mapped[list] = mapped_column(JSON_VALUE, default=list, nullable=False)
+    review_history: Mapped[list] = mapped_column(
+        JSON_VALUE, default=list, nullable=False
+    )
     reviewed_at: Mapped[datetime.datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )
@@ -508,51 +823,159 @@ class MistakeRecord(Base):
     )
 
     user = relationship("User", back_populates="mistake_records")
-    question = relationship("Question", back_populates="mistake_records")
+    course = relationship("Course", foreign_keys=[course_id])
+    question = relationship(
+        "Question",
+        back_populates="mistake_records",
+        primaryjoin="Question.id == MistakeRecord.question_id",
+        foreign_keys=[question_id],
+    )
 
 
 class Concept(Base):
     __tablename__ = "concepts"
+    __table_args__ = (
+        UniqueConstraint("id", "user_id", "course_id", name="uq_concepts_scope"),
+        UniqueConstraint(
+            "user_id", "course_id", "name", name="uq_concepts_course_name"
+        ),
+        ForeignKeyConstraint(
+            ["course_id", "user_id"],
+            ["courses.id", "courses.user_id"],
+            ondelete="CASCADE",
+            name="fk_concepts_course_owner",
+        ),
+        Index("ix_concepts_user_course_topic", "user_id", "course_id", "topic"),
+    )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    user_id: Mapped[int] = mapped_column(
+        Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    course_id: Mapped[int] = mapped_column(Integer, nullable=False, index=True)
     topic: Mapped[str] = mapped_column(String(100), nullable=False, index=True)
     name: Mapped[str] = mapped_column(String(200), nullable=False)
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
 
+    course = relationship("Course", foreign_keys=[course_id])
+    masteries = relationship(
+        "ConceptMastery", back_populates="concept", cascade="all, delete-orphan"
+    )
+
     prerequisites = relationship(
         "ConceptDependency",
-        foreign_keys="ConceptDependency.dependent_id",
+        foreign_keys=(
+            "[ConceptDependency.dependent_id, ConceptDependency.user_id, "
+            "ConceptDependency.course_id]"
+        ),
         back_populates="dependent",
         cascade="all, delete-orphan",
+        overlaps="dependents,prerequisite",
     )
     dependents = relationship(
         "ConceptDependency",
-        foreign_keys="ConceptDependency.prerequisite_id",
+        foreign_keys=(
+            "[ConceptDependency.prerequisite_id, ConceptDependency.user_id, "
+            "ConceptDependency.course_id]"
+        ),
         back_populates="prerequisite",
         cascade="all, delete-orphan",
+        overlaps="dependent,prerequisites",
     )
 
 
 class ConceptDependency(Base):
     __tablename__ = "concept_dependencies"
+    __table_args__ = (
+        ForeignKeyConstraint(
+            ["prerequisite_id", "user_id", "course_id"],
+            ["concepts.id", "concepts.user_id", "concepts.course_id"],
+            ondelete="CASCADE",
+            name="fk_concept_dependencies_prerequisite_scope",
+        ),
+        ForeignKeyConstraint(
+            ["dependent_id", "user_id", "course_id"],
+            ["concepts.id", "concepts.user_id", "concepts.course_id"],
+            ondelete="CASCADE",
+            name="fk_concept_dependencies_dependent_scope",
+        ),
+        CheckConstraint(
+            "prerequisite_id <> dependent_id",
+            name="ck_concept_dependencies_distinct_nodes",
+        ),
+        Index(
+            "ix_concept_dependencies_user_course",
+            "user_id",
+            "course_id",
+        ),
+    )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    prerequisite_id: Mapped[int] = mapped_column(
-        Integer,
-        ForeignKey("concepts.id", ondelete="CASCADE"),
-        nullable=False,
-        index=True,
+    user_id: Mapped[int] = mapped_column(
+        Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True
     )
-    dependent_id: Mapped[int] = mapped_column(
-        Integer,
-        ForeignKey("concepts.id", ondelete="CASCADE"),
-        nullable=False,
-        index=True,
-    )
+    course_id: Mapped[int] = mapped_column(Integer, nullable=False, index=True)
+    prerequisite_id: Mapped[int] = mapped_column(Integer, nullable=False, index=True)
+    dependent_id: Mapped[int] = mapped_column(Integer, nullable=False, index=True)
 
     prerequisite = relationship(
-        "Concept", foreign_keys=[prerequisite_id], back_populates="dependents"
+        "Concept",
+        foreign_keys=[prerequisite_id, user_id, course_id],
+        back_populates="dependents",
+        overlaps="dependent,prerequisites",
     )
     dependent = relationship(
-        "Concept", foreign_keys=[dependent_id], back_populates="prerequisites"
+        "Concept",
+        foreign_keys=[dependent_id, user_id, course_id],
+        back_populates="prerequisites",
+        overlaps="dependents,prerequisite",
+    )
+
+
+class ConceptMastery(Base):
+    __tablename__ = "concept_masteries"
+    __table_args__ = (
+        UniqueConstraint(
+            "user_id", "course_id", "concept_id", name="uq_concept_mastery_scope"
+        ),
+        CheckConstraint(
+            "mastery_score >= 0 AND mastery_score <= 1",
+            name="ck_concept_mastery_score",
+        ),
+        ForeignKeyConstraint(
+            ["concept_id", "user_id", "course_id"],
+            ["concepts.id", "concepts.user_id", "concepts.course_id"],
+            ondelete="CASCADE",
+            name="fk_concept_mastery_concept_scope",
+        ),
+        ForeignKeyConstraint(
+            ["course_id", "user_id"],
+            ["courses.id", "courses.user_id"],
+            ondelete="CASCADE",
+            name="fk_concept_mastery_course_owner",
+        ),
+        Index(
+            "ix_concept_mastery_user_course",
+            "user_id",
+            "course_id",
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    user_id: Mapped[int] = mapped_column(
+        Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    course_id: Mapped[int] = mapped_column(Integer, nullable=False, index=True)
+    concept_id: Mapped[int] = mapped_column(Integer, nullable=False, index=True)
+    mastery_score: Mapped[float] = mapped_column(Float, default=0.0, nullable=False)
+    evidence_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    updated_at: Mapped[datetime.datetime] = mapped_column(
+        DateTime(timezone=True), default=_utcnow, onupdate=_utcnow, nullable=False
+    )
+
+    concept = relationship(
+        "Concept",
+        foreign_keys=[concept_id, user_id, course_id],
+        back_populates="masteries",
+        overlaps="course,concept_masteries",
     )

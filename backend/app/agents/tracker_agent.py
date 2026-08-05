@@ -67,6 +67,7 @@ class TrackerAgent:
         explanation: str = "",
         source_chunk_ids: list[str] | None = None,
         source_material: str | None = None,
+        course_id: int | None = None,
     ) -> ScoreResult:
         """Score a student answer and record a mistake if incorrect.
 
@@ -80,13 +81,11 @@ class TrackerAgent:
         """
         if question_type == "multiple_choice":
             is_correct = (
-                student_answer.strip().upper()
-                == correct_answer.strip().upper()
+                student_answer.strip().upper() == correct_answer.strip().upper()
             )
         elif question_type == "fill_blank":
             is_correct = (
-                student_answer.strip().lower()
-                == correct_answer.strip().lower()
+                student_answer.strip().lower() == correct_answer.strip().lower()
             )
         else:
             is_correct = student_answer == correct_answer
@@ -99,6 +98,7 @@ class TrackerAgent:
                     "type": "mistake_records",
                     "id": f"{question_id}-{int(wrong_at.timestamp() * 1_000_000)}",
                     "user_id": user_id,
+                    "course_id": course_id,
                     "question_id": question_id,
                     "concept": concept,
                     "topic": topic,
@@ -130,14 +130,16 @@ class TrackerAgent:
     # Weak-point analysis
     # ------------------------------------------------------------------
 
-    async def get_weak_concepts(self, user_id: str) -> list[dict]:
+    async def get_weak_concepts(
+        self, user_id: str, course_id: int | None = None
+    ) -> list[dict]:
         """Return weak concepts for a user sorted by mistake count (descending).
 
         Queries mistake records from the database, aggregates them by
         concept, and returns a sorted list with accuracy and attempt
         counts.
         """
-        mistakes = await self.mistakes.list_for_user(user_id)
+        mistakes = await self.mistakes.list_for_user(user_id, course_id=course_id)
 
         concept_stats: dict[str, dict] = {}
         for m in mistakes:
@@ -157,23 +159,25 @@ class TrackerAgent:
                 "accuracy": 0.0,
                 "attempt_count": v["wrong"],
             }
-            for k, v in sorted(
-                concept_stats.items(), key=lambda x: -x[1]["wrong"]
-            )
+            for k, v in sorted(concept_stats.items(), key=lambda x: -x[1]["wrong"])
         ]
 
     # ------------------------------------------------------------------
     # Adaptive difficulty
     # ------------------------------------------------------------------
 
-    async def get_adaptive_difficulty(self, user_id: str, concept: str) -> float:
+    async def get_adaptive_difficulty(
+        self, user_id: str, concept: str, course_id: int | None = None
+    ) -> float:
         """Return a difficulty signal based on the user's mistake history.
 
         - 3+ consecutive wrong answers on a concept -> difficulty drops to 0.2 (easy)
         - 1-2 wrong -> difficulty stays at 0.5 (medium)
         - 0 wrong (all correct) -> difficulty rises to 0.8 (hard)
         """
-        mistakes = await self.mistakes.list_for_user(user_id, concept=concept)
+        mistakes = await self.mistakes.list_for_user(
+            user_id, course_id=course_id, concept=concept
+        )
         wrong_count = len(mistakes)
         if wrong_count >= 3:
             return 0.2
@@ -222,9 +226,10 @@ class TrackerAgent:
         user_id: str,
         exam_date: str,
         days_before_exam: int = 7,
+        course_id: int | None = None,
     ) -> dict:
         """Generate a day-by-day study plan based on weak concepts and exam date."""
-        weak_concepts = await self.get_weak_concepts(user_id)
+        weak_concepts = await self.get_weak_concepts(user_id, course_id=course_id)
 
         if not weak_concepts:
             return {"plan": [], "message": "暂无薄弱知识点，建议全面复习"}
@@ -305,14 +310,16 @@ class TrackerAgent:
         question_text = str(mistake.get("question_text") or "").strip()
         if question_text:
             summary = " ".join(question_text.split()).strip(TITLE_ENDING_CHARS)
-            return f"错题：{summary[:MAX_DERIVED_CONCEPT_LENGTH].rstrip(TITLE_ENDING_CHARS)}", "错题回顾"
+            return (
+                f"错题：{summary[:MAX_DERIVED_CONCEPT_LENGTH].rstrip(TITLE_ENDING_CHARS)}",
+                "错题回顾",
+            )
 
         return "未归类错题", "错题回顾"
 
     @staticmethod
     def _is_prompt_like_label(label: str) -> bool:
         normalized = " ".join(label.split()).strip()
-        return (
-            normalized in GENERIC_CONCEPT_LABELS
-            or bool(PROMPT_LIKE_LABEL_RE.search(normalized))
+        return normalized in GENERIC_CONCEPT_LABELS or bool(
+            PROMPT_LIKE_LABEL_RE.search(normalized)
         )

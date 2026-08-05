@@ -35,6 +35,7 @@ class RAGAgent:
         user_id: str,
         material_scope: list[str] | None = None,
         memory_context: dict | None = None,
+        course_id: int | None = None,
     ) -> AgentResponse:
         """Answer a question using RAG with the user's materials."""
         metadata_filter = None
@@ -46,16 +47,27 @@ class RAGAgent:
             query=question,
             top_k=5,
             metadata_filter=metadata_filter,
+            course_id=course_id,
         )
 
         if not chunks:
             response = await self.llm.invoke(
-                [{"role": "user", "content": self._build_prompt(question, [], memory_context)}]
+                [
+                    {
+                        "role": "user",
+                        "content": self._build_prompt(question, [], memory_context),
+                    }
+                ]
             )
             return AgentResponse(content=response)
 
         response = await self.llm.invoke(
-            [{"role": "user", "content": self._build_prompt(question, chunks, memory_context)}]
+            [
+                {
+                    "role": "user",
+                    "content": self._build_prompt(question, chunks, memory_context),
+                }
+            ]
         )
 
         citations = self._extract_citations(response, chunks)
@@ -95,7 +107,9 @@ class RAGAgent:
             context = "\n\n".join(context_parts)
             prompt_parts.append(f"参考资料:\n{context}")
         else:
-            prompt_parts.append("参考资料:\n当前没有检索到直接相关的资料片段，请仅在会话记忆足够时延续回答，否则明确说明资料不足。")
+            prompt_parts.append(
+                "参考资料:\n当前没有检索到直接相关的资料片段，请仅在会话记忆足够时延续回答，否则明确说明资料不足。"
+            )
 
         prompt_parts.append(f"用户问题: {question}")
         prompt_parts.append("回答:")
@@ -184,10 +198,7 @@ class RAGAgent:
         for chunk in chunks:
             chunk_source = chunk.metadata.get("source", "")
             chunk_page = chunk.metadata.get("page")
-            if chunk_source == source and (
-                page is None
-                or str(chunk_page) == page
-            ):
+            if chunk_source == source and (page is None or str(chunk_page) == page):
                 citation["text"] = chunk.text
                 break
 

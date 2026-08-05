@@ -32,6 +32,7 @@ class QuizAgent:
         count: int = 5,
         material_scope: list[str] | None = None,
         adaptive: bool = False,
+        course_id: int | None = None,
     ) -> QuizResponse:
         """Generate a quiz by retrieving content and creating questions.
 
@@ -54,6 +55,7 @@ class QuizAgent:
             query=topic,
             top_k=count,
             metadata_filter=metadata_filter,
+            course_id=course_id,
         )
         if not chunks and material_scope:
             chunks = await self.retrieval.search(
@@ -62,6 +64,7 @@ class QuizAgent:
                 top_k=count,
                 metadata_filter=metadata_filter,
                 apply_quality_gate=False,
+                course_id=course_id,
             )
 
         if not chunks:
@@ -70,7 +73,9 @@ class QuizAgent:
         # Get adaptive difficulty signal if enabled
         difficulty_signal = None
         if adaptive and self.tracker:
-            difficulty_signal = await self.tracker.get_adaptive_difficulty(user_id, topic)
+            difficulty_signal = await self.tracker.get_adaptive_difficulty(
+                user_id, topic, course_id=course_id
+            )
 
         questions = await self.generator.generate(
             chunks=chunks,
@@ -90,6 +95,7 @@ class QuizAgent:
         question_type: str,
         concept: str = "",
         topic: str = "",
+        course_id: int | None = None,
     ):
         """Grade a single answer using the tracker agent."""
         if self.tracker is None:
@@ -100,6 +106,7 @@ class QuizAgent:
             correct_answer=correct_answer,
             student_answer=student_answer,
             question_type=question_type,
+            course_id=course_id,
             concept=concept,
             topic=topic,
         )

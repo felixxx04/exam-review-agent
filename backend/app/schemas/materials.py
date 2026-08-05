@@ -7,6 +7,7 @@ from pydantic import BaseModel
 
 class MaterialResponse(BaseModel):
     id: int
+    course_id: int
     filename: str
     original_filename: str
     file_type: str

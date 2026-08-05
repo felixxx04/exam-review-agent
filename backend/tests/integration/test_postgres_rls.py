@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import os
 import uuid
 
@@ -19,6 +20,7 @@ from app.db.models import (
     User,
 )
 from app.repositories.mistakes import SessionFactoryMistakeRepository
+from app.services.course_service import CourseService
 
 
 POSTGRES_INTEGRATION_URL = os.getenv("POSTGRES_INTEGRATION_URL")
@@ -300,5 +302,53 @@ async def test_postgres_course_children_are_private_and_foreign_keys_are_scoped(
         if user_ids:
             async with session_factory() as session:
                 await session.execute(delete(User).where(User.id.in_(user_ids)))
+                await session.commit()
+        await engine.dispose()
+
+
+@pytest.mark.asyncio
+async def test_postgres_concurrent_default_course_resolution_is_idempotent():
+    assert POSTGRES_INTEGRATION_URL is not None
+    engine = create_async_engine(POSTGRES_INTEGRATION_URL)
+    session_factory = async_sessionmaker(engine, expire_on_commit=False)
+    suffix = uuid.uuid4().hex[:12]
+    user_id: int | None = None
+
+    try:
+        async with session_factory() as session:
+            user = User(
+                username=f"course_race_{suffix}",
+                hashed_password="integration-test-hash",
+                display_name="Course Race",
+            )
+            session.add(user)
+            await session.commit()
+            user_id = user.id
+
+        async def resolve_default() -> int:
+            assert user_id is not None
+            async with session_factory() as session:
+                await bind_tenant_context(session, user_id)
+                course = await CourseService(session).resolve_course(user_id, None)
+                return course.id
+
+        course_ids = await asyncio.gather(resolve_default(), resolve_default())
+
+        assert course_ids[0] == course_ids[1]
+        async with session_factory() as session:
+            await bind_tenant_context(session, user_id)
+            courses = list(
+                await session.scalars(select(Course).where(Course.user_id == user_id))
+            )
+            assert len(courses) == 1
+            assert courses[0].is_default is True
+    finally:
+        if user_id is not None:
+            async with session_factory() as session:
+                await bind_tenant_context(session, user_id)
+                await session.execute(delete(Course).where(Course.user_id == user_id))
+                await session.commit()
+            async with session_factory() as session:
+                await session.execute(delete(User).where(User.id == user_id))
                 await session.commit()
         await engine.dispose()

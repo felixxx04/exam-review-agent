@@ -6,6 +6,7 @@ from pydantic import BaseModel, ConfigDict
 
 
 class LearningProfileResponse(BaseModel):
+    course_id: int
     current_subject: str | None = None
     review_goal: str | None = None
     weak_concepts: list[str]

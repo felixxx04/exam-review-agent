@@ -39,11 +39,11 @@ async def chat(
             raise HTTPException(status_code=404, detail="会话不存在")
     else:
         conversation = await memory.get_or_create_active_conversation(current_user.id)
+    conversation_id = conversation.id
+    conversation_course_id = conversation.course_id
 
     async def event_stream():
         try:
-            conversation_id = conversation.id
-
             yield f"data: {json.dumps({'event': 'conversation', 'data': {'id': conversation_id}}, ensure_ascii=False)}\n\n"
 
             await memory.save_message(
@@ -64,6 +64,7 @@ async def chat(
             result = await run_orchestrator(
                 message=request.message,
                 user_id=current_user.subject,
+                course_id=conversation_course_id,
                 material_scope=request.material_scope,
                 memory_context=memory_context,
             )

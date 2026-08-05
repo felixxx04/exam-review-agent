@@ -382,6 +382,34 @@ class TestTrackerWeakConcepts:
         assert result["plan"][0]["topics"] == ["特征值"]
         assert "特征值" in result["plan"][0]["tasks"][0]
 
+    @pytest.mark.asyncio
+    async def test_adaptive_difficulty_keeps_one_course_mistake_at_medium(self):
+        repository = AsyncMock()
+        repository.list_for_user = AsyncMock(return_value=[{"id": "m1"}])
+        tracker = TrackerAgent(mistake_repository=repository, llm_service=AsyncMock())
+
+        difficulty = await tracker.get_adaptive_difficulty(
+            "u1", "事务隔离", course_id=23
+        )
+
+        assert difficulty == 0.5
+        repository.list_for_user.assert_awaited_once_with(
+            "u1", course_id=23, concept="事务隔离"
+        )
+
+    @pytest.mark.asyncio
+    async def test_study_plan_skips_llm_when_course_has_no_weak_points(self):
+        repository = AsyncMock()
+        repository.list_for_user = AsyncMock(return_value=[])
+        llm = AsyncMock()
+        tracker = TrackerAgent(mistake_repository=repository, llm_service=llm)
+
+        result = await tracker.generate_study_plan("u1", "2027-01-10", course_id=23)
+
+        assert result == {"plan": [], "message": "暂无薄弱知识点，建议全面复习"}
+        repository.list_for_user.assert_awaited_once_with("u1", course_id=23)
+        llm.invoke.assert_not_awaited()
+
 
 # ---------------------------------------------------------------------------
 # MistakeSummarizer tests

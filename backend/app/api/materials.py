@@ -18,6 +18,7 @@ from app.db.database import get_db
 from app.db.models import FileType, Material, MaterialChunk, ProcessingStatus
 from app.schemas.common import ApiResponse
 from app.schemas.materials import MaterialListResponse, MaterialResponse
+from app.services.course_service import CourseService
 
 router = APIRouter(prefix="/api/materials", tags=["materials"])
 
@@ -52,9 +53,11 @@ def _check_file_type(filename: str) -> FileType:
 @router.post("")
 async def upload_material(
     file: UploadFile,
+    course_id: int | None = None,
     current_user: AuthenticatedUser = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
+    course = await CourseService(db).resolve_course(current_user.id, course_id)
     if file.filename is None:
         raise HTTPException(status_code=400, detail="文件名不能为空")
 
@@ -76,6 +79,7 @@ async def upload_material(
 
     material = Material(
         user_id=current_user.id,
+        course_id=course.id,
         filename=storage_name,
         original_filename=file.filename,
         file_type=file_type,
@@ -125,6 +129,7 @@ async def upload_material(
         chunk_ids = await retrieval.index_chunks(
             user_id=current_user.subject,
             chunks=chunk_payloads,
+            course_id=course.id,
         )
         for chunk_id, chunk in zip(chunk_ids, chunk_payloads, strict=False):
             metadata = chunk.get("metadata", {}) or {}
@@ -132,6 +137,8 @@ async def upload_material(
             db.add(
                 MaterialChunk(
                     material_id=material.id,
+                    user_id=material.user_id,
+                    course_id=material.course_id,
                     chunk_id=chunk_id,
                     content=chunk_text,
                     text_preview=chunk_text[:300],
@@ -161,12 +168,17 @@ async def upload_material(
 
 @router.get("")
 async def list_materials(
+    course_id: int | None = None,
     current_user: AuthenticatedUser = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
+    course = await CourseService(db).resolve_course(current_user.id, course_id)
     result = await db.execute(
         select(Material)
-        .where(Material.user_id == current_user.id)
+        .where(
+            Material.user_id == current_user.id,
+            Material.course_id == course.id,
+        )
         .order_by(Material.created_at.desc())
     )
     materials = result.scalars().all()
@@ -225,10 +237,14 @@ async def delete_material(
         from app.services.retrieval_service import RetrievalService
 
         await RetrievalService().delete_chunks(
-            user_id=current_user.subject, chunk_ids=chunk_ids
+            user_id=current_user.subject,
+            chunk_ids=chunk_ids,
+            course_id=material.course_id,
         )
 
-    await db.execute(delete(MaterialChunk).where(MaterialChunk.material_id == material_id))
+    await db.execute(
+        delete(MaterialChunk).where(MaterialChunk.material_id == material_id)
+    )
     await db.delete(material)
     await db.commit()
 

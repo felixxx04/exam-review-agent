@@ -24,24 +24,26 @@ class _FakeVectorStore:
                 "metadata": metadata,
                 "distance": 0.1,
             }
-            for doc_id, document, metadata in zip(ids, documents, metadatas, strict=False)
+            for doc_id, document, metadata in zip(
+                ids, documents, metadatas, strict=False
+            )
         )
         return ids
 
     def search(self, user_id, query_embedding, top_k=10, metadata_filter=None):
-        results = [
-            item for item in self.documents if item["user_id"] == user_id
-        ]
+        results = [item for item in self.documents if item["user_id"] == user_id]
         if metadata_filter:
             for key, expected in metadata_filter.items():
                 if isinstance(expected, dict) and "$in" in expected:
                     results = [
-                        item for item in results
+                        item
+                        for item in results
                         if item["metadata"].get(key) in expected["$in"]
                     ]
                 else:
                     results = [
-                        item for item in results
+                        item
+                        for item in results
                         if item["metadata"].get(key) == expected
                     ]
         return results[:top_k]
@@ -89,10 +91,19 @@ def make_retrieval_service(monkeypatch):
 @pytest.mark.asyncio
 async def test_hybrid_search_returns_ranked_results(make_retrieval_service):
     service = make_retrieval_service()
-    await service.index_chunks("test-user", [
-        {"text": "薛定谔方程描述量子态随时间的演化", "metadata": {"source": "quantum.pdf", "page": 23}},
-        {"text": "矩阵的特征值是满足det(A-λI)=0的λ", "metadata": {"source": "linalg.pdf", "page": 45}},
-    ])
+    await service.index_chunks(
+        "test-user",
+        [
+            {
+                "text": "薛定谔方程描述量子态随时间的演化",
+                "metadata": {"source": "quantum.pdf", "page": 23},
+            },
+            {
+                "text": "矩阵的特征值是满足det(A-λI)=0的λ",
+                "metadata": {"source": "linalg.pdf", "page": 45},
+            },
+        ],
+    )
     results = await service.search("test-user", "什么是薛定谔方程", top_k=2)
     assert len(results) >= 1
     assert "薛定" in results[0].text
@@ -101,9 +112,15 @@ async def test_hybrid_search_returns_ranked_results(make_retrieval_service):
 @pytest.mark.asyncio
 async def test_search_result_has_required_fields(make_retrieval_service):
     service = make_retrieval_service()
-    await service.index_chunks("test-user-fields", [
-        {"text": "量子力学的基本原理包括波粒二象性", "metadata": {"source": "physics.pdf", "page": 10}},
-    ])
+    await service.index_chunks(
+        "test-user-fields",
+        [
+            {
+                "text": "量子力学的基本原理包括波粒二象性",
+                "metadata": {"source": "physics.pdf", "page": 10},
+            },
+        ],
+    )
     results = await service.search("test-user-fields", "量子力学", top_k=1)
     assert len(results) == 1
     assert isinstance(results[0], SearchResult)
@@ -116,10 +133,13 @@ async def test_search_result_has_required_fields(make_retrieval_service):
 @pytest.mark.asyncio
 async def test_index_and_delete_chunks(make_retrieval_service):
     service = make_retrieval_service()
-    chunk_ids = await service.index_chunks("test-user-del", [
-        {"text": "测试内容一", "metadata": {"source": "test.pdf", "page": 1}},
-        {"text": "测试内容二", "metadata": {"source": "test.pdf", "page": 2}},
-    ])
+    chunk_ids = await service.index_chunks(
+        "test-user-del",
+        [
+            {"text": "测试内容一", "metadata": {"source": "test.pdf", "page": 1}},
+            {"text": "测试内容二", "metadata": {"source": "test.pdf", "page": 2}},
+        ],
+    )
     assert len(chunk_ids) == 2
     await service.delete_chunks("test-user-del", chunk_ids)
     results = await service.search("test-user-del", "测试内容", top_k=5)
@@ -129,10 +149,18 @@ async def test_index_and_delete_chunks(make_retrieval_service):
 @pytest.mark.asyncio
 async def test_search_with_quality_gate_filters_low_relevance(make_retrieval_service):
     service = make_retrieval_service(quality_threshold=0.5)
-    await service.index_chunks("test-user-gate", [
-        {"text": "Java是一种面向对象的编程语言", "metadata": {"source": "cs.pdf", "page": 1}},
-    ])
-    results = await service.search("test-user-gate", "原核生物学中的CRISPR技术", top_k=5)
+    await service.index_chunks(
+        "test-user-gate",
+        [
+            {
+                "text": "Java是一种面向对象的编程语言",
+                "metadata": {"source": "cs.pdf", "page": 1},
+            },
+        ],
+    )
+    results = await service.search(
+        "test-user-gate", "原核生物学中的CRISPR技术", top_k=5
+    )
     # Highly irrelevant results should be filtered by the quality gate
     for r in results:
         assert r.score >= 0.5
@@ -141,13 +169,21 @@ async def test_search_with_quality_gate_filters_low_relevance(make_retrieval_ser
 @pytest.mark.asyncio
 async def test_metadata_filtering_in_search(make_retrieval_service):
     service = make_retrieval_service()
-    await service.index_chunks("test-user-filter", [
-        {"text": "线性代数的基本概念", "metadata": {"source": "linalg.pdf", "page": 1}},
-        {"text": "概率论中的贝叶斯公式", "metadata": {"source": "prob.pdf", "page": 15}},
-    ])
+    await service.index_chunks(
+        "test-user-filter",
+        [
+            {
+                "text": "线性代数的基本概念",
+                "metadata": {"source": "linalg.pdf", "page": 1},
+            },
+            {
+                "text": "概率论中的贝叶斯公式",
+                "metadata": {"source": "prob.pdf", "page": 15},
+            },
+        ],
+    )
     results = await service.search(
-        "test-user-filter", "数学", top_k=5,
-        metadata_filter={"source": "linalg.pdf"}
+        "test-user-filter", "数学", top_k=5, metadata_filter={"source": "linalg.pdf"}
     )
     assert len(results) >= 1
     for r in results:
@@ -165,10 +201,13 @@ async def test_metadata_filtering_applies_to_bm25_results(monkeypatch):
         vector_store=_FakeVectorStore(),
         embedding_service=_FakeEmbeddingService(),
     )
-    await service.index_chunks("test-user-bm25-filter", [
-        {"text": "公共主题 当前资料内容", "metadata": {"source": "current.pdf"}},
-        {"text": "公共主题 旧资料内容", "metadata": {"source": "old.pdf"}},
-    ])
+    await service.index_chunks(
+        "test-user-bm25-filter",
+        [
+            {"text": "公共主题 当前资料内容", "metadata": {"source": "current.pdf"}},
+            {"text": "公共主题 旧资料内容", "metadata": {"source": "old.pdf"}},
+        ],
+    )
 
     results = await service.search(
         "test-user-bm25-filter",
@@ -185,7 +224,10 @@ async def test_metadata_filtering_applies_to_bm25_results(monkeypatch):
 async def test_batch_index_large_documents(make_retrieval_service):
     service = make_retrieval_service()
     chunks = [
-        {"text": f"文档片段 {i} 的内容，涉及人工智能和机器学习的基本原理", "metadata": {"source": "ai.pdf", "page": i // 5 + 1}}
+        {
+            "text": f"文档片段 {i} 的内容，涉及人工智能和机器学习的基本原理",
+            "metadata": {"source": "ai.pdf", "page": i // 5 + 1},
+        }
         for i in range(10)
     ]
     chunk_ids = await service.index_chunks("test-user-batch", chunks)

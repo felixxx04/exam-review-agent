@@ -1,6 +1,6 @@
 # Exam Review Agent 会话交接文档
 
-> 更新日期：2026-08-04  
+> 更新日期：2026-08-05
 > 项目目录：`C:\Users\asus\Documents\exam-review-agent`  
 > 当前分支：`codex/phase-1-postgres`  
 > 基线提交：`23c17b5 feat: polish learning workspace UI and review flows`
@@ -17,11 +17,11 @@
 先向用户汇报以下三点，不要立即修改代码：
 
 - 对当前完成状态的理解
-- Task 1.2 的实现、验证结果和剩余风险
-- Task 1.1/1.2 的真实 PostgreSQL 在线验证证据
-- Task 1.3 的实施边界和明确非目标
+- Task 1.3 的实现、验证结果和剩余风险
+- Task 1.3 的真实 PostgreSQL 在线迁移、RLS、复合外键和并发验证证据
+- Task 1.4 的实施边界和明确非目标
 
-当前审批点是 **Task 1.2 验收**。未经用户确认，不得开始 Task 1.3 或更后面的工作。
+当前审批点是 **Task 1.3 验收**。未经用户确认，不得开始 Task 1.4 或更后面的工作。
 
 不要推送 GitHub。不要重置、清理或覆盖当前工作树中的任何已有改动。
 
@@ -30,14 +30,15 @@
 - 阶段 0 已完成并已获用户确认。
 - 阶段 1 已获准开始。
 - 阶段 1 的 **Task 1.1（PostgreSQL + pgvector）已完成实现**。
-- 阶段 1 的 **Task 1.2（邀请码认证和会话安全）已完成实现，等待用户验收**。
-- Task 1.3 及之后的任务均未开始。
-- 工作树包含阶段 0、Task 1.1 和 Task 1.2 的未提交修改，这是预期状态，不是待清理垃圾。
-- 全局 Git 身份已配置为 `felixxx04 <rifuturech@163.com>`；真实 PostgreSQL 验收完成后已获用户授权创建本地 Task 1.1/1.2 checkpoint commit，以当前 HEAD 为准且不得推送。
+- 阶段 1 的 **Task 1.2（邀请码认证和会话安全）已由用户确认**。
+- 阶段 1 的 **Task 1.3（私人多课程领域模型）已完成实现，等待用户验收**。
+- Task 1.4 及之后的任务均未开始。
+- Task 1.3 采用三个 RED TDD checkpoint 和一个 GREEN checkpoint；本交接对应的本地 GREEN checkpoint 以当前 HEAD 为准。
+- 全局 Git 身份已配置为 `felixxx04 <rifuturech@163.com>`；用户只授权本地提交，不得推送。
 - 用户要求成果只保存在本地，不上传 GitHub。
 - 仓库根目录目前没有 `.codegraph/`，因此无需使用 CodeGraph；如果新会话发现该目录后来出现，再按 `AGENTS.md` 先使用 CodeGraph。
 
-实施计划的 Task 1.2 checkbox、完成记录和第 13 节审批门均已更新。下一项只有在用户确认后才能开始 Task 1.3。
+实施计划的 Task 1.3 checkbox、完成记录和第 13 节审批门均已更新。下一项只有在用户确认后才能开始 Task 1.4。
 
 ## 3. 项目定位与目标架构
 
@@ -151,7 +152,41 @@
 - 新增 `python -m app.cli.create_admin ...` 管理员引导命令。
 - SSE 失败只返回稳定的通用错误消息，内部异常保留在服务端日志中。
 
-## 7. Task 1.1/1.2 验证证据和剩余风险
+## 7. Task 1.3 已完成工作
+
+### 私人课程和兼容行为
+
+- 新增 Course、Exam、StudyAvailability 和 ConceptMastery 模型，以及 `/api/courses` 的列表、批量 ID 查询、创建、详情、更新和删除接口。
+- 课程支持考试日期、长期目标、每日可用分钟数和默认标记；Conversation 支持只影响当前会话的临时可用分钟数。
+- 旧客户端省略 `course_id` 时解析默认课程；没有课程时在用户行锁内安全懒创建。默认课程切换、删除后的替代选择均在一个事务内完成。
+- 每用户最多一个默认课程由 PostgreSQL 部分唯一索引保证；真实双 Session 并发测试确认懒创建返回同一个课程 ID。
+
+### 课程范围和数据库纵深防御
+
+- Material、MaterialChunk、Conversation、ConversationMessage、QuizSession、Question、AnswerRecord、MistakeRecord、LearningProfile、Concept、ConceptDependency 和 ConceptMastery 均携带非空 `user_id/course_id` 范围。
+- Ask、Quiz、Review、Memory Profile、Study Plan、Tracker 和 LangGraph 全链路传播课程；Chroma 与 BM25 使用“用户 + 课程”命名空间。
+- 课程子表使用复合所有权外键；AnswerRecord/MistakeRecord 不能引用其他用户或课程的 Question，AnswerRecord 不能引用其他范围的 QuizSession。
+- 15 张业务表均启用并强制 RLS；应用角色保持 `NOSUPERUSER NOBYPASSRLS`。敏感子表不能被其他租户直接读取。
+
+### 迁移与验证
+
+- 新增 `backend/alembic/versions/20260805_0003_private_courses.py`，当前数据库 revision 为 `20260805_0003` 且业务表为空。
+- 后端完整回归：`266 passed, 5 skipped`，精确综合覆盖率 `80.05%`。5 个 skip 中 3 个需要显式 PostgreSQL URL，2 个需要真实 LLM。
+- 真实 PostgreSQL 集成测试：`3 passed`，覆盖跨 commit RLS、SessionFactory、敏感子表、跨范围复合外键和默认课程并发。
+- 空 Schema 从 base 在线升级到 head；`alembic check` 无待生成操作；离线 upgrade SQL 生成成功。
+- 有数据 `0003 -> 0002` 验证会把同用户多课程画像确定性折叠到默认课程画像，并清理回滚后无法保持私有范围的 Concepts/Dependencies。旧全局 Concepts 非空时 upgrade 会明确失败并事务回滚，原数据保留。
+- Task 1.3 涉及的 34 个 Python 文件通过 Ruff lint/format；`compileall`、`git diff --check`、Bandit 中高风险、`pip check` 和 Compose 配置通过。前端 `101 passed`，TypeScript、ESLint、Prettier 和生产构建通过。
+
+### 本地 TDD checkpoint
+
+- `5a80da1 test: define private multi-course domain contracts`
+- `823b7af test: require course-scoped material retrieval`
+- `6382698 test: expose private course isolation gaps`
+- Task 1.3 GREEN checkpoint：本交接对应的当前 HEAD，未推送。
+
+Task 1.3 不包含账号全量删除与配额、S3/ARQ、pgvector 检索切换、Planner/Agent Runtime 或全面视觉改造。Pyright 未安装，项目也没有现成 Python 类型检查命令；这不是本任务新增的失败门。`npm audit --omit=dev` 为 0 漏洞，但 2026-08-05 的全依赖审计新报告 1 个开发链路 `undici` 高危公告；它不进入生产依赖，后续依赖维护应升级并复跑前端门。
+
+## 8. Task 1.1/1.2 验证证据和剩余风险
 
 上一个会话完成实现后记录的验证结果：
 
@@ -181,31 +216,31 @@ Task 1.2 当前验证记录：
 - Docker Engine 29.6.2 下 PostgreSQL 17.8 + pgvector 0.8.1、Redis 7.4 均健康；`/health/live` 与 `/health/ready` 返回 200，数据库和 Redis 检查均为 `ok`。
 - Compose 使用 `exam_review_admin` bootstrap 管理员创建 `NOSUPERUSER NOBYPASSRLS` 的 `exam_review` 应用角色；数据库和 RLS 表归应用角色所有，运行时不再以超级用户连接。
 - 真实 RLS 集成测试验证：租户上下文跨 commit 自动重绑，其他租户和未绑定 Session 不可见且越权写被拒绝，LangGraph SessionFactory 创建/读取/更新均正确隔离。
-- Git 作者身份已配置，本交接对应的本地 Task 1.1/1.2 checkpoint commit 已获授权并以当前 HEAD 为准，且不得推送远端。
+- Git 作者身份已配置，Task 1.1/1.2 的本地 checkpoint 为 `e84e733`，且不得推送远端。
 
 已知但不阻断 Task 1.2 验收的后续加固项：当前认证限速是单进程内存/IP 维度，阶段 8 再迁移为 Redis 共享限速；安全响应头/CSP 和认证管理审计日志也按阶段 8 的安全与可观测性任务统一实施。
 
-Task 1.1/1.2 的真实 PostgreSQL 验证缺口已关闭。PostgreSQL 和 Redis 容器当前保持运行，数据库为空 Schema，可直接用于下一任务开发。
+Task 1.1/1.2 的真实 PostgreSQL 验证缺口已关闭。当前容器与 revision 状态以 Task 1.3 验证记录为准。
 
-## 8. 下一步审批门
+## 9. 下一步审批门
 
-Task 1.2 完成后必须停止。下一项只有在用户确认后才是 **Task 1.3：私人多课程领域模型**。
+Task 1.3 完成后必须停止。下一项只有在用户确认后才是 **Task 1.4：用户数据删除与配额**。
 
-Task 1.3 的边界以实施计划为准：课程、考试日期、长期目标、可用时间，以及资料、会话、测验、复习等实体的私人课程归属。账号全量删除和配额属于 Task 1.4；S3/ARQ、pgvector 检索切换、Planner/Agent Runtime 和全面视觉改造仍不是 Task 1.3 范围。
+Task 1.4 的边界以实施计划为准：会话、资料、测验、错题和记忆删除；账号注销的可追踪删除任务；每用户默认文件数和容量配额。S3/ARQ 属于阶段 2，pgvector 检索切换属于阶段 3，Planner/Agent Runtime 和全面视觉改造也不是 Task 1.4 范围。
 
-## 9. 新会话的工作规则
+## 10. 新会话的工作规则
 
 1. 每次只实施计划中的一个 Task。
 2. 先写失败测试或可验证契约，再做最小实现。
 3. 运行聚焦测试，再运行阶段回归测试。
 4. 修改代码后使用对应语言的 Reviewer 检查，并修复有效问题。
 5. 不提前实现后续任务，不重构无关模块。
-6. 当前是脏工作树；所有已有修改都视为用户资产，禁止 reset、checkout、删除或覆盖。
-7. Git 身份已全局配置；本地 Task 1.1/1.2 checkpoint commit 已获授权并以当前 HEAD 为准。
+6. 所有已有修改都视为用户资产，禁止 reset、checkout、删除或覆盖。
+7. Git 身份已全局配置；Task 1.3 GREEN checkpoint 为本交接对应的当前 HEAD。
 8. 未经明确要求不得推送 GitHub。
-9. 完成 Task 1.2 后必须停在审批门，汇报实现、测试、风险和未完成验证，等待用户确认。
+9. 完成 Task 1.3 后必须停在审批门，汇报实现、测试、风险和未完成验证，等待用户确认。
 
-## 10. 关键文件索引
+## 11. 关键文件索引
 
 - 总实施计划：`docs/superpowers/plans/2026-08-03-exam-review-agent-v2-optimization.md`
 - 架构入口：`docs/architecture/README.md`
@@ -213,6 +248,7 @@ Task 1.3 的边界以实施计划为准：课程、考试日期、长期目标�
 - 认证和租户 ADR：`docs/architecture/adr/0004-auth-and-tenancy.md`
 - API/Agent 契约：`docs/architecture/api-contracts.md`
 - V2 初始迁移：`backend/alembic/versions/20260803_0001_v2_postgres_pgvector.py`
+- 私人课程迁移：`backend/alembic/versions/20260805_0003_private_courses.py`
 - 数据模型：`backend/app/db/models.py`
 - 数据库配置：`backend/app/db/database.py`
 - 错题 Repository：`backend/app/repositories/mistakes.py`
@@ -222,13 +258,17 @@ Task 1.3 的边界以实施计划为准：课程、考试日期、长期目标�
 - 认证依赖：`backend/app/core/auth.py`
 - 认证 API：`backend/app/api/auth.py`
 - 认证服务：`backend/app/services/auth_service.py`
+- 课程 API：`backend/app/api/courses.py`
+- 课程 Service：`backend/app/services/course_service.py`
+- 课程 Schema：`backend/app/schemas/courses.py`
+- 课程与隔离测试：`backend/tests/test_api/test_courses.py`、`backend/tests/integration/test_postgres_rls.py`
 - 认证测试：`backend/tests/test_api/test_auth.py`、`backend/tests/test_core_auth.py`、`backend/tests/test_services/test_auth_service.py`
 - 前端认证：`frontend/src/app/(auth)/`、`frontend/src/components/auth/`、`frontend/src/lib/api.ts`
 - 错题 Repository 测试：`backend/tests/test_repositories/test_mistakes.py`
 - 迁移契约测试：`backend/tests/test_migrations.py`
 - 健康检查测试：`backend/tests/test_health.py`、`backend/tests/test_services/test_health.py`
 
-## 11. 推荐的新会话启动提示
+## 12. 推荐的新会话启动提示
 
 ```text
 请先完整阅读项目根目录 SESSION_HANDOFF.md，以及
@@ -236,11 +276,11 @@ docs/superpowers/plans/2026-08-03-exam-review-agent-v2-optimization.md、
 docs/architecture/adr/0001-postgres-pgvector.md 和
 docs/architecture/adr/0004-auth-and-tenancy.md。
 
-随后检查当前 git status 和 Task 1.2 的实际实现。先向我汇报：
-1. 你对 Task 1.1/1.2 当前完成状态的理解；
-2. 真实 PostgreSQL 17 + pgvector 在线迁移、RLS 和 readiness 验证证据；
-3. Task 1.2 的已实现范围、剩余风险和 Task 1.3 非目标。
+随后检查当前 git status 和 Task 1.3 的实际实现。先向我汇报：
+1. 你对 Task 1.1/1.2/1.3 当前完成状态的理解；
+2. Task 1.3 的 PostgreSQL 在线迁移、RLS、复合外键和并发验证证据；
+3. Task 1.3 的已实现范围、剩余风险和 Task 1.4 非目标。
 
-Task 1.2 未经验收不得开始 Task 1.3 或更后面的工作；
+Task 1.3 未经验收不得开始 Task 1.4 或更后面的工作；
 不要覆盖现有改动，也不要推送 GitHub。
 ```

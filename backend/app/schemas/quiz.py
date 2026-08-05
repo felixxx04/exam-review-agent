@@ -27,6 +27,7 @@ class QuizRequest:
     difficulty: float = 0.5
     count: int = 5
     material_scope: list[str] | None = None
+    course_id: int | None = None
 
 
 @dataclass
@@ -43,6 +44,7 @@ class QuizResponse:
 
 class QuizSubmitRequest(BaseModel):
     question_id: str
+    course_id: int | None = None
     correct_answer: str
     student_answer: str
     question_type: str = "multiple_choice"
@@ -61,7 +63,9 @@ def to_quiz_payload(response: QuizResponse, difficulty: float = 0.5) -> dict[str
             {
                 "id": f"q-{index}",
                 "question": question.question,
-                "question_type": "multiple_choice" if question.options else "fill_blank",
+                "question_type": "multiple_choice"
+                if question.options
+                else "fill_blank",
                 "options": question.options,
                 "correct": question.correct,
                 "explanation": question.explanation,
