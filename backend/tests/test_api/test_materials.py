@@ -13,7 +13,7 @@ from sqlalchemy.exc import SQLAlchemyError
 
 from app.api import materials as materials_api
 from app.core.middleware import RateLimitMiddleware
-from app.db.models import Material, MaterialChunk, ProcessingStatus, User
+from app.db.models import Course, Material, MaterialChunk, ProcessingStatus, User
 
 
 def _data(response):
@@ -191,6 +191,89 @@ class TestMaterialsUpload:
         assert material.file_size == len(content)
         assert material.hash == hashlib.sha256(content).hexdigest()
         assert Path(material.storage_path).exists()
+
+    @pytest.mark.asyncio
+    async def test_metadata_commit_error_discards_file_and_reservation(
+        self, client_with_db, db_session, tmp_path, monkeypatch
+    ):
+        monkeypatch.setattr(materials_api, "UPLOAD_DIR", tmp_path)
+        original_commit = db_session.commit
+        metadata_commit_failed = False
+
+        async def fail_metadata_commit():
+            nonlocal metadata_commit_failed
+            material = next(
+                (
+                    instance
+                    for instance in db_session.identity_map.values()
+                    if isinstance(instance, Material)
+                ),
+                None,
+            )
+            if (
+                not metadata_commit_failed
+                and material is not None
+                and material.processing_status == ProcessingStatus.PENDING
+                and material.file_size > 0
+            ):
+                metadata_commit_failed = True
+                raise SQLAlchemyError("metadata commit unavailable")
+            await original_commit()
+
+        monkeypatch.setattr(db_session, "commit", fail_metadata_commit)
+
+        with pytest.raises(SQLAlchemyError):
+            await client_with_db.post(
+                "/api/materials",
+                files={"file": ("metadata-error.pdf", b"private", "application/pdf")},
+            )
+
+        assert metadata_commit_failed is True
+        assert await db_session.scalar(select(Material)) is None
+        assert list(tmp_path.iterdir()) == []
+
+    @pytest.mark.asyncio
+    async def test_discard_reservation_retries_a_transient_database_failure(
+        self, db_session, authenticated_user, tmp_path, monkeypatch
+    ):
+        course = Course(
+            user_id=authenticated_user.id,
+            name="Transient cleanup",
+            is_default=True,
+        )
+        db_session.add(course)
+        await db_session.flush()
+        file_path = tmp_path / "transient.pdf"
+        file_path.write_bytes(b"private")
+        material = Material(
+            user_id=authenticated_user.id,
+            course_id=course.id,
+            filename=file_path.name,
+            original_filename=file_path.name,
+            file_type="pdf",
+            file_size=0,
+            storage_path=str(file_path),
+        )
+        db_session.add(material)
+        await db_session.commit()
+        material_id = material.id
+        original_commit = db_session.commit
+        failed_once = False
+
+        async def fail_once():
+            nonlocal failed_once
+            if not failed_once:
+                failed_once = True
+                raise SQLAlchemyError("cleanup commit unavailable")
+            await original_commit()
+
+        monkeypatch.setattr(db_session, "commit", fail_once)
+
+        await materials_api._discard_reservation(db_session, material_id, file_path)
+
+        assert failed_once is True
+        assert not file_path.exists()
+        assert await db_session.get(Material, material_id) is None
 
     @pytest.mark.asyncio
     async def test_upload_stores_material_metadata(self, client_with_db, db_session):
