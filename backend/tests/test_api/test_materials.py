@@ -3,12 +3,14 @@
 from __future__ import annotations
 
 import hashlib
+from pathlib import Path
 
 import pytest
 from unittest.mock import AsyncMock
 
 from sqlalchemy import select
 
+from app.api import materials as materials_api
 from app.core.middleware import RateLimitMiddleware
 from app.db.models import Material, MaterialChunk, User
 
@@ -56,6 +58,63 @@ class TestMaterialsUpload:
             files={"file": ("", b"content", "application/pdf")},
         )
         assert response.status_code in (400, 422)
+
+    @pytest.mark.asyncio
+    async def test_upload_rejects_oversized_file_without_leaving_staged_data(
+        self, client_with_db, tmp_path, monkeypatch
+    ):
+        monkeypatch.setattr(materials_api, "UPLOAD_DIR", tmp_path)
+        monkeypatch.setattr(materials_api.settings, "max_upload_size_mb", 0)
+
+        response = await client_with_db.post(
+            "/api/materials",
+            files={"file": ("too-large.pdf", b"x", "application/pdf")},
+        )
+
+        assert response.status_code == 400
+        assert list(tmp_path.iterdir()) == []
+
+    @pytest.mark.asyncio
+    async def test_upload_sanitizes_client_filename_paths(
+        self, client_with_db, db_session, tmp_path, monkeypatch
+    ):
+        monkeypatch.setattr(materials_api, "UPLOAD_DIR", tmp_path)
+
+        response = await client_with_db.post(
+            "/api/materials",
+            files={"file": ("../../escape.pdf", b"fake pdf", "application/pdf")},
+        )
+
+        assert response.status_code == 200
+        material = await db_session.get(Material, _data(response)["id"])
+        assert material is not None
+        assert material.filename.endswith("_escape.pdf")
+        assert (
+            (tmp_path / material.filename).resolve().is_relative_to(tmp_path.resolve())
+        )
+
+    @pytest.mark.asyncio
+    async def test_upload_persists_a_reservation_before_writing_private_data(
+        self, client_with_db, db_session, tmp_path, monkeypatch
+    ):
+        monkeypatch.setattr(materials_api, "UPLOAD_DIR", tmp_path)
+
+        async def inspect_reservation(file, destination):
+            reservations = (await db_session.execute(select(Material))).scalars().all()
+            assert len(reservations) == 1
+            assert reservations[0].processing_status == "pending"
+            assert Path(reservations[0].storage_path) == destination
+            destination.write_bytes(b"reserved")
+            return 8, hashlib.sha256(b"reserved").hexdigest()
+
+        monkeypatch.setattr(materials_api, "_write_upload", inspect_reservation)
+
+        response = await client_with_db.post(
+            "/api/materials",
+            files={"file": ("reserved.pdf", b"reserved", "application/pdf")},
+        )
+
+        assert response.status_code == 200
 
     @pytest.mark.asyncio
     async def test_upload_stores_material_metadata(self, client_with_db, db_session):
