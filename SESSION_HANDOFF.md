@@ -1,8 +1,9 @@
 # Exam Review Agent 会话交接文档
 
-> 更新日期：2026-08-05
+> 更新日期：2026-08-06
 > 项目目录：`C:\Users\asus\Documents\exam-review-agent`  
 > 当前分支：`codex/phase-1-postgres`  
+> Task 1.4 最终功能提交：`3b5e37e feat: complete deletion and quota reliability`
 > 基线提交：`23c17b5 feat: polish learning workspace UI and review flows`
 
 ## 1. 给新会话的执行指令
@@ -34,12 +35,48 @@
 - 阶段 1 的 **Task 1.2（邀请码认证和会话安全）已由用户确认**。
 - 阶段 1 的 **Task 1.3（私人多课程领域模型）已由用户确认**。
 - 阶段 1 的 **Task 1.4（用户数据删除与配额）已完成实现，等待 Phase 1 验收**。
-- Task 1.4 采用连续 RED/GREEN checkpoint；`17cbda7`、`7eed32d`、`64e4a8a`、`6ce7ce0`、`726d2c2`、`c153644` 记录契约、首轮实现与多轮并发/恢复安全 RED，最终 GREEN checkpoint 为本交接对应的当前 HEAD。
+- Task 1.4 采用连续 RED/GREEN checkpoint；`17cbda7`、`7eed32d`、`64e4a8a`、`6ce7ce0`、`726d2c2`、`c153644` 记录契约、首轮实现与多轮并发/恢复安全 RED，最终功能 GREEN checkpoint 为 `3b5e37e`。
 - 全局 Git 身份已配置为 `felixxx04 <rifuturech@163.com>`；用户只授权本地提交，不得推送。
 - 用户要求成果只保存在本地，不上传 GitHub。
 - 仓库根目录目前没有 `.codegraph/`，因此无需使用 CodeGraph；如果新会话发现该目录后来出现，再按 `AGENTS.md` 先使用 CodeGraph。
 
 实施计划的 Task 1.4 checkbox、完成记录和第 13 节审批门均已更新。下一项只有在用户确认 Phase 1 后才能开始 Task 2.1。
+
+## 2.1 本会话（2026-08-06）收尾记录
+
+本会话接续上一个会话的 Task 1.4 工作，完成了最终复审、可靠性修复、验证、提交和本地服务启动。新会话应把下面内容视为最新事实：
+
+### 本会话修复的复审问题
+
+- 删除请求不再在 HTTP 响应返回前同步执行清理。`AccountDeletionService.request()` 只锁定/禁用账号、撤销 Refresh Token、禁用邀请码并提交 `pending` job；`POST /api/account/deletion` 先返回状态令牌，FastAPI 响应后台任务再用独立 `AsyncSessionLocal` 执行 `execute()`。
+- 删除执行的数据库提交不确定或状态恢复再次失败时，事务会回滚到已交付令牌对应的 `pending` 状态；状态令牌仍可查询和重试。成功状态不会被降级为失败。
+- 上传在解析前提交真实 `file_size/hash`，随后重新取得与注销共享的用户行锁。解析或最终提交数据库异常会留下准确计量的 `pending` 预留，而不是 `file_size=0`；元数据提交失败会删除文件和预留。
+- `_discard_reservation()` 对瞬时数据库提交故障执行一次重试，持续失败会显式上抛并记录脱敏日志，不再静默吞错。
+- 新增真实 PostgreSQL 双 Session 删除请求测试，证明并发请求只创建一个活动删除任务；已有上传/注销锁等待测试继续通过。
+
+### TDD 检查点与最终提交
+
+- `726d2c2 test: expose durable deletion execution gaps`：新增删除令牌交付、状态恢复、上传数据库故障和真实并发 RED 测试。
+- `c153644 test: require upload reservation recovery`：新增预留元数据提交失败和清理重试 RED 测试。
+- `3b5e37e feat: complete deletion and quota reliability`：最终 GREEN 功能实现、文档和交接更新。后续交接文档提交不改变该功能提交；成果只保存在本地，不得推送。
+- 全局 Git 身份：`felixxx04 <rifuturech@163.com>`。
+
+### 最终验证证据
+
+- 后端全量：`285 passed, 8 skipped`，综合覆盖率 `80.23%`。8 个 skip 中 6 个需要显式 `POSTGRES_INTEGRATION_URL`，2 个需要真实 LLM。
+- 真实 PostgreSQL + RLS：`6 passed`。覆盖配额 CHECK、删除任务唯一索引/双 Session 并发、账户级联、邀请码与 Refresh Token 处理、上传/注销锁等待和提交不确定性。
+- Task 聚焦回归：`41 passed`；Ruff lint/format、Bandit 中高危、`compileall`、`pip check`、Compose 配置、`git diff --check`、`alembic check` 全部通过。
+- 在线迁移 `0004 -> 0003 -> 0004` 通过，当前 `20260805_0004 (head)`。测试探针完成后 `users/courses/materials/account_deletion_jobs/invite_codes/refresh_tokens` 均为 0。
+- Python 和安全复审均无 Critical/High 阻断项。已知产品建议仍是注销 step-up authentication，以及创建响应完全丢失时的状态令牌恢复机制。
+
+### 当前本地运行状态
+
+- PostgreSQL 容器：健康，`localhost:5432`。
+- Redis 容器：健康，`localhost:6379`。
+- 前端当前监听：`http://127.0.0.1:3000`。
+- 后端当前监听：`http://127.0.0.1:8000`；`GET /health/ready` 返回数据库和 Redis 均为 `ok`。
+- 后端进程是本会话临时启动的本地进程：使用进程内随机 JWT 密钥、`AUTH_COOKIE_SECURE=false` 和占位 `DEEPSEEK_API_KEY=local-startup-placeholder`。这些值没有写入仓库；真实 Ask/Quiz 模型调用不可用，重新启动时必须提供真实 DeepSeek Key 和安全 JWT Secret。
+- 新会话开始前应重新检查端口和进程；不要假设上述 PID 或临时环境变量仍然存在。
 
 ## 3. 项目定位与目标架构
 
@@ -171,7 +208,7 @@
 
 ### 迁移与验证
 
-- 新增 `backend/alembic/versions/20260805_0003_private_courses.py`，当前数据库 revision 为 `20260805_0003` 且业务表为空。
+- 新增 `backend/alembic/versions/20260805_0003_private_courses.py`；Task 1.3 当时的数据库 revision 为 `20260805_0003` 且业务表为空。
 - 后端完整回归：`266 passed, 5 skipped`，精确综合覆盖率 `80.05%`。5 个 skip 中 3 个需要显式 PostgreSQL URL，2 个需要真实 LLM。
 - 真实 PostgreSQL 集成测试：`3 passed`，覆盖跨 commit RLS、SessionFactory、敏感子表、跨范围复合外键和默认课程并发。
 - 空 Schema 从 base 在线升级到 head；`alembic check` 无待生成操作；离线 upgrade SQL 生成成功。
@@ -183,7 +220,7 @@
 - `5a80da1 test: define private multi-course domain contracts`
 - `823b7af test: require course-scoped material retrieval`
 - `6382698 test: expose private course isolation gaps`
-- Task 1.3 GREEN checkpoint：本交接对应的当前 HEAD，未推送。
+- Task 1.3 GREEN checkpoint：`045ba84 feat: enforce private multi-course domain isolation`，未推送。
 
 Task 1.3 不包含账号全量删除与配额、S3/ARQ、pgvector 检索切换、Planner/Agent Runtime 或全面视觉改造。Pyright 未安装，项目也没有现成 Python 类型检查命令；这不是本任务新增的失败门。`npm audit --omit=dev` 为 0 漏洞，但 2026-08-05 的全依赖审计新报告 1 个开发链路 `undici` 高危公告；它不进入生产依赖，后续依赖维护应升级并复跑前端门。
 
@@ -268,7 +305,7 @@ Task 2.1 的边界以实施计划与 ADR-0003 为准：建立 S3 兼容 `ObjectS
 4. 修改代码后使用对应语言的 Reviewer 检查，并修复有效问题。
 5. 不提前实现后续任务，不重构无关模块。
 6. 所有已有修改都视为用户资产，禁止 reset、checkout、删除或覆盖。
-7. Git 身份已全局配置；Task 1.4 GREEN checkpoint 为本交接对应的当前 HEAD。
+7. Git 身份已全局配置；Task 1.4 功能 GREEN checkpoint 为 `3b5e37e`。
 8. 未经明确要求不得推送 GitHub。
 9. 完成 Task 1.4 后必须停在 Phase 1 审批门，汇报实现、测试、风险和未完成验证，等待用户确认。
 
