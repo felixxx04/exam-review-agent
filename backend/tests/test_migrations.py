@@ -15,15 +15,18 @@ def test_v2_migrations_form_a_clean_chain():
         "20260804_0002_auth_sessions.py",
         "20260805_0003_private_courses.py",
         "20260805_0004_deletion_quotas.py",
+        "20260808_0005_object_storage.py",
     ]
     initial = versions[0].read_text(encoding="utf-8")
     auth = versions[1].read_text(encoding="utf-8")
     courses = versions[2].read_text(encoding="utf-8")
     deletion = versions[3].read_text(encoding="utf-8")
+    storage = versions[4].read_text(encoding="utf-8")
     assert "down_revision = None" in initial
     assert 'down_revision = "20260803_0001"' in auth
     assert 'down_revision = "20260804_0002"' in courses
     assert 'down_revision = "20260805_0003"' in deletion
+    assert 'down_revision = "20260805_0004"' in storage
 
 
 def test_v2_migration_enables_pgvector_and_retrieval_indexes():
@@ -110,3 +113,21 @@ def test_deletion_migration_adds_quotas_and_queryable_account_jobs():
     assert "status_token_hash" in source
     assert "uq_account_deletion_jobs_active_user" in source
     assert "ON DELETE SET NULL" in source or 'ondelete="SET NULL"' in source
+
+
+def test_object_storage_migration_adds_private_object_metadata_and_indexes():
+    source = (
+        BACKEND_ROOT / "alembic" / "versions" / "20260808_0005_object_storage.py"
+    ).read_text(encoding="utf-8")
+
+    for column in (
+        "storage_backend",
+        "storage_status",
+        "object_id",
+        "object_key",
+        "object_version_id",
+        "object_etag",
+    ):
+        assert column in source
+    assert "ix_materials_user_course_hash_storage" in source
+    assert "storage_status IN" in source

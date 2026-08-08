@@ -455,6 +455,10 @@ async def test_material_processing_status_transition(session):
 
     assert mat.processing_status == "ready"
     assert mat.chunk_count == 15
+    assert mat.storage_backend == "s3"
+    assert mat.storage_status == "reserved"
+    assert mat.object_id is not None
+    assert mat.object_key is None
 
 
 @pytest.mark.asyncio
