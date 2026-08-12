@@ -147,6 +147,24 @@ async def test_index_and_delete_chunks(make_retrieval_service):
 
 
 @pytest.mark.asyncio
+async def test_index_chunks_honors_caller_preallocated_ids(make_retrieval_service):
+    service = make_retrieval_service()
+    expected_ids = ["durable-index-chunk-1", "durable-index-chunk-2"]
+
+    chunk_ids = await service.index_chunks(
+        "test-user-preallocated",
+        [
+            {"text": "durable one", "metadata": {"source": "one.pdf"}},
+            {"text": "durable two", "metadata": {"source": "two.pdf"}},
+        ],
+        chunk_ids=expected_ids,
+    )
+
+    assert chunk_ids == expected_ids
+    assert [document["id"] for document in service._vector_store.documents] == expected_ids
+
+
+@pytest.mark.asyncio
 async def test_search_with_quality_gate_filters_low_relevance(make_retrieval_service):
     service = make_retrieval_service(quality_threshold=0.5)
     await service.index_chunks(

@@ -4,14 +4,18 @@ import type { Material } from "@/types";
 
 const readyMaterial: Material = {
   id: 1,
+  course_id: 1,
   filename: "stored-mq.pdf",
   original_filename: "MQ.pdf",
   file_type: "pdf",
   file_size: 100,
   page_count: 1,
   processing_status: "ready",
+  storage_status: "available",
   chunk_count: 1,
   error_message: null,
+  mime_type: "application/pdf",
+  processed_at: new Date(0).toISOString(),
   created_at: new Date(0).toISOString(),
 };
 

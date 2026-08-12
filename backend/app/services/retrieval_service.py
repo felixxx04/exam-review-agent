@@ -59,6 +59,7 @@ class RetrievalService:
         chunks: list[dict],
         *,
         course_id: int | None = None,
+        chunk_ids: list[str] | None = None,
     ) -> list[str]:
         """Index chunks into the vector store and BM25 index.
 
@@ -74,8 +75,14 @@ class RetrievalService:
         # Generate embeddings
         embeddings = self._get_embedding_service().embed_documents(texts)
 
+        # The material lifecycle may persist IDs before this external write so
+        # a partial write remains removable after a crash or cancellation.
+        if chunk_ids is None:
+            chunk_ids = [str(uuid.uuid4()) for _ in chunks]
+        elif len(chunk_ids) != len(chunks) or len(set(chunk_ids)) != len(chunk_ids):
+            raise ValueError("Chunk IDs must be unique and match the indexed chunks")
+
         # Add embedding chunk_id to metadata for tracking
-        chunk_ids = [str(uuid.uuid4()) for _ in chunks]
         for i, cid in enumerate(chunk_ids):
             metadatas[i] = {**metadatas[i], "chunk_id": cid}
 
@@ -181,6 +188,14 @@ class RetrievalService:
                 )
             else:
                 del self._bm25_indices[scope_key]
+
+    async def delete_collection(
+        self, user_id: str, *, course_id: int | None = None
+    ) -> None:
+        """Remove one complete retrieval scope as a deletion safety net."""
+        scope_key = self._scope_key(user_id, course_id)
+        self._get_vector_store().delete_collection(scope_key)
+        self._bm25_indices.pop(scope_key, None)
 
     # ------------------------------------------------------------------
     # Internal helpers

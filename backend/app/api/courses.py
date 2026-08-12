@@ -8,6 +8,8 @@ from app.db.database import get_db
 from app.schemas.common import ApiResponse
 from app.schemas.courses import CourseCreate, CourseListResponse, CourseUpdate
 from app.services.course_service import CourseService
+from app.api.dependencies import get_object_storage
+from app.services.object_storage import ObjectStorage
 
 
 router = APIRouter(prefix="/api/courses", tags=["courses"])
@@ -62,6 +64,7 @@ async def delete_course(
     course_id: int,
     current_user: AuthenticatedUser = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
+    storage: ObjectStorage = Depends(get_object_storage),
 ):
-    await CourseService(db).delete_course(current_user.id, course_id)
+    await CourseService(db).delete_course(current_user.id, course_id, storage=storage)
     return ApiResponse.ok(data={"detail": "已删除"})

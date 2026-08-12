@@ -1,11 +1,8 @@
 from __future__ import annotations
 
-from pathlib import Path
-
 import pytest
 from sqlalchemy import select
 
-from app.api import materials as materials_api
 from app.db.models import (
     Course,
     LearningProfile,
@@ -14,6 +11,14 @@ from app.db.models import (
     User,
 )
 from app.repositories.mistakes import SqlAlchemyMistakeRepository
+
+
+MINIMAL_PDF = (
+    b"%PDF-1.4\n"
+    b"1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj\n"
+    b"2 0 obj\n<< /Type /Pages /Kids [] /Count 0 >>\nendobj\n"
+    b"trailer\n<< /Size 3 /Root 1 0 R >>\n%%EOF\n"
+)
 
 
 async def _course(db_session, user_id: int, name: str = "Task 1.4") -> Course:
@@ -89,9 +94,8 @@ async def test_quiz_mistake_and_memory_deletion_are_private(
 
 @pytest.mark.asyncio
 async def test_upload_quota_reports_usage_and_rejects_count_or_storage_overflow(
-    client_with_db, db_session, authenticated_user, tmp_path, monkeypatch
+    client_with_db, db_session, authenticated_user, object_storage
 ):
-    monkeypatch.setattr(materials_api, "UPLOAD_DIR", tmp_path)
     course = await _course(db_session, authenticated_user.id)
     authenticated_user.file_limit = 1
     authenticated_user.storage_limit_bytes = 10
@@ -102,6 +106,7 @@ async def test_upload_quota_reports_usage_and_rejects_count_or_storage_overflow(
         original_filename="existing.pdf",
         file_type="pdf",
         file_size=5,
+        storage_status="available",
     )
     db_session.add(existing)
     await db_session.commit()
@@ -110,7 +115,7 @@ async def test_upload_quota_reports_usage_and_rejects_count_or_storage_overflow(
     count_rejected = await client_with_db.post(
         "/api/materials",
         params={"course_id": course.id},
-        files={"file": ("count.pdf", b"x", "application/pdf")},
+        files={"file": ("count.pdf", MINIMAL_PDF, "application/pdf")},
     )
 
     authenticated_user.file_limit = 10
@@ -118,7 +123,7 @@ async def test_upload_quota_reports_usage_and_rejects_count_or_storage_overflow(
     storage_rejected = await client_with_db.post(
         "/api/materials",
         params={"course_id": course.id},
-        files={"file": ("storage.pdf", b"123456", "application/pdf")},
+        files={"file": ("storage.pdf", MINIMAL_PDF + b"123456", "application/pdf")},
     )
 
     assert usage.status_code == 200
@@ -131,7 +136,7 @@ async def test_upload_quota_reports_usage_and_rejects_count_or_storage_overflow(
     for response in (count_rejected, storage_rejected):
         assert response.status_code == 409
         assert response.json()["error"]["code"] == "QUOTA_EXCEEDED"
-    assert list(Path(tmp_path).iterdir()) == []
+    assert object_storage.objects == {}
 
 
 @pytest.mark.asyncio
@@ -159,3 +164,28 @@ async def test_admin_can_override_user_quotas(
     await db_session.refresh(target)
     assert target.file_limit == 12
     assert target.storage_limit_bytes == 34_000_000
+
+
+@pytest.mark.asyncio
+async def test_deleted_material_tombstones_do_not_consume_quota(
+    client_with_db, db_session, authenticated_user
+):
+    course = await _course(db_session, authenticated_user.id, "Deleted quota")
+    db_session.add(
+        Material(
+            user_id=authenticated_user.id,
+            course_id=course.id,
+            filename="deleted-object",
+            original_filename="deleted.pdf",
+            file_type="pdf",
+            file_size=1024,
+            storage_status="deleted",
+        )
+    )
+    await db_session.commit()
+
+    response = await client_with_db.get("/api/account/quota")
+
+    assert response.status_code == 200
+    assert response.json()["data"]["files_used"] == 0
+    assert response.json()["data"]["storage_used_bytes"] == 0

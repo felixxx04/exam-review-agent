@@ -14,6 +14,9 @@ vi.mock("@/lib/api", () => ({
       list: vi.fn(),
       messages: vi.fn(),
     },
+    materials: {
+      accessUrl: vi.fn(),
+    },
   },
 }));
 
@@ -40,14 +43,19 @@ const conversations: Conversation[] = [
 
 const material: Material = {
   id: 7,
+  course_id: 1,
   filename: "stored.docx",
   original_filename: "MQ.docx",
   file_type: "docx",
   file_size: 128,
   page_count: 1,
   processing_status: "ready",
+  storage_status: "available",
   chunk_count: 3,
   error_message: null,
+  mime_type:
+    "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+  processed_at: new Date().toISOString(),
   created_at: new Date().toISOString(),
 };
 
@@ -130,6 +138,10 @@ describe("AppSidebar", () => {
       last_message_at: null,
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
+    });
+    vi.mocked(api.materials.accessUrl).mockResolvedValue({
+      url: "https://storage.example.test/private-download",
+      expires_in_seconds: 300,
     });
   });
 
@@ -237,6 +249,82 @@ describe("AppSidebar", () => {
 
     expect(useChatStore.getState().materialScope).toEqual([]);
     expect(onDeleteMaterial).toHaveBeenCalledWith(7);
+  });
+
+  it("opens a provisional tab before its short-lived download URL resolves", async () => {
+    const user = userEvent.setup();
+    let resolveAccessUrl:
+      | ((value: { url: string; expires_in_seconds: number }) => void)
+      | undefined;
+    const accessUrl = new Promise<{
+      url: string;
+      expires_in_seconds: number;
+    }>((resolve) => {
+      resolveAccessUrl = resolve;
+    });
+    const popup = {
+      close: vi.fn(),
+      location: { href: "" },
+      opener: window,
+    } as unknown as Window;
+    const open = vi.spyOn(window, "open").mockReturnValue(popup);
+    vi.mocked(api.materials.accessUrl).mockReturnValueOnce(accessUrl);
+
+    try {
+      renderSidebar();
+
+      await user.click(screen.getByRole("button", { name: "下载 MQ.docx" }));
+
+      expect(api.materials.accessUrl).toHaveBeenCalledWith(7);
+      expect(open).toHaveBeenCalledWith("", "_blank");
+
+      if (!resolveAccessUrl) {
+        throw new Error("Access URL resolver was not initialized");
+      }
+
+      resolveAccessUrl({
+        url: "https://storage.example.test/private-download",
+        expires_in_seconds: 300,
+      });
+
+      await waitFor(() => {
+        expect(popup.location.href).toBe(
+          "https://storage.example.test/private-download",
+        );
+      });
+      expect(popup.opener).toBeNull();
+    } finally {
+      open.mockRestore();
+    }
+  });
+
+  it("shows generic feedback when a download URL cannot be retrieved", async () => {
+    const user = userEvent.setup();
+    const popup = {
+      close: vi.fn(),
+      location: { href: "" },
+      opener: window,
+    } as unknown as Window;
+    const open = vi.spyOn(window, "open").mockReturnValue(popup);
+    vi.mocked(api.materials.accessUrl).mockRejectedValueOnce(
+      new Error("Download URL request failed"),
+    );
+
+    try {
+      renderSidebar();
+
+      await user.click(screen.getByRole("button", { name: "下载 MQ.docx" }));
+
+      expect(open).toHaveBeenCalledWith("", "_blank");
+      await waitFor(() => {
+        expect(screen.getByRole("alert")).toHaveTextContent(
+          "下载资料失败，请重试。",
+        );
+      });
+      expect(popup.close).toHaveBeenCalledOnce();
+    } finally {
+      open.mockRestore();
+    }
   });
 
   it("clears the upload input after async upload without crashing", async () => {

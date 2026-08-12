@@ -1,20 +1,24 @@
 from __future__ import annotations
 
+import asyncio
+import datetime
 import hashlib
 from pathlib import Path
 
 import pytest
 from sqlalchemy import select
 
+from app.api import materials as materials_api
 from app.api.dependencies import get_object_storage
 from app.core.auth import AuthenticatedUser, get_current_user
-from app.db.models import Material
+from app.db.models import Material, StorageStatus
 from app.main import app
 from app.services.object_storage import (
     ObjectStorageError,
     PresignedGet,
     StoredObject,
 )
+from app.services.material_storage_cleanup import recover_stale_material_reservations
 
 
 MINIMAL_PDF = b"%PDF-1.4\n1 0 obj\n<< /Type /Catalog >>\nendobj\ntrailer\n<<>>\n%%EOF\n"
@@ -29,7 +33,9 @@ def _data(response):
 class FakeObjectStorage:
     def __init__(self) -> None:
         self.objects: dict[str, bytes] = {}
+        self.put_attempts: list[str] = []
         self.deleted: list[str] = []
+        self.delete_attempts: list[str] = []
         self.presigned: list[str] = []
         self.fail_delete = False
 
@@ -42,6 +48,7 @@ class FakeObjectStorage:
         content_type: str,
         sha256: str,
     ) -> StoredObject:
+        self.put_attempts.append(key)
         content = source.read_bytes()
         assert len(content) == size_bytes
         assert hashlib.sha256(content).hexdigest() == sha256
@@ -68,8 +75,12 @@ class FakeObjectStorage:
         key: str,
         version_id: str | None = None,
     ) -> None:
+        self.delete_attempts.append(key)
         if self.fail_delete:
-            raise ObjectStorageError("Object storage is temporarily unavailable", "OBJECT_STORAGE_UNAVAILABLE")
+            raise ObjectStorageError(
+                "Object storage is temporarily unavailable",
+                "OBJECT_STORAGE_UNAVAILABLE",
+            )
         self.deleted.append(key)
         self.objects.pop(key, None)
 
@@ -102,7 +113,9 @@ class ParserStub:
 def object_storage(monkeypatch):
     storage = FakeObjectStorage()
     app.dependency_overrides[get_object_storage] = lambda: storage
-    monkeypatch.setattr("app.services.parser_service.ParserService", lambda: ParserStub())
+    monkeypatch.setattr(
+        "app.services.parser_service.ParserService", lambda: ParserStub()
+    )
     yield storage
     app.dependency_overrides.pop(get_object_storage, None)
 
@@ -118,7 +131,7 @@ async def test_upload_stores_a_private_object_and_hides_internal_storage_fields(
 
     assert response.status_code == 200
     data = _data(response)
-    assert data["original_filename"] == "../../course-notes.pdf"
+    assert data["original_filename"] == "course-notes.pdf"
     assert "object_key" not in data
     assert "storage_path" not in data
     assert "parse_error" not in data
@@ -143,6 +156,96 @@ async def test_rejected_file_signature_creates_no_object_or_material_reservation
     assert response.status_code == 400
     assert (await db_session.execute(select(Material))).scalars().all() == []
     assert object_storage.objects == {}
+
+
+@pytest.mark.asyncio
+async def test_storage_quota_rejection_before_object_write_discards_reservation_without_storage_calls(
+    client_with_db, db_session, authenticated_user, object_storage
+):
+    authenticated_user.storage_limit_bytes = len(MINIMAL_PDF) - 1
+    await db_session.commit()
+    object_storage.fail_delete = True
+
+    response = await client_with_db.post(
+        "/api/materials",
+        files={"file": ("quota.pdf", MINIMAL_PDF, "application/pdf")},
+    )
+
+    assert response.status_code == 409
+    assert response.json()["error"]["code"] == "QUOTA_EXCEEDED"
+    assert (await db_session.execute(select(Material))).scalars().all() == []
+    assert object_storage.objects == {}
+    assert object_storage.put_attempts == []
+    assert object_storage.delete_attempts == []
+
+
+@pytest.mark.asyncio
+async def test_unknown_object_write_keeps_a_deleting_tombstone_until_recovery(
+    client_with_db, db_session, object_storage, monkeypatch
+):
+    release_late_write = asyncio.Event()
+    late_write_finished = asyncio.Event()
+
+    async def write_after_timeout(*, key, source, **_kwargs):
+        content = source.read_bytes()
+
+        async def finish_late_write() -> None:
+            await release_late_write.wait()
+            object_storage.objects[key] = content
+            late_write_finished.set()
+
+        asyncio.create_task(finish_late_write())
+        raise ObjectStorageError(
+            "Object storage is temporarily unavailable", "OBJECT_STORAGE_UNAVAILABLE"
+        )
+
+    monkeypatch.setattr(object_storage, "put_file", write_after_timeout)
+
+    failed = await client_with_db.post(
+        "/api/materials",
+        files={"file": ("late-write.pdf", MINIMAL_PDF, "application/pdf")},
+    )
+
+    assert failed.status_code == 503
+    material = await db_session.scalar(select(Material))
+    assert material is not None
+    assert material.storage_status == StorageStatus.DELETING
+    assert material.object_key is not None
+    assert object_storage.delete_attempts == []
+
+    object_key = material.object_key
+    with pytest.raises(ObjectStorageError) as blocked_delete:
+        await materials_api.delete_material(
+            material.id,
+            current_user=AuthenticatedUser(
+                id=material.user_id,
+                username="test_user",
+                role="user",
+                session_id="test-session",
+            ),
+            db=db_session,
+            storage=object_storage,
+        )
+    assert blocked_delete.value.code == "OBJECT_STORAGE_UNAVAILABLE"
+    assert object_storage.delete_attempts == []
+
+    release_late_write.set()
+    await asyncio.wait_for(late_write_finished.wait(), timeout=1)
+    material.created_at = datetime.datetime.now(datetime.UTC) - datetime.timedelta(
+        hours=2
+    )
+    await db_session.commit()
+
+    report = await recover_stale_material_reservations(
+        db_session,
+        object_storage,
+        older_than=datetime.datetime.now(datetime.UTC) - datetime.timedelta(minutes=1),
+    )
+
+    await db_session.refresh(material)
+    assert report.tombstones_written == 1
+    assert material.storage_status == StorageStatus.DELETED
+    assert object_key not in object_storage.objects
 
 
 @pytest.mark.asyncio
@@ -185,6 +288,8 @@ async def test_owner_can_get_a_short_lived_download_url_but_other_users_cannot(
     assert access["url"].startswith("https://storage.example.test/")
     assert access["expires_in_seconds"] == 300
     assert "object_key" not in access
+    assert owner.headers["cache-control"] == "private, no-store"
+    assert owner.headers["referrer-policy"] == "no-referrer"
 
     other = AuthenticatedUser(
         id=999,
@@ -208,7 +313,27 @@ async def test_owner_can_get_a_short_lived_download_url_but_other_users_cannot(
 
 
 @pytest.mark.asyncio
-async def test_material_delete_removes_private_object_before_forgetting_metadata(
+async def test_reserved_material_cannot_get_a_download_url(
+    client_with_db, db_session, object_storage
+):
+    uploaded = await client_with_db.post(
+        "/api/materials",
+        files={"file": ("notes.pdf", MINIMAL_PDF, "application/pdf")},
+    )
+    material_id = _data(uploaded)["id"]
+    material = await db_session.get(Material, material_id)
+    assert material is not None
+    material.storage_status = StorageStatus.RESERVED
+    await db_session.commit()
+
+    denied = await client_with_db.get(f"/api/materials/{material_id}/access-url")
+
+    assert denied.status_code == 404
+    assert object_storage.presigned == []
+
+
+@pytest.mark.asyncio
+async def test_material_delete_removes_private_object_before_recording_a_tombstone(
     client_with_db, db_session, object_storage
 ):
     uploaded = await client_with_db.post(
@@ -225,7 +350,13 @@ async def test_material_delete_removes_private_object_before_forgetting_metadata
     assert deleted.status_code == 200
     assert object_key in object_storage.deleted
     assert object_key not in object_storage.objects
-    assert await db_session.get(Material, material_id) is None
+    material = await db_session.get(Material, material_id)
+    assert material is not None
+    assert material.storage_status == StorageStatus.DELETED
+
+    repeated = await client_with_db.delete(f"/api/materials/{material_id}")
+    assert repeated.status_code == 200
+    assert object_storage.deleted.count(object_key) == 1
 
 
 @pytest.mark.asyncio
@@ -246,3 +377,10 @@ async def test_delete_keeps_database_metadata_when_object_storage_delete_fails(
     assert material is not None
     assert material.storage_status == "deleting"
     assert material.object_key in object_storage.objects
+
+    object_storage.fail_delete = False
+    retried = await client_with_db.delete(f"/api/materials/{material_id}")
+
+    assert retried.status_code == 200
+    await db_session.refresh(material)
+    assert material.storage_status == StorageStatus.DELETED

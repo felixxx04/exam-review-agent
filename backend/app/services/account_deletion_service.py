@@ -19,9 +19,13 @@ from app.db.models import (
     Course,
     InviteCode,
     Material,
+    ProcessingStatus,
     RefreshToken,
+    StorageStatus,
     User,
 )
+from app.services.object_storage import ObjectStorage, ObjectStorageError
+from app.services.material_storage_cleanup import is_processing_lease_active
 
 
 ARTIFACT_FAILURE_MESSAGE = "Account artifacts could not be removed"
@@ -35,8 +39,14 @@ class CollectionStore(Protocol):
 
 @dataclass(frozen=True)
 class MaterialArtifact:
-    filename: str
-    storage_path: str | None
+    filename: str = ""
+    storage_path: str | None = None
+    object_key: str | None = None
+    object_version_id: str | None = None
+    storage_status: str = StorageStatus.AVAILABLE
+    processing_status: str = ProcessingStatus.READY
+    processing_lease_expires_at: datetime.datetime | None = None
+    object_write_uncertain: bool = False
 
 
 @dataclass(frozen=True)
@@ -46,8 +56,21 @@ class AccountDeletionRequestResult:
 
 
 class AccountArtifactCleaner:
-    def __init__(self, upload_root: str | Path, vector_store: CollectionStore) -> None:
-        self.upload_root = Path(upload_root).resolve()
+    def __init__(
+        self,
+        object_storage_or_legacy_upload_root: ObjectStorage | str | Path,
+        vector_store: CollectionStore,
+        *,
+        legacy_upload_root: str | Path | None = None,
+    ) -> None:
+        self.object_storage: ObjectStorage | None = None
+        self.upload_root: Path | None = None
+        if isinstance(object_storage_or_legacy_upload_root, (str, Path)):
+            self.upload_root = Path(object_storage_or_legacy_upload_root).resolve()
+        else:
+            self.object_storage = object_storage_or_legacy_upload_root
+            if legacy_upload_root is not None:
+                self.upload_root = Path(legacy_upload_root).resolve()
         self.vector_store = vector_store
 
     async def clean(
@@ -56,27 +79,43 @@ class AccountArtifactCleaner:
         course_ids: list[int],
         materials: list[MaterialArtifact],
     ) -> None:
-        await asyncio.to_thread(
-            self._clean_sync,
-            user_id,
-            course_ids,
-            materials,
-        )
-
-    def _clean_sync(
-        self,
-        user_id: int,
-        course_ids: list[int],
-        materials: list[MaterialArtifact],
-    ) -> None:
         for material in materials:
-            self._material_path(material).unlink(missing_ok=True)
+            if (
+                material.object_write_uncertain
+                or material.storage_status == StorageStatus.RESERVED
+                or (
+                    material.processing_status == ProcessingStatus.PROCESSING
+                    and is_processing_lease_active(material.processing_lease_expires_at)
+                )
+            ):
+                # Deleting the user now would cascade away the only durable
+                # record for an ambiguous PUT or live index. The job stays
+                # retryable after recovery finishes the material lifecycle.
+                raise ObjectStorageError(
+                    "Material cleanup is pending", "OBJECT_STORAGE_UNAVAILABLE"
+                )
+            if material.object_key is not None:
+                if self.object_storage is None:
+                    raise ValueError("Object storage is required for stored materials")
+                await self.object_storage.delete_object(
+                    key=material.object_key,
+                    version_id=material.object_version_id,
+                )
+            else:
+                await asyncio.to_thread(self._delete_legacy_material, material)
+        await asyncio.to_thread(self._clean_vectors, user_id, course_ids)
 
+    def _clean_vectors(self, user_id: int, course_ids: list[int]) -> None:
         self.vector_store.delete_collection(str(user_id))
         for course_id in course_ids:
             self.vector_store.delete_collection(f"{user_id}_course_{course_id}")
 
+    def _delete_legacy_material(self, material: MaterialArtifact) -> None:
+        self._material_path(material).unlink(missing_ok=True)
+
     def _material_path(self, material: MaterialArtifact) -> Path:
+        if self.upload_root is None:
+            raise ValueError("A legacy upload root is not configured")
         if material.storage_path:
             candidate = Path(material.storage_path)
             if not candidate.is_absolute():
@@ -231,13 +270,29 @@ class AccountDeletionService:
             )
             material_rows = (
                 await self.db.execute(
-                    select(Material.filename, Material.storage_path).where(
-                        Material.user_id == user_id
-                    )
+                    select(
+                        Material.filename,
+                        Material.storage_path,
+                        Material.object_key,
+                        Material.object_version_id,
+                        Material.storage_status,
+                        Material.processing_status,
+                        Material.processing_lease_expires_at,
+                        Material.object_write_uncertain,
+                    ).where(Material.user_id == user_id)
                 )
             ).all()
             materials = [
-                MaterialArtifact(filename=row.filename, storage_path=row.storage_path)
+                MaterialArtifact(
+                    filename=row.filename,
+                    storage_path=row.storage_path,
+                    object_key=row.object_key,
+                    object_version_id=row.object_version_id,
+                    storage_status=row.storage_status,
+                    processing_status=row.processing_status,
+                    processing_lease_expires_at=row.processing_lease_expires_at,
+                    object_write_uncertain=row.object_write_uncertain,
+                )
                 for row in material_rows
             ]
         except Exception as exc:

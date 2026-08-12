@@ -36,7 +36,13 @@ def _public_id() -> str:
 JSON_VALUE = JSON().with_variant(JSONB(), "postgresql")
 
 
-def _string_enum(enum_type: type[enum.Enum], name: str) -> SAEnum:
+def _string_enum(
+    enum_type: type[enum.Enum], name: str, *, length: int | None = None
+) -> SAEnum:
+    options: dict[str, int] = {}
+    if length is not None:
+        options["length"] = length
+
     return SAEnum(
         enum_type,
         name=name,
@@ -44,6 +50,7 @@ def _string_enum(enum_type: type[enum.Enum], name: str) -> SAEnum:
         create_constraint=True,
         validate_strings=True,
         values_callable=lambda members: [member.value for member in members],
+        **options,
     )
 
 
@@ -67,6 +74,13 @@ class ProcessingStatus(str, enum.Enum):
     PROCESSING = "processing"
     READY = "ready"
     FAILED = "failed"
+
+
+class StorageStatus(str, enum.Enum):
+    RESERVED = "reserved"
+    AVAILABLE = "available"
+    DELETING = "deleting"
+    DELETED = "deleted"
 
 
 class FileType(str, enum.Enum):
@@ -546,6 +560,10 @@ class Material(Base):
             ondelete="CASCADE",
             name="fk_materials_course_owner",
         ),
+        CheckConstraint(
+            "storage_backend IN ('legacy_local', 's3')",
+            name="ck_materials_storage_backend",
+        ),
         UniqueConstraint("id", "user_id", "course_id", name="uq_materials_scope"),
         Index("ix_materials_user_status", "user_id", "processing_status"),
         Index("ix_materials_user_created", "user_id", "created_at"),
@@ -554,6 +572,19 @@ class Material(Base):
             "user_id",
             "course_id",
             "processing_status",
+        ),
+        Index(
+            "ix_materials_user_course_hash_storage",
+            "user_id",
+            "course_id",
+            "hash",
+            "storage_status",
+        ),
+        Index(
+            "ix_materials_storage_processing_lease",
+            "storage_status",
+            "processing_status",
+            "processing_lease_expires_at",
         ),
     )
 
@@ -576,12 +607,35 @@ class Material(Base):
     )
     error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
     chunk_count: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    storage_backend: Mapped[str] = mapped_column(
+        String(32), default="s3", nullable=False
+    )
+    storage_status: Mapped[str] = mapped_column(
+        _string_enum(StorageStatus, "ck_materials_storage_status", length=16),
+        default=StorageStatus.RESERVED,
+        nullable=False,
+    )
+    object_id: Mapped[str] = mapped_column(
+        String(64), default=_public_id, nullable=False, unique=True, index=True
+    )
+    object_key: Mapped[str | None] = mapped_column(String(1000), nullable=True)
+    object_version_id: Mapped[str | None] = mapped_column(String(512), nullable=True)
+    object_etag: Mapped[str | None] = mapped_column(String(512), nullable=True)
+    object_write_uncertain: Mapped[bool] = mapped_column(
+        Boolean, default=False, nullable=False
+    )
     storage_path: Mapped[str | None] = mapped_column(String(1000), nullable=True)
     mime_type: Mapped[str | None] = mapped_column(String(255), nullable=True)
     hash: Mapped[str | None] = mapped_column(String(128), nullable=True, index=True)
     processed_at: Mapped[datetime.datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )
+    processing_lease_expires_at: Mapped[datetime.datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    # A distinct attempt token fences a worker that resumes after recovery has
+    # taken over an expired processing lease.
+    processing_lease_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
     parse_error: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime.datetime] = mapped_column(
         DateTime(timezone=True), default=_utcnow, nullable=False

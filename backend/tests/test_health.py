@@ -1,6 +1,7 @@
 from unittest.mock import AsyncMock
 
 import pytest
+from pydantic import SecretStr
 
 from app.core.config import settings
 from app.main import _validate_settings_on_startup, app, get_readiness_probes
@@ -24,9 +25,110 @@ def test_startup_rejects_insecure_jwt_secrets(monkeypatch, jwt_secret):
 
 def test_startup_accepts_non_placeholder_jwt_secret(monkeypatch):
     monkeypatch.setattr(settings, "deepseek_api_key", "test-key")
-    monkeypatch.setattr(settings, "jwt_secret", "a-valid-test-secret-with-32-characters")
+    monkeypatch.setattr(
+        settings, "jwt_secret", "a-valid-test-secret-with-32-characters"
+    )
+    monkeypatch.setattr(settings, "s3_access_key_id", "test-object-storage")
+    monkeypatch.setattr(
+        settings, "s3_secret_access_key", SecretStr("test-object-storage-secret")
+    )
 
     _validate_settings_on_startup()
+
+
+def test_startup_rejects_missing_object_storage_credentials(monkeypatch):
+    monkeypatch.setattr(settings, "deepseek_api_key", "test-key")
+    monkeypatch.setattr(
+        settings, "jwt_secret", "a-valid-test-secret-with-32-characters"
+    )
+    monkeypatch.setattr(settings, "s3_access_key_id", "")
+    monkeypatch.setattr(settings, "s3_secret_access_key", SecretStr(""))
+
+    with pytest.raises(SystemExit, match="S3_ACCESS_KEY_ID"):
+        _validate_settings_on_startup()
+
+
+def test_startup_rejects_placeholder_object_storage_credentials(monkeypatch):
+    monkeypatch.setattr(settings, "deepseek_api_key", "test-key")
+    monkeypatch.setattr(
+        settings, "jwt_secret", "a-valid-test-secret-with-32-characters"
+    )
+    monkeypatch.setattr(
+        settings, "s3_access_key_id", "replace-with-a-minio-app-access-key"
+    )
+    monkeypatch.setattr(
+        settings,
+        "s3_secret_access_key",
+        SecretStr("replace-with-a-minio-app-secret"),
+    )
+
+    with pytest.raises(SystemExit, match="S3_ACCESS_KEY_ID"):
+        _validate_settings_on_startup()
+
+
+def test_startup_rejects_a_non_local_http_signing_endpoint(monkeypatch):
+    monkeypatch.setattr(settings, "deepseek_api_key", "test-key")
+    monkeypatch.setattr(
+        settings, "jwt_secret", "a-valid-test-secret-with-32-characters"
+    )
+    monkeypatch.setattr(settings, "s3_access_key_id", "test-object-storage")
+    monkeypatch.setattr(
+        settings, "s3_secret_access_key", SecretStr("test-object-storage-secret")
+    )
+    monkeypatch.setattr(settings, "s3_public_endpoint_url", "http://storage.example")
+
+    with pytest.raises(SystemExit, match="S3_PUBLIC_ENDPOINT_URL"):
+        _validate_settings_on_startup()
+
+
+def test_startup_rejects_a_non_local_http_object_storage_endpoint(monkeypatch):
+    monkeypatch.setattr(settings, "deepseek_api_key", "test-key")
+    monkeypatch.setattr(
+        settings, "jwt_secret", "a-valid-test-secret-with-32-characters"
+    )
+    monkeypatch.setattr(settings, "s3_access_key_id", "test-object-storage")
+    monkeypatch.setattr(
+        settings, "s3_secret_access_key", SecretStr("test-object-storage-secret")
+    )
+    monkeypatch.setattr(settings, "s3_endpoint_url", "http://storage.example")
+
+    with pytest.raises(SystemExit, match="S3_ENDPOINT_URL"):
+        _validate_settings_on_startup()
+
+
+def test_startup_allows_an_explicitly_trusted_internal_http_s3_endpoint(monkeypatch):
+    monkeypatch.setattr(settings, "deepseek_api_key", "test-key")
+    monkeypatch.setattr(
+        settings, "jwt_secret", "a-valid-test-secret-with-32-characters"
+    )
+    monkeypatch.setattr(settings, "s3_access_key_id", "test-object-storage")
+    monkeypatch.setattr(
+        settings, "s3_secret_access_key", SecretStr("test-object-storage-secret")
+    )
+    monkeypatch.setattr(settings, "s3_endpoint_url", "http://minio:9000")
+    monkeypatch.setattr(settings, "s3_public_endpoint_url", "https://storage.example")
+    monkeypatch.setattr(settings, "s3_allow_insecure_http", True)
+
+    _validate_settings_on_startup()
+
+
+def test_startup_keeps_public_s3_endpoint_https_when_internal_http_is_allowed(
+    monkeypatch,
+):
+    monkeypatch.setattr(settings, "deepseek_api_key", "test-key")
+    monkeypatch.setattr(
+        settings, "jwt_secret", "a-valid-test-secret-with-32-characters"
+    )
+    monkeypatch.setattr(settings, "s3_access_key_id", "test-object-storage")
+    monkeypatch.setattr(
+        settings, "s3_secret_access_key", SecretStr("test-object-storage-secret")
+    )
+    monkeypatch.setattr(settings, "s3_endpoint_url", "http://minio:9000")
+    monkeypatch.setattr(settings, "s3_public_endpoint_url", "http://storage.example")
+    monkeypatch.setattr(settings, "s3_allow_insecure_http", True)
+
+    with pytest.raises(SystemExit, match="S3_PUBLIC_ENDPOINT_URL"):
+        _validate_settings_on_startup()
 
 
 @pytest.mark.asyncio

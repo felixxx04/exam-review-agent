@@ -5,7 +5,7 @@ import logging
 from fastapi import APIRouter, BackgroundTasks, Depends, Header, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api import materials as materials_api
+from app.api.dependencies import get_object_storage
 from app.core.auth import AuthenticatedUser, get_current_user
 from app.db.database import AsyncSessionLocal, get_db
 from app.db.models import AccountDeletionJob
@@ -28,7 +28,11 @@ logger = logging.getLogger(__name__)
 
 
 def _cleaner() -> AccountArtifactCleaner:
-    return AccountArtifactCleaner(materials_api.UPLOAD_DIR, VectorStore())
+    return AccountArtifactCleaner(
+        get_object_storage(),
+        VectorStore(),
+        legacy_upload_root="uploads",
+    )
 
 
 async def _execute_deletion(job_id: str) -> None:

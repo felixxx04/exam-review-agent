@@ -22,6 +22,11 @@ interface MaterialListData {
   total: number;
 }
 
+export interface MaterialAccessUrl {
+  url: string;
+  expires_in_seconds: number;
+}
+
 interface ConversationMessagesData {
   conversation_id: number;
   messages: ConversationMessage[];
@@ -239,6 +244,14 @@ export const api = {
       fetch(`${API_BASE}/api/materials/${id}`, { method: "DELETE" }).then((r) =>
         unwrap<unknown>(r),
       ),
+
+    accessUrl: (
+      id: number,
+      disposition: "inline" | "attachment" = "attachment",
+    ) =>
+      fetch(
+        `${API_BASE}/api/materials/${id}/access-url?disposition=${disposition}`,
+      ).then((r) => unwrap<MaterialAccessUrl>(r)),
   },
 
   quiz: {

@@ -34,19 +34,18 @@ export interface QuizData {
 
 export interface Material {
   id: number;
+  course_id: number;
   filename: string;
   original_filename: string;
   file_type: string;
   file_size: number;
   page_count: number;
   processing_status: "pending" | "processing" | "ready" | "failed";
+  storage_status: "reserved" | "available" | "deleting" | "deleted";
   chunk_count: number | null;
   error_message: string | null;
-  storage_path?: string | null;
-  mime_type?: string | null;
-  hash?: string | null;
-  processed_at?: string | null;
-  parse_error?: string | null;
+  mime_type: string | null;
+  processed_at: string | null;
   created_at: string;
 }
 

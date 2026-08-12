@@ -1,9 +1,10 @@
 # Exam Review Agent 会话交接文档
 
-> 更新日期：2026-08-06
+> 更新日期：2026-08-12
 > 项目目录：`C:\Users\asus\Documents\exam-review-agent`  
 > 当前分支：`codex/phase-1-postgres`  
 > Task 1.4 最终功能提交：`3b5e37e feat: complete deletion and quota reliability`
+> Task 2.1 GREEN checkpoint：本会话完成验证后创建的本地提交（不推送 GitHub；见当前分支 `HEAD`）
 > 基线提交：`23c17b5 feat: polish learning workspace UI and review flows`
 
 ## 1. 给新会话的执行指令
@@ -20,10 +21,11 @@
 
 - 对当前完成状态的理解
 - Task 1.4 的实现、验证结果和剩余风险
-- Task 1.4 的真实 PostgreSQL 在线迁移、RLS、级联和并发验证证据
-- Phase 1 的完成状态、Task 2.1 的实施边界和明确非目标
+- Task 2.1 的实现、TDD、测试、审查和真实容器验证证据
+- Docker/PostgreSQL/MinIO 当前环境缺口及不应伪造的验证结论
+- Task 2.2 的明确非目标与审批条件
 
-当前审批点是 **Phase 1 验收**。未经用户确认，不得开始 Task 2.1 或更后面的工作。
+当前审批点是 **Task 2.1 验收**。未经用户确认，不得开始 Task 2.2 或更后面的工作。
 
 不要推送 GitHub。不要重置、清理或覆盖当前工作树中的任何已有改动。
 
@@ -34,13 +36,58 @@
 - 阶段 1 的 **Task 1.1（PostgreSQL + pgvector）已完成实现**。
 - 阶段 1 的 **Task 1.2（邀请码认证和会话安全）已由用户确认**。
 - 阶段 1 的 **Task 1.3（私人多课程领域模型）已由用户确认**。
-- 阶段 1 的 **Task 1.4（用户数据删除与配额）已完成实现，等待 Phase 1 验收**。
+- 阶段 1 的 **Task 1.4（用户数据删除与配额）已完成并经用户确认的 Phase 1 验收**。
+- 阶段 2 的 **Task 2.1（S3 对象存储抽象）已完成实现、TDD、复审和真实容器验证，等待用户验收**。
 - Task 1.4 采用连续 RED/GREEN checkpoint；`17cbda7`、`7eed32d`、`64e4a8a`、`6ce7ce0`、`726d2c2`、`c153644` 记录契约、首轮实现与多轮并发/恢复安全 RED，最终功能 GREEN checkpoint 为 `3b5e37e`。
 - 全局 Git 身份已配置为 `felixxx04 <rifuturech@163.com>`；用户只授权本地提交，不得推送。
 - 用户要求成果只保存在本地，不上传 GitHub。
 - 仓库根目录目前没有 `.codegraph/`，因此无需使用 CodeGraph；如果新会话发现该目录后来出现，再按 `AGENTS.md` 先使用 CodeGraph。
 
-实施计划的 Task 1.4 checkbox、完成记录和第 13 节审批门均已更新。下一项只有在用户确认 Phase 1 后才能开始 Task 2.1。
+实施计划的 Task 2.1 checkbox、完成记录和第 13 节审批门均已更新；本会话已补齐 Docker 真实验证和最后的回归修复。下一项只有在用户验收 Task 2.1 后才能开始 Task 2.2。
+
+## 2.2 本会话（2026-08-08）Task 2.1 初始收尾记录
+
+### 已交付范围
+
+- 私有 S3 兼容 `ObjectStorage` Protocol、S3v4/MinIO 适配器、版本化私有 Bucket bootstrap 与无 `ListBucket` 权限的应用身份。PostgreSQL `materials` 是对象元数据、配额和状态唯一事实源；对象 Key 仅服务端生成，不使用用户文件名。
+- 资料上传采用 `reserved -> available -> deleting -> deleted` 状态、服务器临时文件校验、哈希校验、同课程重复文件拒绝、跨租户隔离、短期签名 GET URL、下载 UI 和旧本地资料删除兼容。
+- 单资料删除、账号注销与崩溃恢复保持 Task 1.4 的预留、用户锁和注销可靠性。恢复入口在 RLS 绑定的单一租户作用域内运行；若索引清理失败，资料保持 `deleting`，重试成功清理向量/BM25 与持久 chunk 后才写 tombstone。
+- 上传安全额外在 ASGI `receive` 层按声明 `Content-Length` 和分块累计字节限制请求体；每块在交给 FastAPI multipart 解析器前检查，合法请求不预缓存完整 body，超限在端点、临时文件、预留或对象写入前返回 `413 FILE_TOO_LARGE`。
+- 非回环 S3 HTTP 默认被启动校验拒绝。只有部署者明确设置 `S3_ALLOW_INSECURE_HTTP=true` 且 API 与 MinIO 位于可信私有 Docker 网络时，才允许内部 S3 HTTP；外部签名 URL 仍要求 HTTPS。
+
+### TDD、审查与验证证据
+
+- 初始 Task 2.1 RED checkpoint：`bbd89fb test: define Task 2.1 object storage contracts`。
+- 后续可靠性 RED/GREEN：最小权限 readiness、RLS 绑定的恢复 CLI、删除索引清理失败恢复、同步打开下载窗口、下载失败反馈、multipart 解析前大小限制、分块请求与外部 S3 HTTP 启动拒绝均先有失败测试，再以最小实现转绿。
+- 后端全量：`338 passed, 9 skipped`；精确综合覆盖率 `80.491%`。9 个 skip 需要显式真实服务或模型配置。
+- 聚焦回归：资料上传 `17 passed`、对象恢复与删除 API `11 passed`、middleware `10 passed`、启动/health `13 passed`；初始对象存储、账号删除、配额、跨租户和签名 URL 契约也包含在全量结果中。
+- 前端全量：`103 passed`；Prettier、ESLint、TypeScript 和 Next 生产构建均通过。
+- Python 质量门：修改路径 Ruff lint/format、Bandit 中高危门、`compileall`、`pip check`、`git diff --check` 均通过。全仓 Ruff 仍有 Task 2.1 无关的历史问题：`app/tasks/parse_material.py` 中未定义 `_index_chunks`，以及 `tests/test_api/test_auth.py` 的未使用 `datetime`。
+- 静态基础设施：`docker compose --env-file .env.example config --quiet` 和 `alembic upgrade head --sql` 通过。
+
+### 历史服务环境缺口（已于 2026-08-09 关闭）
+
+- 本段记录的是 Docker Desktop 尚未启动时的初始状态，不能作为当前验证结论。
+- Docker Desktop 已启动，真实 MinIO/PostgreSQL 迁移、S3 最小权限、readiness 与 `alembic check` 的通过证据见下一节；不要用内存对象存储或 SQLite 替代这些真实验证。
+
+## 2.3 本会话（2026-08-12）Task 2.1 真实验证与最终收尾
+
+- Docker Desktop 已由本会话启动，Docker Engine `29.6.2`、PostgreSQL、Redis 和 MinIO 均健康；MinIO 镜像通过本地可用的 DaoCloud 镜像源缓存后按 Compose 固定标签运行，部署配置未改为镜像源。
+- 修复 MinIO `mc` 初始化容器的 shell 入口点和精简镜像无 `sed` 的兼容性问题；新增 Compose RED/GREEN 回归测试，真实 bootstrap 已创建私有桶、版本化、readiness sentinel、应用用户和最小策略并成功退出。
+- 修复迁移与 ORM 的 `storage_status` 类型漂移：非原生 Enum/CHECK 明确使用长度 16，兼容既有 `VARCHAR(16)`；隔离 PostgreSQL 库从 `0004` 写入旧资料后升级到 `0005`，验证回填、非空、`FORCE RLS` 和 `alembic check`。主库应用角色的 `alembic check` 也报告 `No new upgrade operations detected`。
+- Python 复审发现并修复 `reserved` 资料可生成签名 URL、外部索引与删除/注销并发、过期处理租约恢复、普通 `deleting` 资料重试、已完成索引资料的安全重处理、重处理最终提交失败的恢复窗口，以及随机 chunk ID 的稳定测试顺序。最终 Python 审查无 Critical/High 阻断项；本地 Ruff、Bandit、依赖与手工路径审查未发现 Task 2.1 中高危问题。
+- 首轮后端全量回归：`368 passed, 10 skipped`；综合覆盖率 `81%`。最终聚焦资料/课程/账号删除与恢复 `112 passed`，连同真实 PostgreSQL 资料/恢复回归为 `61 passed`；真实 PostgreSQL RLS `3 passed`、删除/配额/索引互锁 `4 passed`；真实 MinIO 生命周期/签名下载 `1 passed`；完整应用 readiness 的 database、Redis、object storage 均为 `ok`。该记录早于最终的 `0007` 围栏迁移。
+- 作用域 Ruff、Bandit 中高危、`compileall`、`pip check` 和 `git diff --check` 通过。全局 Ruff 仍有 Task 2.1 无关的历史问题：`app/tasks/parse_material.py` 的 `_index_chunks` 未定义、`tests/test_api/test_auth.py` 的未使用 `datetime`，未修改。
+- 前端既有 Task 2.1 回归仍为 `103 passed`，格式、ESLint、TypeScript 和生产构建已通过；当前 npm 镜像的 audit endpoint 返回 `NOT_IMPLEMENTED`，因此本会话不能重跑生产依赖审计。已知开发链路 `jsdom -> undici` 高危项未在本 Task 做无关升级。
+- 当前只需创建一次本地 GREEN 提交并核对工作树；不推送 GitHub。Task 2.2、ARQ、pgvector 检索切换、Planner/Agent Runtime 和无关重构仍未授权。
+
+### 本会话追加收尾（2026-08-12）
+
+- 最终审查发现处理租约过期后，旧 worker 在删除或恢复完成后仍可能恢复并写入向量。迁移 `20260812_0007_material_processing_lease_fencing.py` 增加随机 `processing_lease_id`；外部索引前重新锁定资料并验证 `available + processing + 活跃同一 lease ID + 精确 durable chunk IDs`，READY 的最终写入也以该 lease ID 条件更新。删除、课程删除、账号注销和恢复接管会清除旧 ID。
+- RED/GREEN 回归 `test_stale_processing_attempt_is_fenced_before_writing_vectors` 证明：恢复清理过期处理意图后，暂停的旧 worker 恢复时不会调用 `index_chunks`，不会把向量写回已被清理的范围。迁移链与 ORM 元数据测试也覆盖 `0007`。
+- Docker Desktop 29.6.2 当前运行 PostgreSQL、Redis 与 MinIO；主库已升级到 `20260812_0007 (head)`，`alembic check` 无漂移，离线迁移 SQL 包含 `0006 -> 0007`。真实 PostgreSQL RLS、删除/配额/上传索引互锁与双 Session stale-worker fencing 合计 `8 passed`；真实低权限 MinIO 私有对象生命周期、签名下载、无列举权限和幂等版本删除 `1 passed`。当前聚焦 Task 2.1 后端回归为 `142 passed`。
+- 最终全量后端回归为 `377 passed, 11 skipped`。作用域 Ruff lint/format、Bandit 中高危、`compileall`、`pip check`、Compose 配置和 `git diff --check` 均通过。
+- 只有本地 GREEN 提交仍待完成。提交后仍停在 Task 2.1 验收门，不推送 GitHub，也不得开始 Task 2.2、ARQ、pgvector 检索、Planner/Agent Runtime 或无关重构。
 
 ## 2.1 本会话（2026-08-06）收尾记录
 
@@ -293,9 +340,9 @@ Task 1.1/1.2 的真实 PostgreSQL 验证缺口已关闭。当前容器与 revisi
 
 ## 10. 下一步审批门
 
-Task 1.4 完成后必须停止。下一项只有在用户确认 Phase 1 后才是 **Task 2.1：S3 对象存储抽象**。
+Task 2.1 完成后必须停止。下一项只有在用户明确验收 Task 2.1 后才是 **Task 2.2：ARQ 任务状态机**。
 
-Task 2.1 的边界以实施计划与 ADR-0003 为准：建立 S3 兼容 `ObjectStorage` 接口、本地 MinIO 适配、私有对象 Key 与签名 URL 安全边界，并把资料上传/下载/删除从本地磁盘迁移到对象存储。ARQ 任务流水线属于 Task 2.2；pgvector 检索切换属于阶段 3；Planner/Agent Runtime 和全面视觉改造也不是 Task 2.1 范围。
+在用户确认前，不得开始 ARQ、任务调度、pgvector 检索切换、Planner/Agent Runtime 或无关重构。恢复 Docker 后可以补做 Task 2.1 已定义的真实 PostgreSQL/MinIO 验证，但这不自动授权 Task 2.2。
 
 ## 11. 新会话的工作规则
 
@@ -305,9 +352,9 @@ Task 2.1 的边界以实施计划与 ADR-0003 为准：建立 S3 兼容 `ObjectS
 4. 修改代码后使用对应语言的 Reviewer 检查，并修复有效问题。
 5. 不提前实现后续任务，不重构无关模块。
 6. 所有已有修改都视为用户资产，禁止 reset、checkout、删除或覆盖。
-7. Git 身份已全局配置；Task 1.4 功能 GREEN checkpoint 为 `3b5e37e`。
+7. Git 身份已全局配置；Task 1.4 功能 GREEN checkpoint 为 `3b5e37e`，Task 2.1 的本地 GREEN checkpoint 见当前分支最新提交。
 8. 未经明确要求不得推送 GitHub。
-9. 完成 Task 1.4 后必须停在 Phase 1 审批门，汇报实现、测试、风险和未完成验证，等待用户确认。
+9. 完成 Task 2.1 后必须停在 Task 2.1 验收门，汇报实现、测试、真实容器验证缺口和未完成验证，等待用户确认。
 
 ## 12. 关键文件索引
 
@@ -319,12 +366,18 @@ Task 2.1 的边界以实施计划与 ADR-0003 为准：建立 S3 兼容 `ObjectS
 - V2 初始迁移：`backend/alembic/versions/20260803_0001_v2_postgres_pgvector.py`
 - 私人课程迁移：`backend/alembic/versions/20260805_0003_private_courses.py`
 - 删除与配额迁移：`backend/alembic/versions/20260805_0004_deletion_quotas.py`
+- 对象存储迁移：`backend/alembic/versions/20260808_0005_object_storage.py`
 - 数据模型：`backend/app/db/models.py`
 - 数据库配置：`backend/app/db/database.py`
 - 错题 Repository：`backend/app/repositories/mistakes.py`
 - 临时用户 Repository：`backend/app/repositories/users.py`
 - 健康检查服务：`backend/app/services/health.py`
 - 健康端点：`backend/app/main.py`
+- 对象存储接口与 S3 适配：`backend/app/services/object_storage.py`
+- 上传安全校验：`backend/app/services/material_upload_validation.py`
+- 资料存储恢复与删除：`backend/app/services/material_storage_cleanup.py`
+- 租户绑定恢复命令：`backend/app/cli/recover_material_storage.py`
+- 请求体限制与限速：`backend/app/core/middleware.py`
 - 认证依赖：`backend/app/core/auth.py`
 - 认证 API：`backend/app/api/auth.py`
 - 认证服务：`backend/app/services/auth_service.py`
@@ -351,11 +404,11 @@ docs/architecture/adr/0001-postgres-pgvector.md、
 docs/architecture/adr/0003-object-storage.md、
 docs/architecture/adr/0004-auth-and-tenancy.md。
 
-随后检查当前 git status 和 Task 1.4 的实际实现。先向我汇报：
-1. 你对 Phase 1 Task 1.1～1.4 当前完成状态的理解；
-2. Task 1.4 的 PostgreSQL 在线迁移、删除级联、配额和并发验证证据；
-3. Task 1.4 的已实现范围、剩余风险和 Task 2.1 非目标。
+随后检查当前 git status 和 Task 2.1 的实际实现。先向我汇报：
+1. 你对 Phase 1 已验收和 Task 2.1 当前完成状态的理解；
+2. Task 2.1 的对象存储、上传安全、删除/注销恢复和跨租户验证证据；
+3. 真实 PostgreSQL/MinIO 验证的 Docker 环境缺口，以及 Task 2.2 的明确非目标。
 
-Phase 1 未经验收不得开始 Task 2.1 或更后面的工作；
+Task 2.1 未经用户验收不得开始 Task 2.2 或更后面的工作；
 不要覆盖现有改动，也不要推送 GitHub。
 ```

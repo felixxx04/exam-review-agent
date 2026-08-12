@@ -3,9 +3,12 @@ from __future__ import annotations
 import os
 import uuid
 import hashlib
+import asyncio
 
+import boto3
 import httpx
 import pytest
+from botocore.exceptions import ClientError
 
 from app.services.object_storage import S3ObjectStorage
 
@@ -37,6 +40,7 @@ async def test_minio_private_object_lifecycle_and_presigned_download(tmp_path):
         access_key_id=MINIO_ACCESS_KEY,
         secret_access_key=MINIO_SECRET_KEY,
     )
+    await storage.check_bucket()
 
     stored = await storage.put_file(
         key=key,
@@ -68,6 +72,17 @@ async def test_minio_private_object_lifecycle_and_presigned_download(tmp_path):
     assert signed.status_code == 200
     assert signed.content == source.read_bytes()
     assert downloaded.read_bytes() == source.read_bytes()
+
+    client = boto3.client(
+        "s3",
+        endpoint_url=MINIO_ENDPOINT,
+        region_name="us-east-1",
+        aws_access_key_id=MINIO_ACCESS_KEY,
+        aws_secret_access_key=MINIO_SECRET_KEY,
+    )
+    with pytest.raises(ClientError) as denied_listing:
+        await asyncio.to_thread(client.list_objects_v2, Bucket=MINIO_BUCKET)
+    assert denied_listing.value.response["ResponseMetadata"]["HTTPStatusCode"] == 403
 
     await storage.delete_object(key=stored.key, version_id=stored.version_id)
     await storage.delete_object(key=stored.key, version_id=stored.version_id)

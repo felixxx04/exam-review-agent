@@ -6,6 +6,8 @@ from redis.asyncio import Redis
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncEngine
 
+from app.services.object_storage import ObjectStorage
+
 
 class ReadinessProbe(Protocol):
     name: str
@@ -40,3 +42,13 @@ class RedisReadinessProbe:
             await client.ping()
         finally:
             await client.aclose()
+
+
+class ObjectStorageReadinessProbe:
+    name = "object_storage"
+
+    def __init__(self, storage: ObjectStorage) -> None:
+        self._storage = storage
+
+    async def check(self) -> None:
+        await self._storage.check_bucket()

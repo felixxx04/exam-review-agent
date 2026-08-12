@@ -1,13 +1,22 @@
 from __future__ import annotations
 
 import datetime
+from unittest.mock import AsyncMock
 
 import pytest
 from httpx import AsyncClient
 from sqlalchemy import delete, select
 
 from app.core.auth import AuthenticatedUser, get_current_user
-from app.db.models import Exam, StudyAvailability, User
+from app.db.models import (
+    Course,
+    Exam,
+    Material,
+    MaterialChunk,
+    StorageStatus,
+    StudyAvailability,
+    User,
+)
 from app.main import app
 
 
@@ -18,6 +27,42 @@ COURSE_PAYLOAD = {
     "long_term_goal": "掌握事务、索引和查询优化",
     "daily_available_minutes": 90,
 }
+
+MINIMAL_PDF = b"%PDF-1.4\n1 0 obj\n<< /Type /Catalog >>\nendobj\ntrailer\n<<>>\n%%EOF\n"
+
+
+async def _upload_course_material_with_chunk(
+    client_with_db: AsyncClient,
+    *,
+    course_id: int,
+    monkeypatch,
+):
+    from app.services.parser_service import Chunk, ParseResult
+
+    class ParserStub:
+        async def parse(self, file_path, file_type=None):
+            return ParseResult(
+                chunks=[Chunk(text="course deletion retrieval chunk")], page_count=1
+            )
+
+    retrieval = AsyncMock()
+    retrieval.index_chunks = AsyncMock(return_value=["course-delete-chunk"])
+    retrieval.delete_chunks = AsyncMock()
+    retrieval.delete_collection = AsyncMock()
+    monkeypatch.setattr(
+        "app.services.parser_service.ParserService", lambda: ParserStub()
+    )
+    monkeypatch.setattr(
+        "app.services.retrieval_service.RetrievalService", lambda: retrieval
+    )
+
+    response = await client_with_db.post(
+        f"/api/materials?course_id={course_id}",
+        files={"file": ("course-notes.pdf", MINIMAL_PDF, "application/pdf")},
+    )
+
+    assert response.status_code == 200
+    return response.json()["data"], retrieval
 
 
 @pytest.mark.asyncio
@@ -78,6 +123,151 @@ async def test_course_crud_exposes_exam_goal_and_daily_availability(
     assert (
         await client_with_db.get(f"/api/courses/{created['id']}")
     ).status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_course_delete_removes_private_material_objects_chunks_and_metadata(
+    client_with_db: AsyncClient,
+    db_session,
+    authenticated_user: User,
+    object_storage,
+    monkeypatch,
+):
+    course = (await client_with_db.post("/api/courses", json=COURSE_PAYLOAD)).json()[
+        "data"
+    ]
+    uploaded, retrieval = await _upload_course_material_with_chunk(
+        client_with_db, course_id=course["id"], monkeypatch=monkeypatch
+    )
+    material = await db_session.get(Material, uploaded["id"])
+    assert material is not None
+    object_key = material.object_key
+    assert object_key is not None
+
+    deleted = await client_with_db.delete(f"/api/courses/{course['id']}")
+
+    assert deleted.status_code == 200
+    assert (object_key, "in-memory-version") in object_storage.deleted
+    assert object_key not in object_storage.objects
+    chunk_id = retrieval.index_chunks.call_args.kwargs["chunk_ids"][0]
+    retrieval.delete_chunks.assert_awaited_once_with(
+        user_id=str(authenticated_user.id),
+        chunk_ids=[chunk_id],
+        course_id=course["id"],
+    )
+    retrieval.delete_collection.assert_awaited_once_with(
+        user_id=str(authenticated_user.id), course_id=course["id"]
+    )
+    assert (
+        await db_session.scalar(select(Material).where(Material.id == uploaded["id"]))
+        is None
+    )
+    assert (
+        await db_session.scalar(
+            select(MaterialChunk).where(MaterialChunk.material_id == uploaded["id"])
+        )
+        is None
+    )
+
+
+@pytest.mark.asyncio
+async def test_course_delete_keeps_deleting_material_for_retry_when_object_cleanup_fails(
+    client_with_db: AsyncClient,
+    db_session,
+    object_storage,
+    monkeypatch,
+):
+    course = (await client_with_db.post("/api/courses", json=COURSE_PAYLOAD)).json()[
+        "data"
+    ]
+    uploaded, retrieval = await _upload_course_material_with_chunk(
+        client_with_db, course_id=course["id"], monkeypatch=monkeypatch
+    )
+    material = await db_session.get(Material, uploaded["id"])
+    assert material is not None
+    object_key = material.object_key
+    assert object_key is not None
+    object_storage.fail_delete = True
+
+    failed = await client_with_db.delete(f"/api/courses/{course['id']}")
+
+    assert failed.status_code == 503
+    assert failed.json()["error"]["code"] == "OBJECT_STORAGE_UNAVAILABLE"
+    assert (
+        await db_session.scalar(select(Course).where(Course.id == course["id"]))
+    ) is not None
+    material = await db_session.get(Material, uploaded["id"])
+    assert material is not None
+    assert material.storage_status == StorageStatus.DELETING
+    assert material.object_key == object_key
+    assert object_key in object_storage.objects
+    retrieval.delete_chunks.assert_not_awaited()
+
+    object_storage.fail_delete = False
+    retried = await client_with_db.delete(f"/api/courses/{course['id']}")
+
+    assert retried.status_code == 200
+    assert await db_session.get(Course, course["id"]) is None
+
+
+@pytest.mark.asyncio
+async def test_course_delete_reclaims_an_expired_processing_material(
+    client_with_db: AsyncClient,
+    db_session,
+    monkeypatch,
+):
+    course = (await client_with_db.post("/api/courses", json=COURSE_PAYLOAD)).json()[
+        "data"
+    ]
+    uploaded, _retrieval = await _upload_course_material_with_chunk(
+        client_with_db, course_id=course["id"], monkeypatch=monkeypatch
+    )
+    material = await db_session.get(Material, uploaded["id"])
+    assert material is not None
+    material.processing_status = "processing"
+    material.processing_lease_expires_at = None
+    await db_session.commit()
+
+    deleted = await client_with_db.delete(f"/api/courses/{course['id']}")
+
+    assert deleted.status_code == 200
+    assert await db_session.get(Course, course["id"]) is None
+
+
+@pytest.mark.asyncio
+async def test_course_delete_defers_an_unknown_object_write_tombstone(
+    client_with_db: AsyncClient,
+    db_session,
+):
+    course = (await client_with_db.post("/api/courses", json=COURSE_PAYLOAD)).json()[
+        "data"
+    ]
+    material = Material(
+        user_id=1,
+        course_id=course["id"],
+        filename="uncertain-object",
+        original_filename="uncertain-object.pdf",
+        file_type="pdf",
+        file_size=16,
+        storage_backend="s3",
+        storage_status=StorageStatus.DELETING,
+    )
+    db_session.add(material)
+    await db_session.flush()
+    material.object_key = (
+        f"users/1/courses/{course['id']}/materials/{material.id}/"
+        f"objects/{material.object_id}"
+    )
+    material.object_write_uncertain = True
+    await db_session.commit()
+
+    deleted = await client_with_db.delete(f"/api/courses/{course['id']}")
+
+    assert deleted.status_code == 503
+    assert deleted.json()["error"]["code"] == "OBJECT_STORAGE_UNAVAILABLE"
+    assert await db_session.get(Course, course["id"]) is not None
+    await db_session.refresh(material)
+    assert material.storage_status == StorageStatus.DELETING
 
 
 @pytest.mark.asyncio

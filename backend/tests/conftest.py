@@ -1,6 +1,8 @@
 import gc
+import hashlib
 import os
 import tempfile
+from pathlib import Path
 from unittest.mock import AsyncMock
 
 import pytest
@@ -24,11 +26,91 @@ os.environ.update(
     }
 )
 
-from app.db.database import get_db
-from app.core.auth import AuthenticatedUser, get_current_user
-from app.db.models import Base, User
-from app.main import app
-from app.repositories.mistakes import SqlAlchemyMistakeRepository
+from app.api.dependencies import get_object_storage  # noqa: E402
+from app.core.auth import AuthenticatedUser, get_current_user  # noqa: E402
+from app.core.middleware import RateLimitMiddleware  # noqa: E402
+from app.db.database import get_db  # noqa: E402
+from app.db.models import Base, User  # noqa: E402
+from app.main import app  # noqa: E402
+from app.repositories.mistakes import SqlAlchemyMistakeRepository  # noqa: E402
+from app.services.object_storage import (  # noqa: E402
+    ObjectStorageError,
+    PresignedGet,
+    StoredObject,
+)
+
+
+class InMemoryObjectStorage:
+    """Test-only object storage implementation for API and service tests."""
+
+    def __init__(self) -> None:
+        self.objects: dict[str, bytes] = {}
+        self.deleted: list[tuple[str, str | None]] = []
+        self.fail_delete = False
+
+    async def put_file(
+        self,
+        *,
+        key: str,
+        source: Path,
+        size_bytes: int,
+        content_type: str,
+        sha256: str,
+    ) -> StoredObject:
+        content = source.read_bytes()
+        assert len(content) == size_bytes
+        assert hashlib.sha256(content).hexdigest() == sha256
+        self.objects[key] = content
+        return StoredObject(
+            key=key,
+            size_bytes=size_bytes,
+            etag="in-memory-etag",
+            version_id="in-memory-version",
+        )
+
+    async def download_to_path(
+        self,
+        *,
+        key: str,
+        destination: Path,
+        version_id: str | None = None,
+    ) -> None:
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        destination.write_bytes(self.objects[key])
+
+    async def delete_object(self, *, key: str, version_id: str | None = None) -> None:
+        if self.fail_delete:
+            raise ObjectStorageError(
+                "Object storage is temporarily unavailable",
+                "OBJECT_STORAGE_UNAVAILABLE",
+            )
+        self.deleted.append((key, version_id))
+        self.objects.pop(key, None)
+
+    async def presign_get(
+        self,
+        *,
+        key: str,
+        filename: str,
+        content_type: str,
+        disposition: str,
+        expires_in_seconds: int,
+        version_id: str | None = None,
+    ) -> PresignedGet:
+        return PresignedGet(
+            url=f"https://storage.example.test/{key}",
+            expires_in_seconds=expires_in_seconds,
+        )
+
+
+@pytest.fixture
+def object_storage():
+    storage = InMemoryObjectStorage()
+    app.dependency_overrides[get_object_storage] = lambda: storage
+    try:
+        yield storage
+    finally:
+        app.dependency_overrides.pop(get_object_storage, None)
 
 
 @pytest.fixture(scope="session", autouse=True)
@@ -88,17 +170,29 @@ async def authenticated_user(db_session):
 
 
 @pytest.fixture
-async def client_with_db(db_session, authenticated_user):
+async def client_with_db(db_session, authenticated_user, object_storage):
+    user_id = authenticated_user.id
+    username = authenticated_user.username
+    role = authenticated_user.role
+
     async def override_get_db():
         yield db_session
 
     app.dependency_overrides[get_db] = override_get_db
-    app.dependency_overrides[get_current_user] = lambda: AuthenticatedUser(
-        id=authenticated_user.id,
-        username=authenticated_user.username,
-        role=authenticated_user.role,
-        session_id="test-session",
-    )
+
+    def current_user_override() -> AuthenticatedUser:
+        # Avoid async lazy loading from FastAPI's synchronous dependency worker
+        # after a test commits the ORM fixture, while preserving deliberate
+        # in-test changes such as elevating the role to administrator.
+        return AuthenticatedUser(
+            id=user_id,
+            username=authenticated_user.__dict__.get("username", username),
+            role=authenticated_user.__dict__.get("role", role),
+            session_id="test-session",
+        )
+
+    app.dependency_overrides[get_current_user] = current_user_override
+    RateLimitMiddleware.reset()
 
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as c:
@@ -106,6 +200,7 @@ async def client_with_db(db_session, authenticated_user):
 
     app.dependency_overrides.pop(get_db, None)
     app.dependency_overrides.pop(get_current_user, None)
+    RateLimitMiddleware.reset()
 
 
 @pytest.fixture
@@ -117,13 +212,15 @@ def mistake_repository(db_session, authenticated_user):
 def mock_llm_service():
     """Mock LLMService that returns safe dummy responses."""
     mock = AsyncMock()
-    mock.invoke = AsyncMock(return_value=(
-        '[{"question":"测试问题",'
-        '"options":["A. 选项1","B. 选项2","C. 选项3","D. 选项4"],'
-        '"correct":"B",'
-        '"explanation":"测试解释",'
-        '"source_chunk_ids":["chunk-1"]}]'
-    ))
+    mock.invoke = AsyncMock(
+        return_value=(
+            '[{"question":"测试问题",'
+            '"options":["A. 选项1","B. 选项2","C. 选项3","D. 选项4"],'
+            '"correct":"B",'
+            '"explanation":"测试解释",'
+            '"source_chunk_ids":["chunk-1"]}]'
+        )
+    )
     return mock
 
 
@@ -133,11 +230,13 @@ def mock_retrieval_service():
     from app.services.retrieval_service import SearchResult
 
     mock = AsyncMock()
-    mock.search = AsyncMock(return_value=[
-        SearchResult(
-            text="测试内容",
-            score=0.9,
-            metadata={"source": "test.pdf", "page": 1},
-        )
-    ])
+    mock.search = AsyncMock(
+        return_value=[
+            SearchResult(
+                text="测试内容",
+                score=0.9,
+                metadata={"source": "test.pdf", "page": 1},
+            )
+        ]
+    )
     return mock

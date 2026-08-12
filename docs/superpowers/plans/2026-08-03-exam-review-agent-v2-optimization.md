@@ -1,6 +1,6 @@
 # 期末复习 Agent V2 优化实施计划
 
-> 状态：阶段 0 已完成；阶段 1 的 Task 1.1、Task 1.2、Task 1.3 已验收；Task 1.4 已完成实现，等待阶段 1 验收。
+> 状态：阶段 0 与阶段 1（Task 1.1～1.4）已验收；Task 2.1 已完成实现、TDD、复审和真实容器验证，等待用户验收。
 >
 > 基线：`main` 分支，提交 `23c17b5`。
 >
@@ -454,10 +454,24 @@ run.cancelled
 
 **工作项**
 
-- [ ] 上传前验证扩展名、MIME、Magic Bytes、大小和压缩包安全边界。
-- [ ] 对象 Key 由服务端生成，禁止使用用户文件名构造路径。
-- [ ] 使用内容哈希识别完全重复文件，并定义替换/保留策略。
-- [ ] 下载与预览使用短期签名 URL，不暴露存储凭证。
+- [x] 上传前验证扩展名、MIME、Magic Bytes、大小和压缩包安全边界。
+- [x] 对象 Key 由服务端生成，禁止使用用户文件名构造路径。
+- [x] 使用内容哈希识别完全重复文件，并定义替换/保留策略。
+- [x] 下载与预览使用短期签名 URL，不暴露存储凭证。
+- [x] 只有 `available` 资料可生成签名下载 URL；`reserved`、`deleting`、`deleted` 统一不可访问。
+
+**完成记录（2026-08-12）**
+
+- 新增私有 S3 兼容 `ObjectStorage` Protocol 和 MinIO/S3v4 适配器；PostgreSQL `materials` 保存对象 Key、版本、ETag、哈希、后端与 `reserved -> available -> deleting -> deleted` 存储状态，Bucket 从不承担元数据或配额事实源角色。
+- 上传先以用户行锁提交数据库预留，再在受限临时文件中完成 PDF/OOXML MIME、签名、大小、压缩率、路径、符号链接、加密、条目数与解压总量校验；对象 Key 只由服务端使用用户、课程、资料和随机 `object_id` 生成。相同用户同一课程的相同 SHA-256 被拒绝，不跨用户或跨课程去重。
+- 对象写入后验证大小与 SHA-256 metadata；提交或取消失败时按精确对象版本补偿。删除与账号注销先保留 `deleting` 元数据，成功后写 `deleted` tombstone；旧本地对象在过渡期仍可清理。
+- MinIO bootstrap 创建私有版本化 Bucket、固定 readiness sentinel 与无列举权限的应用身份。签名 URL 仅在所有权检查后按单对象 GET 生成，响应设置 `Cache-Control: private, no-store` 与 `Referrer-Policy: no-referrer`。
+- 新增按可信 `user_id` 绑定 RLS 的本地预留回收命令；它是 Task 2.1 的崩溃恢复入口，Task 2.2 只能复用它调度，不能替换 PostgreSQL 的真相源。
+- 上传请求由 ASGI `receive` 包装器按声明长度与分块累计字节数硬限制；每块在交给 multipart 解析器前检查，合法请求不预缓存完整 body，超限不会进入端点、落盘、创建预留或写对象。非回环 S3 HTTP 默认被启动校验拒绝，Docker 内部 HTTP 必须显式声明可信。删除恢复会先清理临时检索索引和持久 chunk，再写 `deleted` tombstone。
+- MinIO bootstrap 显式覆盖 `mc` 镜像入口点并使用其可用的 POSIX shell 替换能力，真实启动已通过桶、版本化、sentinel、应用用户和最小权限策略初始化。
+- `storage_status` 迁移与 ORM 使用显式长度 16 的非原生 Enum/CHECK 表达，兼容已创建的 `VARCHAR(16)` 列；主库与空库/旧资料升级后的 `alembic check` 均无漂移。
+- 最终 RED/GREEN 修复了外部索引与资料/课程/账号删除的互锁、过期处理租约恢复、普通 `deleting` 对象删除重试、已完成索引资料的安全重处理和重处理最终提交失败的恢复窗口，以及随机预分配 chunk ID 的稳定测试顺序。迁移 `20260809_0006` 保存不确定写入标记和处理租约；`20260812_0007` 增加每次处理尝试的随机 `processing_lease_id`，使恢复或删除使旧 worker 的处理尝试失效后，旧 worker 不能重新写入孤儿向量。
+- 真实验证：主库应用角色已在 `20260812_0007 (head)`，`alembic check` 无漂移，离线 `upgrade head --sql` 包含 `0006 -> 0007`；PostgreSQL RLS、删除/配额/上传索引互锁与双 Session stale-worker fencing 合计 `8 passed`，低权限 MinIO 生命周期/签名下载 `1 passed`，并确认应用身份没有 `ListBucket` 权限。当前聚焦资料、对象存储、删除、恢复、迁移、middleware 与 health 回归为 `142 passed`；`test_stale_processing_attempt_is_fenced_before_writing_vectors` 确认恢复接管后旧 worker 不会调用索引。完整应用 readiness 的 database、Redis、object storage 均为 `ok`。最终后端全量为 `377 passed, 11 skipped`；前端为 `103 passed`，格式、Lint 与类型检查通过。
 
 ### Task 2.2：ARQ 任务状态机
 
@@ -1004,10 +1018,10 @@ V2 只有同时满足以下条件才算完成：
 
 ## 13. 审批门
 
-阶段 0 已由用户批准并完成。阶段 1 的 Task 1.1、Task 1.2 与 Task 1.3 已验收；Task 1.4 已获准并完成实现，当前停在阶段 1 验收门。未经用户确认不得开始阶段 2。
+阶段 0 与 Phase 1 已获用户确认。阶段 2 仅授权并完成 Task 2.1；Task 2.2、ARQ、pgvector 检索切换、Planner/Agent Runtime 与无关重构仍未获授权。
 
 下一步由用户选择：
 
-- `确认 Phase 1，开始 Task 2.1`
+- `验收 Task 2.1，确认后开始 Task 2.2`
 - `修改计划：<需要调整的内容>`
-- `暂停实施，保留当前 Task 1.4 结果`
+- `暂停实施，保留当前 Task 2.1 结果`

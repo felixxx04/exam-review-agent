@@ -6,7 +6,15 @@ import pytest
 from sqlalchemy.exc import SQLAlchemyError
 
 from app.core.exceptions import AppException
-from app.db.models import AccountDeletionJob, Course, InviteCode, Material, User
+from app.db.models import (
+    AccountDeletionJob,
+    Course,
+    InviteCode,
+    Material,
+    ProcessingStatus,
+    StorageStatus,
+    User,
+)
 from app.services.quota_service import QuotaService
 
 
@@ -22,15 +30,14 @@ class RecordingVectorStore:
             raise RuntimeError("vector backend unavailable")
 
 
-async def _user_with_material(db_session, tmp_path, username: str):
+async def _user_with_material(db_session, object_storage, username: str):
     user = User(username=username, hashed_password="hash", display_name=username)
     db_session.add(user)
     await db_session.flush()
     course = Course(user_id=user.id, name="Deletion", is_default=True)
     db_session.add(course)
     await db_session.flush()
-    filename = f"{username}.pdf"
-    (tmp_path / filename).write_bytes(b"private material")
+    filename = f"{username}-object"
     material = Material(
         user_id=user.id,
         course_id=course.id,
@@ -38,15 +45,23 @@ async def _user_with_material(db_session, tmp_path, username: str):
         original_filename=filename,
         file_type="pdf",
         file_size=16,
+        storage_status="available",
     )
     db_session.add(material)
+    await db_session.flush()
+    material.object_key = (
+        f"users/{user.id}/courses/{course.id}/materials/{material.id}/"
+        f"objects/{material.object_id}"
+    )
+    material.object_version_id = "in-memory-version"
+    object_storage.objects[material.object_key] = b"private material"
     await db_session.commit()
     return user, course, material
 
 
 @pytest.mark.asyncio
 async def test_account_deletion_removes_database_files_and_vector_scopes(
-    db_session, tmp_path
+    db_session, object_storage
 ):
     from app.services.account_deletion_service import (
         AccountArtifactCleaner,
@@ -54,10 +69,10 @@ async def test_account_deletion_removes_database_files_and_vector_scopes(
     )
 
     user, course, material = await _user_with_material(
-        db_session, tmp_path, "delete_success"
+        db_session, object_storage, "delete_success"
     )
     vector_store = RecordingVectorStore()
-    cleaner = AccountArtifactCleaner(tmp_path, vector_store)
+    cleaner = AccountArtifactCleaner(object_storage, vector_store)
 
     service = AccountDeletionService(db_session, cleaner)
     result = await service.request(user.id)
@@ -73,7 +88,7 @@ async def test_account_deletion_removes_database_files_and_vector_scopes(
     assert status.status == "succeeded"
     assert status.user_id is None
     assert await db_session.get(User, user.id) is None
-    assert not (tmp_path / material.filename).exists()
+    assert material.object_key not in object_storage.objects
     assert vector_store.deleted == [
         str(user.id),
         f"{user.id}_course_{course.id}",
@@ -81,17 +96,48 @@ async def test_account_deletion_removes_database_files_and_vector_scopes(
 
 
 @pytest.mark.asyncio
-async def test_failed_account_deletion_is_visible_retryable_and_idempotent(
-    db_session, tmp_path
+async def test_account_deletion_keeps_an_unknown_object_write_tombstone_retryable(
+    db_session, object_storage
 ):
     from app.services.account_deletion_service import (
         AccountArtifactCleaner,
         AccountDeletionService,
     )
 
-    user, _, _ = await _user_with_material(db_session, tmp_path, "delete_retry")
+    user, _course, material = await _user_with_material(
+        db_session, object_storage, "delete_unknown_object_write"
+    )
+    material.storage_status = StorageStatus.DELETING
+    material.object_write_uncertain = True
+    await db_session.commit()
+    vector_store = RecordingVectorStore()
+    service = AccountDeletionService(
+        db_session, AccountArtifactCleaner(object_storage, vector_store)
+    )
+
+    requested = await service.request(user.id)
+    await service.execute(requested.job.public_id)
+
+    assert requested.job.status == "failed"
+    assert requested.job.error_code == "ARTIFACT_CLEANUP_FAILED"
+    assert await db_session.get(User, user.id) is not None
+    assert await db_session.get(Material, material.id) is not None
+    assert material.object_key in object_storage.objects
+    assert vector_store.deleted == []
+
+
+@pytest.mark.asyncio
+async def test_failed_account_deletion_is_visible_retryable_and_idempotent(
+    db_session, object_storage
+):
+    from app.services.account_deletion_service import (
+        AccountArtifactCleaner,
+        AccountDeletionService,
+    )
+
+    user, _, _ = await _user_with_material(db_session, object_storage, "delete_retry")
     vector_store = RecordingVectorStore(fail_once=True)
-    cleaner = AccountArtifactCleaner(tmp_path, vector_store)
+    cleaner = AccountArtifactCleaner(object_storage, vector_store)
     service = AccountDeletionService(db_session, cleaner)
     invite = InviteCode(
         code_hash="d" * 64,
@@ -129,6 +175,66 @@ async def test_failed_account_deletion_is_visible_retryable_and_idempotent(
     assert retried.attempt_count == 2
     assert repeated.status == "succeeded"
     assert vector_store.deleted == calls_after_success
+    assert await db_session.get(User, user.id) is None
+
+
+@pytest.mark.asyncio
+async def test_account_deletion_retries_an_ordinary_deleting_material(
+    db_session, object_storage
+):
+    from app.services.account_deletion_service import (
+        AccountArtifactCleaner,
+        AccountDeletionService,
+    )
+
+    user, _course, material = await _user_with_material(
+        db_session, object_storage, "delete_ordinary_deleting"
+    )
+    material.storage_status = StorageStatus.DELETING
+    await db_session.commit()
+    object_storage.fail_delete = True
+    service = AccountDeletionService(
+        db_session,
+        AccountArtifactCleaner(object_storage, RecordingVectorStore()),
+    )
+
+    requested = await service.request(user.id)
+    await service.execute(requested.job.public_id)
+
+    assert requested.job.status == "failed"
+    assert await db_session.get(Material, material.id) is not None
+
+    object_storage.fail_delete = False
+    retried = await service.retry(requested.job.public_id, requested.status_token)
+
+    assert retried.status == "succeeded"
+    assert await db_session.get(User, user.id) is None
+
+
+@pytest.mark.asyncio
+async def test_account_deletion_reclaims_an_expired_processing_material(
+    db_session, object_storage
+):
+    from app.services.account_deletion_service import (
+        AccountArtifactCleaner,
+        AccountDeletionService,
+    )
+
+    user, _course, material = await _user_with_material(
+        db_session, object_storage, "delete_stale_processing"
+    )
+    material.processing_status = ProcessingStatus.PROCESSING
+    material.processing_lease_expires_at = None
+    await db_session.commit()
+    service = AccountDeletionService(
+        db_session,
+        AccountArtifactCleaner(object_storage, RecordingVectorStore()),
+    )
+
+    requested = await service.request(user.id)
+    await service.execute(requested.job.public_id)
+
+    assert requested.job.status == "succeeded"
     assert await db_session.get(User, user.id) is None
 
 
@@ -186,33 +292,78 @@ async def test_quota_service_allows_capacity_and_rejects_missing_users(
 
 
 @pytest.mark.asyncio
-async def test_account_artifact_cleaner_rejects_paths_outside_upload_root(tmp_path):
+async def test_account_artifact_cleaner_removes_objects_before_vectors(object_storage):
     from app.services.account_deletion_service import (
         AccountArtifactCleaner,
         MaterialArtifact,
     )
 
-    outside = tmp_path.parent / f"{tmp_path.name}-outside.pdf"
-    outside.write_bytes(b"must remain")
     vector_store = RecordingVectorStore()
-    cleaner = AccountArtifactCleaner(tmp_path, vector_store)
+    object_key = "users/1/courses/2/materials/3/objects/object-id"
+    object_storage.objects[object_key] = b"must be removed"
+    cleaner = AccountArtifactCleaner(object_storage, vector_store)
 
-    try:
-        with pytest.raises(ValueError, match="outside the upload root"):
-            await cleaner.clean(
-                1,
-                [],
-                [MaterialArtifact(filename=outside.name, storage_path=str(outside))],
-            )
-        assert outside.exists()
-        assert vector_store.deleted == []
-    finally:
-        outside.unlink(missing_ok=True)
+    await cleaner.clean(
+        1,
+        [2],
+        [MaterialArtifact(object_key=object_key, object_version_id="version-1")],
+    )
+
+    assert object_key not in object_storage.objects
+    assert vector_store.deleted == ["1", "1_course_2"]
+
+
+@pytest.mark.asyncio
+async def test_account_deletion_cleans_legacy_local_materials_during_transition(
+    db_session, object_storage, tmp_path
+):
+    from app.services.account_deletion_service import (
+        AccountArtifactCleaner,
+        AccountDeletionService,
+    )
+
+    user = User(username="legacy-delete", hashed_password="hash", display_name="Legacy")
+    db_session.add(user)
+    await db_session.flush()
+    course = Course(user_id=user.id, name="Legacy", is_default=True)
+    db_session.add(course)
+    await db_session.flush()
+    legacy_path = tmp_path / "legacy-delete.pdf"
+    legacy_path.write_bytes(b"legacy private material")
+    db_session.add(
+        Material(
+            user_id=user.id,
+            course_id=course.id,
+            filename=legacy_path.name,
+            original_filename=legacy_path.name,
+            file_type="pdf",
+            file_size=legacy_path.stat().st_size,
+            storage_backend="legacy_local",
+            storage_status="available",
+            storage_path=str(legacy_path),
+        )
+    )
+    await db_session.commit()
+
+    service = AccountDeletionService(
+        db_session,
+        AccountArtifactCleaner(
+            object_storage,
+            RecordingVectorStore(),
+            legacy_upload_root=tmp_path,
+        ),
+    )
+    result = await service.request(user.id)
+    await service.execute(result.job.public_id)
+
+    assert result.job.status == "succeeded"
+    assert not legacy_path.exists()
+    assert await db_session.get(User, user.id) is None
 
 
 @pytest.mark.asyncio
 async def test_request_returns_queryable_token_when_deletion_preparation_fails(
-    db_session, tmp_path, monkeypatch
+    db_session, object_storage, monkeypatch
 ):
     from app.services.account_deletion_service import (
         AccountArtifactCleaner,
@@ -220,7 +371,7 @@ async def test_request_returns_queryable_token_when_deletion_preparation_fails(
     )
 
     user, _, _ = await _user_with_material(
-        db_session, tmp_path, "delete_prepare_failure"
+        db_session, object_storage, "delete_prepare_failure"
     )
     original_execute = db_session.execute
     failed_once = False
@@ -235,7 +386,7 @@ async def test_request_returns_queryable_token_when_deletion_preparation_fails(
     monkeypatch.setattr(db_session, "execute", fail_course_snapshot)
     service = AccountDeletionService(
         db_session,
-        AccountArtifactCleaner(tmp_path, RecordingVectorStore()),
+        AccountArtifactCleaner(object_storage, RecordingVectorStore()),
     )
 
     requested = await service.request(user.id)
@@ -251,7 +402,7 @@ async def test_request_returns_queryable_token_when_deletion_preparation_fails(
 
 @pytest.mark.asyncio
 async def test_committed_success_is_not_downgraded_when_commit_result_is_uncertain(
-    db_session, tmp_path, monkeypatch
+    db_session, object_storage, monkeypatch
 ):
     from app.services.account_deletion_service import (
         AccountArtifactCleaner,
@@ -259,7 +410,7 @@ async def test_committed_success_is_not_downgraded_when_commit_result_is_uncerta
     )
 
     user, _, _ = await _user_with_material(
-        db_session, tmp_path, "delete_commit_uncertain"
+        db_session, object_storage, "delete_commit_uncertain"
     )
     original_commit = db_session.commit
     raised_once = False
@@ -278,7 +429,7 @@ async def test_committed_success_is_not_downgraded_when_commit_result_is_uncerta
     monkeypatch.setattr(db_session, "commit", commit_then_report_failure)
     service = AccountDeletionService(
         db_session,
-        AccountArtifactCleaner(tmp_path, RecordingVectorStore()),
+        AccountArtifactCleaner(object_storage, RecordingVectorStore()),
     )
 
     requested = await service.request(user.id)
@@ -292,7 +443,7 @@ async def test_committed_success_is_not_downgraded_when_commit_result_is_uncerta
 
 @pytest.mark.asyncio
 async def test_execution_recovery_failure_leaves_the_delivered_token_retryable(
-    db_session, tmp_path, monkeypatch
+    db_session, object_storage, monkeypatch
 ):
     from app.services.account_deletion_service import (
         AccountArtifactCleaner,
@@ -300,11 +451,11 @@ async def test_execution_recovery_failure_leaves_the_delivered_token_retryable(
     )
 
     user, _, _ = await _user_with_material(
-        db_session, tmp_path, "delete_recovery_failure"
+        db_session, object_storage, "delete_recovery_failure"
     )
     service = AccountDeletionService(
         db_session,
-        AccountArtifactCleaner(tmp_path, RecordingVectorStore()),
+        AccountArtifactCleaner(object_storage, RecordingVectorStore()),
     )
     requested = await service.request(user.id)
     job_id = requested.job.public_id

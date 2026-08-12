@@ -1,4 +1,4 @@
-from pydantic import Field
+from pydantic import Field, SecretStr
 from pydantic_settings import BaseSettings
 
 
@@ -25,6 +25,17 @@ class Settings(BaseSettings):
     refresh_token_days: int = 30
     auth_cookie_secure: bool = True
     max_upload_size_mb: int = 50
+    max_archive_uncompressed_mb: int = 128
+    s3_endpoint_url: str = "http://127.0.0.1:9000"
+    s3_public_endpoint_url: str = "http://127.0.0.1:9000"
+    s3_allow_insecure_http: bool = False
+    s3_region: str = "us-east-1"
+    s3_bucket: str = "exam-review-materials"
+    s3_access_key_id: str = ""
+    s3_secret_access_key: SecretStr = Field(default_factory=lambda: SecretStr(""))
+    s3_presigned_url_ttl_seconds: int = 300
+    s3_connect_timeout_seconds: int = 5
+    s3_read_timeout_seconds: int = 30
     cors_origins: str = "http://localhost:3000,http://127.0.0.1:3000"
 
     model_config = {"env_file": ".env", "env_file_encoding": "utf-8"}

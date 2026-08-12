@@ -1,6 +1,9 @@
 import asyncio
+import ipaddress
 import logging
+import re
 from contextlib import asynccontextmanager
+from urllib.parse import urlparse
 
 from fastapi import Depends, FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
@@ -15,13 +18,15 @@ from app.api.materials import router as materials_router
 from app.api.memory import router as memory_router
 from app.api.quiz import router as quiz_router
 from app.api.review import router as review_router
+from app.api.dependencies import get_object_storage
 from app.core.config import settings
 from app.core.exceptions import AppException
-from app.core.middleware import RateLimitMiddleware
+from app.core.middleware import RateLimitMiddleware, UploadBodyLimitMiddleware
 from app.db.database import engine
 from app.schemas.common import ApiResponse
 from app.services.health import (
     DatabaseReadinessProbe,
+    ObjectStorageReadinessProbe,
     ReadinessProbe,
     RedisReadinessProbe,
 )
@@ -36,6 +41,7 @@ INSECURE_JWT_SECRETS = frozenset(
         "replace-with-at-least-32-random-characters",
     }
 )
+S3_BUCKET_PATTERN = re.compile(r"[a-z0-9][a-z0-9.-]{1,61}[a-z0-9]")
 
 EXCEPTION_STATUS: dict[str, int] = {
     "INSUFFICIENT_MATERIAL": 404,
@@ -50,7 +56,15 @@ EXCEPTION_STATUS: dict[str, int] = {
     "NOT_FOUND": 404,
     "CONFLICT": 409,
     "QUOTA_EXCEEDED": 409,
+    "DUPLICATE_MATERIAL": 409,
     "ACCOUNT_DELETION_IN_PROGRESS": 409,
+    "INVALID_FILE_TYPE": 400,
+    "INVALID_FILE_SIGNATURE": 400,
+    "UNSAFE_ARCHIVE": 400,
+    "FILE_TOO_LARGE": 413,
+    "INVALID_DOWNLOAD": 400,
+    "OBJECT_VERIFICATION_FAILED": 502,
+    "OBJECT_STORAGE_UNAVAILABLE": 503,
 }
 
 
@@ -71,10 +85,49 @@ def _validate_settings_on_startup() -> None:
     jwt_secret = settings.jwt_secret.strip()
     if jwt_secret in INSECURE_JWT_SECRETS or len(jwt_secret) < MIN_JWT_SECRET_LENGTH:
         missing.append("JWT_SECRET (must not be the default value)")
+    s3_access_key_id = settings.s3_access_key_id
+    s3_secret = settings.s3_secret_access_key.get_secret_value()
+    if _is_missing_or_placeholder(s3_access_key_id):
+        missing.append("S3_ACCESS_KEY_ID")
+    if _is_missing_or_placeholder(s3_secret):
+        missing.append("S3_SECRET_ACCESS_KEY")
+    bucket = settings.s3_bucket.strip()
+    if not S3_BUCKET_PATTERN.fullmatch(bucket):
+        missing.append("S3_BUCKET")
+    for name, endpoint in (
+        ("S3_ENDPOINT_URL", settings.s3_endpoint_url),
+        ("S3_PUBLIC_ENDPOINT_URL", settings.s3_public_endpoint_url),
+    ):
+        parsed = urlparse(endpoint)
+        if parsed.scheme not in {"http", "https"} or not parsed.netloc:
+            missing.append(name)
+        elif parsed.scheme == "http" and not _is_local_s3_endpoint(parsed):
+            if name == "S3_ENDPOINT_URL" and settings.s3_allow_insecure_http:
+                continue
+            missing.append(name)
+    if not 1 <= settings.s3_presigned_url_ttl_seconds <= 900:
+        missing.append("S3_PRESIGNED_URL_TTL_SECONDS")
     if missing:
         msg = f"Missing or invalid required settings: {', '.join(missing)}"
         logger.critical(msg)
         raise SystemExit(msg)
+
+
+def _is_local_s3_endpoint(parsed) -> bool:
+    host = parsed.hostname
+    if host == "localhost":
+        return True
+    if host is None:
+        return False
+    try:
+        return ipaddress.ip_address(host).is_loopback
+    except ValueError:
+        return False
+
+
+def _is_missing_or_placeholder(value: str) -> bool:
+    normalized = value.strip()
+    return not normalized or normalized.startswith("replace-with-")
 
 
 @asynccontextmanager
@@ -89,6 +142,7 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
+app.add_middleware(UploadBodyLimitMiddleware)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[o.strip() for o in settings.cors_origins.split(",")],
@@ -113,6 +167,7 @@ def get_readiness_probes() -> list[ReadinessProbe]:
     return [
         DatabaseReadinessProbe(engine),
         RedisReadinessProbe(settings.redis_url),
+        ObjectStorageReadinessProbe(get_object_storage()),
     ]
 
 

@@ -6,7 +6,7 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.exceptions import AppException
-from app.db.models import Material, User
+from app.db.models import Material, StorageStatus, User
 
 
 @dataclass(frozen=True)
@@ -72,7 +72,10 @@ class QuotaService:
             select(
                 func.count(Material.id),
                 func.coalesce(func.sum(Material.file_size), 0),
-            ).where(Material.user_id == user.id)
+            ).where(
+                Material.user_id == user.id,
+                Material.storage_status != StorageStatus.DELETED,
+            )
         )
         files_used, storage_used_bytes = result.one()
         return QuotaUsage(

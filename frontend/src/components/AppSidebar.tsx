@@ -14,6 +14,7 @@ import { useChatStore } from "@/stores/chatStore";
 import type { Conversation, Material } from "@/types";
 import {
   FileText,
+  Download,
   History,
   Plus,
   Trash2,
@@ -53,6 +54,7 @@ export function AppSidebar({
   } = useChatStore();
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [loadingConversations, setLoadingConversations] = useState(false);
+  const [downloadError, setDownloadError] = useState<string | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const previousReadyNamesRef = useRef<Set<string> | null>(null);
   const handleNewConversation = useCreateConversation(onConversationChange);
@@ -128,6 +130,25 @@ export function AppSidebar({
       return;
     }
     setMaterialScope([...materialScope, filename]);
+  }
+
+  async function downloadMaterial(id: number) {
+    setDownloadError(null);
+    const downloadWindow = window.open("", "_blank");
+    if (!downloadWindow) {
+      setDownloadError("浏览器阻止了下载窗口，请允许弹出窗口后重试。");
+      return;
+    }
+
+    downloadWindow.opener = null;
+
+    try {
+      const access = await api.materials.accessUrl(id);
+      downloadWindow.location.href = access.url;
+    } catch {
+      downloadWindow.close();
+      setDownloadError("下载资料失败，请重试。");
+    }
   }
 
   return (
@@ -223,6 +244,11 @@ export function AppSidebar({
           }}
           aria-label="上传复习资料"
         />
+        {downloadError && (
+          <div className="sidebar-empty" role="alert">
+            {downloadError}
+          </div>
+        )}
         <div className="sidebar-list">
           {materialsLoading && materials.length === 0 && (
             <div className="sidebar-empty">正在加载文档</div>
@@ -269,6 +295,18 @@ export function AppSidebar({
                   }}
                 >
                   <X size={14} />
+                </button>
+                <button
+                  type="button"
+                  aria-label={`下载 ${material.original_filename}`}
+                  title="下载资料"
+                  className="sidebar-icon-button"
+                  disabled={material.storage_status !== "available"}
+                  onClick={() => {
+                    void downloadMaterial(material.id);
+                  }}
+                >
+                  <Download size={14} />
                 </button>
               </div>
             );

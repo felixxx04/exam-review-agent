@@ -18,9 +18,10 @@ def test_postgresql_is_the_application_default():
 
 
 def test_alembic_uses_psycopg_for_async_postgresql_url():
-    assert to_sync_database_url(
-        "postgresql+asyncpg://user:pass@localhost/exam_review"
-    ) == "postgresql+psycopg://user:pass@localhost/exam_review"
+    assert (
+        to_sync_database_url("postgresql+asyncpg://user:pass@localhost/exam_review")
+        == "postgresql+psycopg://user:pass@localhost/exam_review"
+    )
 
 
 def test_alembic_uses_pysqlite_for_async_sqlite_url():
@@ -48,10 +49,7 @@ def test_compose_bootstraps_application_role_without_rls_bypass():
     assert postgres["environment"]["POSTGRES_USER"] == (
         "${POSTGRES_ADMIN_USER:-exam_review_admin}"
     )
-    assert (
-        "./infra/postgres/init:/docker-entrypoint-initdb.d:ro"
-        in postgres["volumes"]
-    )
+    assert "./infra/postgres/init:/docker-entrypoint-initdb.d:ro" in postgres["volumes"]
 
     bootstrap = (
         REPOSITORY_ROOT / "infra" / "postgres" / "init" / "001-app-role.sh"
@@ -59,3 +57,24 @@ def test_compose_bootstraps_application_role_without_rls_bypass():
     assert "CREATE ROLE exam_review" in bootstrap
     assert "NOSUPERUSER" in bootstrap
     assert "NOBYPASSRLS" in bootstrap
+
+
+def test_compose_runs_minio_initialization_through_a_shell_entrypoint():
+    compose = yaml.safe_load(
+        (REPOSITORY_ROOT / "compose.yaml").read_text(encoding="utf-8")
+    )
+    minio_init = compose["services"]["minio-init"]
+
+    assert minio_init["entrypoint"] == ["/bin/sh"]
+    assert minio_init["command"][0] == "-ec"
+
+
+def test_compose_minio_initialization_does_not_require_sed():
+    compose = yaml.safe_load(
+        (REPOSITORY_ROOT / "compose.yaml").read_text(encoding="utf-8")
+    )
+    script = compose["services"]["minio-init"]["command"][1]
+
+    assert "sed " not in script
+    assert "policy_template=$$(cat /policy/object-storage-policy.json)" in script
+    assert "policy_template/__S3_BUCKET__" in script

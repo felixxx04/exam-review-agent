@@ -10,20 +10,25 @@ vi.mock("@/lib/api", () => ({
       list: vi.fn(),
       upload: vi.fn(),
       delete: vi.fn(),
+      accessUrl: vi.fn(),
     },
   },
 }));
 
 const material: Material = {
   id: 7,
+  course_id: 1,
   filename: "stored.pdf",
   original_filename: "MQ.pdf",
   file_type: "pdf",
   file_size: 128,
   page_count: 1,
   processing_status: "ready",
+  storage_status: "available",
   chunk_count: 3,
   error_message: null,
+  mime_type: "application/pdf",
+  processed_at: new Date(0).toISOString(),
   created_at: new Date(0).toISOString(),
 };
 

@@ -106,16 +106,19 @@
 | `GET /api/account/deletions/{job_id}` | `X-Deletion-Status-Token` | 查询删除任务终态、尝试次数和安全错误摘要 |
 | `POST /api/account/deletions/{job_id}/retry` | `X-Deletion-Status-Token` | 重试 `failed` 删除任务 |
 | `DELETE /api/conversations/{conversation_id}` | 已认证 | 删除当前用户会话及其消息 |
-| `DELETE /api/materials/{material_id}` | 已认证 | 删除资料元数据、派生块、临时向量和本地原文件 |
+| `GET /api/materials/{material_id}/access-url` | 已认证 | 为当前用户的可用资料生成短期、单对象 GET URL |
+| `DELETE /api/materials/{material_id}` | 已认证 | 先删除私有对象版本，再清理资料元数据、派生块与临时向量 |
 | `DELETE /api/quiz/{quiz_session_id}` | 已认证 | 删除测验及其课程范围派生记录 |
 | `DELETE /api/review/mistakes/{mistake_id}` | 已认证 | 删除当前用户错题 |
 | `DELETE /api/memory/profile?course_id=...` | 已认证 | 删除指定私人课程的学习画像 |
 
 - 用户默认限制 100 个文件、2 GiB；管理员可通过既有 `PATCH /api/auth/users/{id}` 的 `file_limit` 与 `storage_limit_bytes` 覆盖。数量和容量均以 PostgreSQL Material 记录为事实源。
-- 上传在读取正文前先提交 `pending` Material 预留。文件使用服务端随机名流式写入，超限、写入或数据库失败必须删除预留与文件；上传与账号注销以同一用户行锁串行化。
+- `POST /api/materials` 在 FastAPI 解析 multipart 前按整个请求体限制 `Content-Length` 与分块累计字节数；超限在创建临时文件、数据库预留或对象前返回 `413 FILE_TOO_LARGE`。通过该边界后，上传先提交 `reserved` Material 预留，正文再流式写入受限临时文件并校验扩展名、声明 MIME、Magic Bytes、大小与 Office 压缩包安全边界；只有写入私有 S3 对象并验证大小与 SHA-256 后才提交为 `available`。上传与账号注销以同一用户行锁串行化。
 - 删除任务状态为 `pending -> running -> succeeded | failed`。创建接口返回 `202` 与 `status="pending"`；响应发送后，进程内后台执行器使用独立数据库 Session 开始清理。进程中断时数据库保留可查询、可重试状态，阶段 2 再迁移到可靠 Worker。状态令牌只保存哈希，丢失后不能由服务端还原。
 - 注销创建后账号立即禁用，活动 Refresh Token 被撤销，管理员创建的邀请码被禁用。相同用户已有删除任务时返回 `CONFLICT`；失败任务使用原 `job_id` 和状态令牌重试。
 - 删除任务公开错误只包含稳定 `error_code` 和安全摘要，不返回路径、数据库异常、令牌、资料内容或堆栈。
+- Material 公开响应不包含对象 Key、对象版本、ETag、Hash、`storage_path` 或解析内部错误。相同用户同一课程的相同 SHA-256 返回 `DUPLICATE_MATERIAL`；不同用户或课程不进行共享去重。
+- access URL 响应只包含 URL 与到期秒数，设置 `Cache-Control: private, no-store` 和 `Referrer-Policy: no-referrer`。对象 Key、永久凭证和签名查询串不进入日志、Trace 或其他公开响应。
 
 ## 2. 游标分页
 
