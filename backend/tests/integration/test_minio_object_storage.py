@@ -5,6 +5,7 @@ import hashlib
 import os
 import sys
 import uuid
+from collections.abc import Mapping
 from pathlib import Path
 
 import boto3
@@ -55,6 +56,13 @@ async def _request_presigned_url(url: _SecretUrl) -> httpx.Response:
             return await client.get(url.value)
     except httpx.HTTPError:
         pytest.fail("The signed MinIO request failed", pytrace=False)
+
+
+def _assert_response_does_not_expose(
+    response_data: Mapping[str, object], field: str
+) -> None:
+    if field in response_data:
+        pytest.fail(f"response must not expose {field}", pytrace=False)
 
 
 @pytest.mark.asyncio
@@ -210,7 +218,7 @@ async def test_real_material_api_uses_postgres_and_private_minio(monkeypatch):
                 )
                 assert uploaded.status_code == 200
                 upload_data = uploaded.json()["data"]
-                assert "object_key" not in upload_data
+                _assert_response_does_not_expose(upload_data, "object_key")
 
                 material = await session.scalar(
                     select(Material).where(Material.id == upload_data["id"])
@@ -230,7 +238,7 @@ async def test_real_material_api_uses_postgres_and_private_minio(monkeypatch):
                 assert access_response.headers["referrer-policy"] == "no-referrer"
                 access_data = access_response.json()["data"]
                 signed_url = _SecretUrl(access_data.pop("url"))
-                assert "object_key" not in access_data
+                _assert_response_does_not_expose(access_data, "object_key")
                 assert access_data["expires_in_seconds"] == 300
 
                 downloaded = await _request_presigned_url(signed_url)
