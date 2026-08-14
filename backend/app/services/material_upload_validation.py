@@ -3,7 +3,7 @@ from __future__ import annotations
 import stat
 import zipfile
 from dataclasses import dataclass
-from pathlib import Path, PurePosixPath
+from pathlib import Path, PurePosixPath, PureWindowsPath
 
 from app.core.exceptions import AppException
 
@@ -105,7 +105,9 @@ def _validate_ooxml_package(
             "INVALID_FILE_SIGNATURE",
         )
 
-    required_prefix = "word/" if file_type == "docx" else "ppt/"
+    required_document = (
+        "word/document.xml" if file_type == "docx" else "ppt/presentation.xml"
+    )
     try:
         with zipfile.ZipFile(source) as archive:
             infos = archive.infolist()
@@ -121,7 +123,7 @@ def _validate_ooxml_package(
                     _unsafe_archive()
                 if info.filename == "[Content_Types].xml":
                     has_content_types = True
-                if info.filename.startswith(required_prefix):
+                if info.filename == required_document:
                     has_required_document = True
             if not has_content_types or not has_required_document:
                 raise MaterialUploadValidationError(
@@ -136,15 +138,20 @@ def _validate_ooxml_package(
 
 
 def _validate_zip_info(info: zipfile.ZipInfo) -> None:
-    path = PurePosixPath(info.filename)
+    posix_path = PurePosixPath(info.filename)
+    windows_path = PureWindowsPath(info.filename)
     mode = info.external_attr >> 16
     is_symlink = stat.S_IFMT(mode) == stat.S_IFLNK
     compressed_size = max(info.compress_size, 1)
     compression_ratio = info.file_size / compressed_size
     if (
         info.flag_bits & 0x1
-        or path.is_absolute()
-        or ".." in path.parts
+        or "\\" in info.filename
+        or posix_path.is_absolute()
+        or ".." in posix_path.parts
+        or windows_path.is_absolute()
+        or bool(windows_path.drive)
+        or ".." in windows_path.parts
         or is_symlink
         or compression_ratio > _MAX_ARCHIVE_COMPRESSION_RATIO
     ):

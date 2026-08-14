@@ -294,9 +294,7 @@ async def test_real_material_api_uses_postgres_and_private_minio(monkeypatch):
             cleanup_failures.append("database engine disposal")
 
         if cleanup_failures:
-            cleanup_note = "Integration cleanup failed: " + ", ".join(
-                cleanup_failures
-            )
+            cleanup_note = "Integration cleanup failed: " + ", ".join(cleanup_failures)
             if primary_error is not None:
                 primary_error.add_note(cleanup_note)
             else:
