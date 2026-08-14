@@ -11,7 +11,7 @@ from sqlalchemy import select
 from app.api import materials as materials_api
 from app.api.dependencies import get_object_storage
 from app.core.auth import AuthenticatedUser, get_current_user
-from app.db.models import Material, StorageStatus
+from app.db.models import Course, Material, StorageStatus, User
 from app.main import app
 from app.services.object_storage import (
     ObjectStorageError,
@@ -271,6 +271,67 @@ async def test_identical_upload_in_the_same_course_is_rejected_without_a_second_
 
 
 @pytest.mark.asyncio
+async def test_identical_content_is_isolated_across_courses_and_users(
+    client_with_db, db_session, authenticated_user, object_storage
+):
+    first = await client_with_db.post(
+        "/api/materials",
+        files={"file": ("first.pdf", MINIMAL_PDF, "application/pdf")},
+    )
+    assert first.status_code == 200
+
+    other_course = Course(
+        user_id=authenticated_user.id,
+        name="Other private course",
+        is_default=False,
+    )
+    other_user = User(
+        username="duplicate_scope_other",
+        email=None,
+        hashed_password="test-password-hash",
+        display_name="Other User",
+        role="user",
+    )
+    db_session.add_all([other_course, other_user])
+    await db_session.commit()
+    await db_session.refresh(other_course)
+    await db_session.refresh(other_user)
+    other_user_course = Course(
+        user_id=other_user.id,
+        name="Other user's private course",
+        is_default=True,
+    )
+    db_session.add(other_user_course)
+    await db_session.commit()
+    await db_session.refresh(other_user_course)
+
+    same_user_other_course = await client_with_db.post(
+        "/api/materials",
+        params={"course_id": other_course.id},
+        files={"file": ("course-copy.pdf", MINIMAL_PDF, "application/pdf")},
+    )
+    assert same_user_other_course.status_code == 200
+
+    app.dependency_overrides[get_current_user] = lambda: AuthenticatedUser(
+        id=other_user.id,
+        username=other_user.username,
+        role=other_user.role,
+        session_id="other-session",
+    )
+    other_user_upload = await client_with_db.post(
+        "/api/materials",
+        params={"course_id": other_user_course.id},
+        files={"file": ("user-copy.pdf", MINIMAL_PDF, "application/pdf")},
+    )
+
+    assert other_user_upload.status_code == 200
+    materials = (await db_session.execute(select(Material))).scalars().all()
+    assert len(materials) == 3
+    assert len({material.object_key for material in materials}) == 3
+    assert len(object_storage.objects) == 3
+
+
+@pytest.mark.asyncio
 async def test_owner_can_get_a_short_lived_download_url_but_other_users_cannot(
     client_with_db, db_session, object_storage
 ):
@@ -313,8 +374,12 @@ async def test_owner_can_get_a_short_lived_download_url_but_other_users_cannot(
 
 
 @pytest.mark.asyncio
-async def test_reserved_material_cannot_get_a_download_url(
-    client_with_db, db_session, object_storage
+@pytest.mark.parametrize(
+    "storage_status",
+    [StorageStatus.RESERVED, StorageStatus.DELETING, StorageStatus.DELETED],
+)
+async def test_non_available_material_cannot_get_a_download_url(
+    client_with_db, db_session, object_storage, storage_status
 ):
     uploaded = await client_with_db.post(
         "/api/materials",
@@ -323,7 +388,7 @@ async def test_reserved_material_cannot_get_a_download_url(
     material_id = _data(uploaded)["id"]
     material = await db_session.get(Material, material_id)
     assert material is not None
-    material.storage_status = StorageStatus.RESERVED
+    material.storage_status = storage_status
     await db_session.commit()
 
     denied = await client_with_db.get(f"/api/materials/{material_id}/access-url")
