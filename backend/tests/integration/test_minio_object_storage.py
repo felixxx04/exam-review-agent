@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import os
+import sys
 import uuid
 from pathlib import Path
 
@@ -40,10 +41,18 @@ pytestmark = pytest.mark.skipif(
 )
 
 
-async def _request_presigned_url(url: str) -> httpx.Response:
+class _SecretUrl:
+    def __init__(self, value: str) -> None:
+        self.value = value
+
+    def __repr__(self) -> str:
+        return "<redacted signed URL>"
+
+
+async def _request_presigned_url(url: _SecretUrl) -> httpx.Response:
     try:
         async with httpx.AsyncClient() as client:
-            return await client.get(url)
+            return await client.get(url.value)
     except httpx.HTTPError:
         pytest.fail("The signed MinIO request failed", pytrace=False)
 
@@ -143,6 +152,7 @@ async def test_real_material_api_uses_postgres_and_private_minio(monkeypatch):
         secret_access_key=MINIO_SECRET_KEY,
     )
     engine = create_async_engine(POSTGRES_INTEGRATION_URL)
+    assert engine.dialect.name == "postgresql"
     session_factory = async_sessionmaker(engine, expire_on_commit=False)
     suffix = uuid.uuid4().hex[:12]
     user_id: int | None = None
@@ -158,11 +168,11 @@ async def test_real_material_api_uses_postgres_and_private_minio(monkeypatch):
                 display_name="MinIO API Integration",
             )
             setup_session.add(user)
-            await setup_session.commit()
-            await setup_session.refresh(user)
+            await setup_session.flush()
             user_id = user.id
             username = user.username
             role = user.role
+            await setup_session.commit()
 
         async with session_factory() as session:
             await bind_tenant_context(session, user_id)
@@ -219,10 +229,11 @@ async def test_real_material_api_uses_postgres_and_private_minio(monkeypatch):
                 assert access_response.headers["cache-control"] == "private, no-store"
                 assert access_response.headers["referrer-policy"] == "no-referrer"
                 access_data = access_response.json()["data"]
+                signed_url = _SecretUrl(access_data.pop("url"))
                 assert "object_key" not in access_data
                 assert access_data["expires_in_seconds"] == 300
 
-                downloaded = await _request_presigned_url(access_data["url"])
+                downloaded = await _request_presigned_url(signed_url)
                 assert downloaded.status_code == 200
                 assert downloaded.content == content
 
@@ -231,32 +242,62 @@ async def test_real_material_api_uses_postgres_and_private_minio(monkeypatch):
                 await session.refresh(material)
                 assert material.storage_status == StorageStatus.DELETED
 
-                stale_access = await _request_presigned_url(access_data["url"])
+                stale_access = await _request_presigned_url(signed_url)
                 assert stale_access.status_code in {403, 404}
     finally:
+        primary_error = sys.exception()
+        cleanup_failures: list[str] = []
+        cleanup_targets: list[tuple[str, str | None]] = []
         app.dependency_overrides.pop(get_db, None)
         app.dependency_overrides.pop(get_current_user, None)
         app.dependency_overrides.pop(get_object_storage, None)
         RateLimitMiddleware.reset()
         if user_id is not None:
-            async with session_factory() as cleanup_session:
-                await bind_tenant_context(cleanup_session, user_id)
-                materials = list(
-                    await cleanup_session.scalars(
-                        select(Material).where(Material.user_id == user_id)
-                    )
-                )
-                for material in materials:
-                    if material.object_key is not None:
-                        await storage.delete_object(
-                            key=material.object_key,
-                            version_id=material.object_version_id,
+            try:
+                async with session_factory() as cleanup_session:
+                    await bind_tenant_context(cleanup_session, user_id)
+                    materials = list(
+                        await cleanup_session.scalars(
+                            select(Material).where(Material.user_id == user_id)
                         )
-                await cleanup_session.execute(delete(User).where(User.id == user_id))
-                await cleanup_session.commit()
-        elif object_key is not None:
-            await storage.delete_object(
-                key=object_key,
-                version_id=object_version_id,
+                    )
+                    cleanup_targets.extend(
+                        (material.object_key, material.object_version_id)
+                        for material in materials
+                        if material.object_key is not None
+                    )
+                    await cleanup_session.execute(
+                        delete(User).where(User.id == user_id)
+                    )
+                    await cleanup_session.commit()
+            except Exception:
+                cleanup_failures.append("PostgreSQL cleanup")
+
+        if object_key is not None and not any(
+            key == object_key and version_id == object_version_id
+            for key, version_id in cleanup_targets
+        ):
+            cleanup_targets.append((object_key, object_version_id))
+
+        for cleanup_key, cleanup_version_id in cleanup_targets:
+            try:
+                await storage.delete_object(
+                    key=cleanup_key,
+                    version_id=cleanup_version_id,
+                )
+            except Exception:
+                cleanup_failures.append("MinIO object cleanup")
+
+        try:
+            await engine.dispose()
+        except Exception:
+            cleanup_failures.append("database engine disposal")
+
+        if cleanup_failures:
+            cleanup_note = "Integration cleanup failed: " + ", ".join(
+                cleanup_failures
             )
-        await engine.dispose()
+            if primary_error is not None:
+                primary_error.add_note(cleanup_note)
+            else:
+                raise AssertionError(cleanup_note)

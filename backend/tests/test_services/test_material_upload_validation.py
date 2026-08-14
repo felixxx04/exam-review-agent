@@ -121,7 +121,14 @@ def test_rejects_ooxml_archive_path_traversal(tmp_path) -> None:
     assert error.value.code == "UNSAFE_ARCHIVE"
 
 
-@pytest.mark.parametrize("unsafe_name", ["/absolute.xml", "word/../../escape.xml"])
+@pytest.mark.parametrize(
+    "unsafe_name",
+    [
+        "/absolute.xml",
+        "word/../../escape.xml",
+        "C:/escape.xml",
+    ],
+)
 def test_rejects_ooxml_archive_absolute_and_parent_paths(tmp_path, unsafe_name) -> None:
     source = tmp_path / "unsafe-path.docx"
     with zipfile.ZipFile(source, "w") as archive:
@@ -136,6 +143,20 @@ def test_rejects_ooxml_archive_absolute_and_parent_paths(tmp_path, unsafe_name) 
             declared_content_type=DOCX_MIME,
             max_size_bytes=2_000,
         )
+
+    assert error.value.code == "UNSAFE_ARCHIVE"
+
+
+@pytest.mark.parametrize(
+    "unsafe_name",
+    [r"..\escape.xml", r"word\..\..\escape.xml"],
+)
+def test_rejects_raw_windows_archive_parent_paths(unsafe_name) -> None:
+    archive_entry = zipfile.ZipInfo("placeholder.xml")
+    archive_entry.filename = unsafe_name
+
+    with pytest.raises(MaterialUploadValidationError) as error:
+        upload_validation._validate_zip_info(archive_entry)
 
     assert error.value.code == "UNSAFE_ARCHIVE"
 
