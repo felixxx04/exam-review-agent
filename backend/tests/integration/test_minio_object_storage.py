@@ -50,12 +50,12 @@ class _SecretUrl:
         return "<redacted signed URL>"
 
 
-async def _request_presigned_url(url: _SecretUrl) -> httpx.Response:
+async def _request_secret_url(url: _SecretUrl) -> httpx.Response:
     try:
         async with httpx.AsyncClient() as client:
             return await client.get(url.value)
     except httpx.HTTPError:
-        pytest.fail("The signed MinIO request failed", pytrace=False)
+        pytest.fail("The MinIO request failed", pytrace=False)
 
 
 def _assert_response_does_not_expose(
@@ -106,9 +106,10 @@ async def test_minio_private_object_lifecycle_and_presigned_download(tmp_path):
         version_id=stored.version_id,
     )
 
-    async with httpx.AsyncClient() as client:
-        unsigned = await client.get(f"{MINIO_ENDPOINT}/{MINIO_BUCKET}/{key}")
-        signed = await client.get(access.url)
+    unsigned = await _request_secret_url(
+        _SecretUrl(f"{MINIO_ENDPOINT}/{MINIO_BUCKET}/{key}")
+    )
+    signed = await _request_secret_url(_SecretUrl(access.url))
 
     assert unsigned.status_code in {401, 403, 404}
     assert signed.status_code == 200
@@ -241,7 +242,7 @@ async def test_real_material_api_uses_postgres_and_private_minio(monkeypatch):
                 _assert_response_does_not_expose(access_data, "object_key")
                 assert access_data["expires_in_seconds"] == 300
 
-                downloaded = await _request_presigned_url(signed_url)
+                downloaded = await _request_secret_url(signed_url)
                 assert downloaded.status_code == 200
                 assert downloaded.content == content
 
@@ -250,7 +251,7 @@ async def test_real_material_api_uses_postgres_and_private_minio(monkeypatch):
                 await session.refresh(material)
                 assert material.storage_status == StorageStatus.DELETED
 
-                stale_access = await _request_presigned_url(signed_url)
+                stale_access = await _request_secret_url(signed_url)
                 assert stale_access.status_code in {403, 404}
     finally:
         primary_error = sys.exception()
