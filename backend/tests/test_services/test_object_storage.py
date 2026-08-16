@@ -410,6 +410,57 @@ async def test_s3_storage_deletes_all_exact_versions_and_markers_idempotently() 
 
 
 @pytest.mark.asyncio
+async def test_s3_storage_paginates_exact_version_cleanup() -> None:
+    key = "users/1/courses/2/materials/3/objects/random"
+    sibling = f"{key}-sibling"
+    client = RecordingS3Client()
+    pages = [
+        {
+            "Versions": [
+                {"Key": key, "VersionId": "version-2"},
+                {"Key": sibling, "VersionId": "sibling-version"},
+            ],
+            "DeleteMarkers": [],
+            "IsTruncated": True,
+            "NextKeyMarker": key,
+            "NextVersionIdMarker": "version-2",
+        },
+        {
+            "Versions": [{"Key": key, "VersionId": "version-1"}],
+            "DeleteMarkers": [{"Key": key, "VersionId": "delete-marker-1"}],
+            "IsTruncated": False,
+        },
+        {"Versions": [], "DeleteMarkers": [], "IsTruncated": False},
+    ]
+
+    def paginated_versions(**kwargs):
+        client.calls.append(_RecordedCall("list_object_versions", kwargs))
+        return pages.pop(0)
+
+    client.list_object_versions = paginated_versions  # type: ignore[method-assign]
+
+    await _storage(client).delete_object(key=key, version_id="version-2")
+
+    listed = [
+        call.kwargs for call in client.calls if call.name == "list_object_versions"
+    ]
+    deleted = [call.kwargs for call in client.calls if call.name == "delete_object"]
+    assert listed[0] == {"Bucket": "exam-review-materials", "Prefix": key}
+    assert listed[1] == {
+        "Bucket": "exam-review-materials",
+        "Prefix": key,
+        "KeyMarker": key,
+        "VersionIdMarker": "version-2",
+    }
+    assert {(call["Key"], call["VersionId"]) for call in deleted} == {
+        (key, "version-2"),
+        (key, "version-1"),
+        (key, "delete-marker-1"),
+    }
+    assert all(call["Key"] != sibling for call in deleted)
+
+
+@pytest.mark.asyncio
 async def test_s3_storage_does_not_head_an_unknown_put_before_cleanup() -> None:
     client = RecordingS3Client()
 
