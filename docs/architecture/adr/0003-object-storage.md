@@ -26,6 +26,7 @@
 
 - 默认 Bucket 私有，禁止公共读取、目录遍历式 Key 和用户控制的 Bucket 名。
 - 上传限制器在 ASGI `receive` 边界检查整个 HTTP 请求体，覆盖 `Content-Length` 与分块传输；每块在交给 multipart 解析器前计量，合法请求不预缓存完整 body。随后校验扩展名、声明 MIME、文件签名、单文件大小和用户总配额。解析器仍把内容视为不可信输入。
+- OOXML 条目名同时按 POSIX 与 Windows 路径语义校验；反斜杠、盘符、绝对路径和 `..` 父路径一律拒绝。DOCX 必须包含 `word/document.xml`，PPTX 必须包含 `ppt/presentation.xml`，避免仅凭扩展名或任意目录项接受伪造文件。
 - 非回环的 S3 API 与浏览器签名 URL 端点必须使用 HTTPS。仅当部署者显式声明 API 与 MinIO 位于可信内部 Docker 网络时，S3 API 端点可以使用 HTTP；该例外不适用于公共签名 URL 端点。
 - 配额以 PostgreSQL 预留量加已确认对象量计算，失败或超时的预留必须可回收。
 - 日志和 Agent Trace 不记录签名 URL 查询串、访问密钥或原始文件正文。
@@ -39,22 +40,25 @@
 ## Task 2.1 实现
 
 - `ObjectStorage` 将 S3 SDK 限制在适配器内；`S3ObjectStorage` 通过线程池调用阻塞 SDK，并以 S3v4、私有 Bucket、服务端凭证和短超时运行。数据库的 `materials` 行是对象元数据、配额和状态的唯一事实源。
-- 每次上传先保存 `reserved` 数据库记录和服务器生成的对象 Key，再对受限临时文件完成 PDF/OOXML 校验。对象写入后使用 `head_object` 验证大小与 SHA-256 metadata；只有成功才提交为 `available`。失败、取消或元数据提交异常会删除精确对象版本，无法删除时保留 `deleting` 记录供恢复。
+- 每次上传先保存 `reserved` 数据库记录和服务器生成的对象 Key，再对受限临时文件完成 PDF/OOXML 校验。S3 SDK 的总 PUT 尝试次数固定为 1，并使用 `If-None-Match: *`；对象写入后使用 `head_object` 验证大小与 SHA-256 metadata，只有成功才提交为 `available`。失败、取消或元数据提交异常会按精确 Key 分页删除全部版本和 delete marker，无法确认清理完成时保留 `deleting` 记录供恢复。
 - 同一 `user_id + course_id + SHA-256` 的资料保留首个对象并返回 `DUPLICATE_MATERIAL`；不同用户或课程不会共享、探测或复用对象。对象 Key、Hash、`storage_path`、版本与解析内部错误不在公开 Material 响应中。
-- MinIO Compose bootstrap 创建版本化私有 Bucket、固定 `__system__/object-storage-ready` sentinel 及无 `ListBucket` 权限的应用身份。readiness 读取 sentinel，因此不会用 Bucket 列举权限换取健康检查。
-- 下载/预览在资源归属验证后生成单对象、短期 GET 签名 URL。签名 URL 仅出现在该已授权的访问响应，响应禁止缓存与 Referrer 传递；永久存储凭证、对象 Key 和签名查询串不会进入普通资料响应、日志或 Trace。
+- MinIO Compose bootstrap 创建版本化私有 Bucket、固定 `__system__/object-storage-ready` sentinel 及无普通 `ListBucket` 权限的应用身份。该身份只可在 `users/*/courses/*/materials/*/objects/*` 前缀执行 `ListBucketVersions`，用于清除精确 Key 的历史版本；无范围版本枚举仍被拒绝。readiness 读取 sentinel，因此不会用普通 Bucket 列举权限换取健康检查。
+- 下载/预览在资源归属验证后生成单对象、短期 GET 签名 URL。签名 URL 仅出现在该已授权的访问响应，响应禁止缓存与 Referrer 传递；永久存储凭证、对象 Key 和签名查询串不会进入普通资料响应、异常链、日志或 Trace。boto3/s3transfer 高层下载失败也统一映射为脱敏错误，临时文件清理失败只记录不含路径的固定告警。
 - 只有 `available` 状态的资料可以生成签名下载 URL；`reserved`、`deleting` 和 `deleted` 资料统一返回 `404`，避免未完成校验或待清理对象被读取。
 - 单资料删除和账号注销复用对象版本删除；成功后保存 `deleted` tombstone，存储失败时维持 `deleting`。若派生检索索引清理暂时失败，资料也维持 `deleting`，恢复入口必须先完成幂等索引清理和 chunk 删除后才能写 tombstone。`python -m app.cli.recover_material_storage --user-id <id>` 在可信 RLS 作用域内回收超时预留；Task 2.2 可调度此入口，但不拥有另一份 Job/配额真相。
 - 持久化 chunk 清理意图在外部索引调用前写入；处理租约与 Task 1.4 用户锁共同串行化索引、资料/课程删除、账号注销和恢复。每一次处理尝试还保存随机 `processing_lease_id`；外部索引前和 READY 转换时必须用该 ID、活跃租约、资料状态和精确 chunk ID 围栏验证，防止恢复或删除接管过期租约后旧 worker 重新写入孤儿向量。普通对象删除失败留下的 `deleting` 行可重试；只有不确定 PUT、`reserved` 或活动处理租约会阻止级联删除，避免过早丢失唯一恢复记录。
 - 已完成索引的 `ready` 资料先在同一用户锁内持久化 `processing` 租约和清理意图，再删除旧向量和持久 chunk 并转回 `pending`；若最终提交失败，过期租约仍让恢复入口接管。非 `ready` 的持久 chunk 仍是未完成清理意图，必须由恢复流程先处理。
-- MinIO `mc` bootstrap 显式设置 `/bin/sh` 入口点，并使用镜像内建 shell 工具渲染策略模板；应用身份只获得单桶对象读写/版本删除权限，不获得 `ListBucket`。
+- MinIO `mc` bootstrap 显式设置 `/bin/sh` 入口点，使用镜像内建 shell 工具全局替换策略模板中的 Bucket 占位符，并在每次 bootstrap 时刷新已有 policy；应用身份只获得单桶对象读写/版本删除及受前缀约束的版本枚举权限，不获得普通 `ListBucket`。
 - `storage_status` 迁移使用显式长度 16 的非原生 Enum/CHECK 表达，与 ORM 和既有 `VARCHAR(16)` 列保持一致，避免在线部署后的 Alembic 类型漂移。
 
-### Task 2.1 真实验证记录（2026-08-12）
+### Task 2.1 真实验证记录（2026-08-12 至 2026-08-16）
 
 - Docker Desktop 29.6.2 已启动；PostgreSQL/Redis/MinIO 容器健康，MinIO bootstrap 成功退出。
 - 主库已升级至 `20260812_0007`；应用角色 `alembic check` 无漂移，离线 `upgrade head --sql` 已验证 `0006 -> 0007` 的 `processing_lease_id` 迁移；真实 PostgreSQL RLS、删除/配额/上传索引互锁与双 Session stale-worker fencing 合计 `8 passed`。
-- 低权限 MinIO 应用身份的私有对象生命周期、签名下载、无桶列举权限和幂等版本删除测试 `1 passed`；应用三项 readiness probe 均为 `ok`。分块 ASGI 上传限制的真实 FastAPI 路径返回 `413 FILE_TOO_LARGE`，不会将超限内部控制流转为 `500`。
+- 低权限 MinIO 应用身份的私有对象生命周期、签名下载、无桶列举权限和幂等版本删除测试，以及真实 FastAPI 上传/签名下载/删除流程共 `2 passed`；真实 PostgreSQL RLS、删除/配额/上传索引互锁与双 Session stale-worker fencing 共 `8 passed`。应用三项 readiness probe 均为 `ok`。分块 ASGI 上传限制的真实 FastAPI 路径返回 `413 FILE_TOO_LARGE`，不会将超限内部控制流转为 `500`。
+- Task 2.1 追加 RED/GREEN 检查点为 `d229bec test: reproduce Windows archive path bypass`、`011f039 fix: harden OOXML archive validation`；`0443100 fix: redact object storage acceptance failures` 修复测试失败输出可能泄露 object key 的问题。Windows 反斜杠/盘符路径、OOXML 主文档、状态门和跨租户契约均有自动化覆盖。
+- 2026-08-16 最终回归结果：Task 2.1 聚焦 `217 passed`，真实 PostgreSQL/MinIO `10 passed`，后端全量 `403 passed, 12 skipped`、综合覆盖率 `82%`，前端 `103 passed`、行覆盖率 `81.08%`，Playwright Smoke `6 passed`；Prettier、ESLint、TypeScript、Next 构建、Ruff、定向 mypy、Bandit、`compileall`、`pip check`、生产依赖审计和 `alembic check` 均通过。真实 MinIO 证明精确前缀版本枚举允许、普通 Bucket 列举与无范围版本枚举拒绝，并能删除同 Key 的两个历史版本。代码、Python 与安全复审均为 PASS。
+- readiness 验收使用临时随机最小权限 MinIO 身份，测试结束后已删除；凭据未写入仓库。当前审批仍是用户验收 Task 2.1，未经确认不启动 Task 2.2。
 
 ## 结果
 

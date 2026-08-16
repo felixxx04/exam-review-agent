@@ -464,14 +464,22 @@ run.cancelled
 
 - 新增私有 S3 兼容 `ObjectStorage` Protocol 和 MinIO/S3v4 适配器；PostgreSQL `materials` 保存对象 Key、版本、ETag、哈希、后端与 `reserved -> available -> deleting -> deleted` 存储状态，Bucket 从不承担元数据或配额事实源角色。
 - 上传先以用户行锁提交数据库预留，再在受限临时文件中完成 PDF/OOXML MIME、签名、大小、压缩率、路径、符号链接、加密、条目数与解压总量校验；对象 Key 只由服务端使用用户、课程、资料和随机 `object_id` 生成。相同用户同一课程的相同 SHA-256 被拒绝，不跨用户或跨课程去重。
-- 对象写入后验证大小与 SHA-256 metadata；提交或取消失败时按精确对象版本补偿。删除与账号注销先保留 `deleting` 元数据，成功后写 `deleted` tombstone；旧本地对象在过渡期仍可清理。
-- MinIO bootstrap 创建私有版本化 Bucket、固定 readiness sentinel 与无列举权限的应用身份。签名 URL 仅在所有权检查后按单对象 GET 生成，响应设置 `Cache-Control: private, no-store` 与 `Referrer-Policy: no-referrer`。
+- 对象写入只允许一次 SDK 尝试并使用 `If-None-Match: *`，随后验证大小与 SHA-256 metadata；提交或取消失败时按精确 Key 分页清除全部版本和 delete marker。删除与账号注销先保留 `deleting` 元数据，成功后写 `deleted` tombstone；旧本地对象在过渡期仍可清理。
+- MinIO bootstrap 创建私有版本化 Bucket、固定 readiness sentinel 与无普通 `ListBucket` 权限的应用身份。应用身份仅可按资料对象前缀执行 `ListBucketVersions`，无范围版本枚举仍被拒绝。签名 URL 仅在所有权检查后按单对象 GET 生成，响应设置 `Cache-Control: private, no-store` 与 `Referrer-Policy: no-referrer`。
 - 新增按可信 `user_id` 绑定 RLS 的本地预留回收命令；它是 Task 2.1 的崩溃恢复入口，Task 2.2 只能复用它调度，不能替换 PostgreSQL 的真相源。
 - 上传请求由 ASGI `receive` 包装器按声明长度与分块累计字节数硬限制；每块在交给 multipart 解析器前检查，合法请求不预缓存完整 body，超限不会进入端点、落盘、创建预留或写对象。非回环 S3 HTTP 默认被启动校验拒绝，Docker 内部 HTTP 必须显式声明可信。删除恢复会先清理临时检索索引和持久 chunk，再写 `deleted` tombstone。
-- MinIO bootstrap 显式覆盖 `mc` 镜像入口点并使用其可用的 POSIX shell 替换能力，真实启动已通过桶、版本化、sentinel、应用用户和最小权限策略初始化。
+- MinIO bootstrap 显式覆盖 `mc` 镜像入口点，使用其可用的 POSIX shell 全局替换能力渲染所有 Bucket 占位符，并在已有环境中刷新 policy；真实启动已通过桶、版本化、sentinel、应用用户和最小权限策略初始化。
 - `storage_status` 迁移与 ORM 使用显式长度 16 的非原生 Enum/CHECK 表达，兼容已创建的 `VARCHAR(16)` 列；主库与空库/旧资料升级后的 `alembic check` 均无漂移。
 - 最终 RED/GREEN 修复了外部索引与资料/课程/账号删除的互锁、过期处理租约恢复、普通 `deleting` 对象删除重试、已完成索引资料的安全重处理和重处理最终提交失败的恢复窗口，以及随机预分配 chunk ID 的稳定测试顺序。迁移 `20260809_0006` 保存不确定写入标记和处理租约；`20260812_0007` 增加每次处理尝试的随机 `processing_lease_id`，使恢复或删除使旧 worker 的处理尝试失效后，旧 worker 不能重新写入孤儿向量。
 - 真实验证：主库应用角色已在 `20260812_0007 (head)`，`alembic check` 无漂移，离线 `upgrade head --sql` 包含 `0006 -> 0007`；PostgreSQL RLS、删除/配额/上传索引互锁与双 Session stale-worker fencing 合计 `8 passed`，低权限 MinIO 生命周期/签名下载 `1 passed`，并确认应用身份没有 `ListBucket` 权限。当前聚焦资料、对象存储、删除、恢复、迁移、middleware 与 health 回归为 `142 passed`；`test_stale_processing_attempt_is_fenced_before_writing_vectors` 确认恢复接管后旧 worker 不会调用索引。完整应用 readiness 的 database、Redis、object storage 均为 `ok`。最终后端全量为 `377 passed, 11 skipped`；前端为 `103 passed`，格式、Lint 与类型检查通过。
+
+**最终验收加固记录（2026-08-15 至 2026-08-16）**
+
+- 新增 Windows 原始反斜杠、盘符和父路径 RED 契约，检查点为 `d229bec test: reproduce Windows archive path bypass`；最小修复同时使用 POSIX/Windows 路径语义、拒绝反斜杠和 drive，GREEN 检查点为 `011f039 fix: harden OOXML archive validation`。DOCX/PPTX 必须包含各自的主文档条目，`reserved`、`deleting`、`deleted` 资料仍不可生成签名 URL。
+- 真实 MinIO API 集成测试强化 PostgreSQL 方言断言、flush 后保存用户 ID，并将 PostgreSQL 清理、对象删除和 engine disposal 相互隔离；测试失败只追加脱敏阶段说明。审查发现的断言内省日志泄露风险已由 `0443100 fix: redact object storage acceptance failures` 修复。
+- 追加对象存储 RED/GREEN 检查点 `e29856f`、`add1da9`、`d201b97`、`f0b5b82`、`70f6b5f`、`a48a6ef` 及对应生产提交 `b724bca`、`5e0734f`、`29cd296`、`eeb3977`、`faa1e25`：关闭 SDK 自动 PUT 重试，使用条件 PUT，清除精确 Key 的全部版本/delete marker，拒绝停滞分页 token，收紧 not-found 分类，并抑制 boto3/s3transfer、验证补偿和 Windows 临时文件清理的敏感异常链。
+- 最新验证：Task 2.1 聚焦 `217 passed`；真实 PostgreSQL/RLS/删除/配额/索引互锁与 MinIO 生命周期、受限版本枚举、双版本清理及完整 API 流程 `10 passed`；后端全量 `403 passed, 12 skipped`，综合覆盖率 `82%`；前端 `103 passed`，行覆盖率 `81.08%`；Playwright Smoke `6 passed`。Prettier、ESLint、TypeScript、Next 构建、Ruff、定向 mypy、Bandit、`compileall`、`pip check`、生产依赖审计（`0 vulnerabilities`）、Compose 配置和真实 `alembic check` 均通过；代码、Python 与安全复审均为 PASS。
+- 临时最小权限 MinIO readiness 身份已在验证结束后删除，未写入凭据或 `.env`。全仓 Ruff 的两处历史错误和历史格式债务未纳入本 Task；Task 2.1 修改范围通过 Ruff。当前仍停在用户验收审批门，未经确认不得开始 Task 2.2。
 
 ### Task 2.2：ARQ 任务状态机
 

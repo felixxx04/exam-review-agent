@@ -2,7 +2,7 @@
 
 面向大学生期末复习场景的 AI 学习助手。用户可以上传课件或讲义，基于资料进行问答、生成练习题、查看薄弱点，并在 `Ask / Quiz / Review` 三种模式之间切换完成复习闭环。
 
-当前仓库已完成 V2 Phase 1 的 Task 1.1～1.4，以及 Phase 2 的 Task 2.1（私有 S3 兼容对象存储）。业务默认数据库已切换为 PostgreSQL，现已具备邀请码认证、安全会话、私人多课程隔离、用户数据删除、上传配额和私有 MinIO/S3 原始资料存储。Task 2.2 的 ARQ 任务状态机尚未开始。
+当前仓库已完成 V2 Phase 1 的 Task 1.1～1.4，以及 Phase 2 的 Task 2.1（私有 S3 兼容对象存储）实现、TDD、真实容器验证和安全复审，当前等待用户最终验收。业务默认数据库已切换为 PostgreSQL，现已具备邀请码认证、安全会话、私人多课程隔离、用户数据删除、上传配额和私有 MinIO/S3 原始资料存储。Task 2.2 的 ARQ 任务状态机尚未开始。
 
 ## 核心功能
 
@@ -13,7 +13,7 @@
 - 错题分析：记录答题结果并输出薄弱点视图
 - 数据控制：删除会话、资料、测验、错题和课程记忆；账号注销提供可查询、可重试的删除任务
 - 上传配额：默认每用户 100 个文件、2 GiB，管理员可按用户覆盖
-- 私有对象存储：服务端生成对象 Key，校验 PDF/Office 文件与 SHA-256，短期签名下载 URL
+- 私有对象存储：服务端生成对象 Key，校验 PDF/Office 文件与 SHA-256，拒绝 POSIX/Windows ZIP 路径穿越、符号链接、加密和压缩炸弹，短期签名下载 URL
 - 学习工作台：提供 `Ask / Quiz / Review` 三种模式
 
 ## 当前架构
@@ -143,8 +143,12 @@ $env:MINIO_INTEGRATION_ENDPOINT_URL="http://127.0.0.1:9000"
 $env:MINIO_INTEGRATION_BUCKET="<private-bucket>"
 $env:MINIO_INTEGRATION_ACCESS_KEY="<s3-application-access-key>"
 $env:MINIO_INTEGRATION_SECRET_KEY="<s3-application-secret>"
+# 运行完整 FastAPI 上传/签名下载/删除流程时，还需设置：
+$env:POSTGRES_INTEGRATION_URL="postgresql+asyncpg://exam_review:<app-password>@localhost:5432/exam_review"
 python -m pytest tests/integration/test_minio_object_storage.py -q
 ```
+
+Task 2.1 的最新本地验收结果（2026-08-16）：后端聚焦回归 `217 passed`，真实 PostgreSQL/MinIO 集成 `10 passed`，后端全量 `403 passed, 12 skipped`（综合覆盖率 `82%`），前端 `103 passed`（行覆盖率 `81.08%`），Playwright Smoke `6 passed`；Alembic `20260812_0007 (head)` 无漂移，生产依赖审计为 `0 vulnerabilities`。低权限 MinIO 身份只能按资料对象前缀枚举版本，不能普通列举 Bucket 或无范围枚举版本；删除会清除精确 Key 的全部版本和 delete marker。这些结果仍需用户确认后才进入 Task 2.2。
 
 前端完整基线：
 

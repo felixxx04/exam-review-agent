@@ -1,10 +1,10 @@
 # Exam Review Agent 会话交接文档
 
-> 更新日期：2026-08-12
+> 更新日期：2026-08-16
 > 项目目录：`C:\Users\asus\Documents\exam-review-agent`  
 > 当前分支：`codex/phase-1-postgres`  
 > Task 1.4 最终功能提交：`3b5e37e feat: complete deletion and quota reliability`
-> Task 2.1 GREEN checkpoint：本会话完成验证后创建的本地提交（不推送 GitHub；见当前分支 `HEAD`）
+> Task 2.1 最终生产 GREEN checkpoint：`faa1e25 fix: bound object version pagination`（完整安全加固提交链见 2.4；均为本地提交，不推送 GitHub）
 > 基线提交：`23c17b5 feat: polish learning workspace UI and review flows`
 
 ## 1. 给新会话的执行指令
@@ -49,7 +49,7 @@
 
 ### 已交付范围
 
-- 私有 S3 兼容 `ObjectStorage` Protocol、S3v4/MinIO 适配器、版本化私有 Bucket bootstrap 与无 `ListBucket` 权限的应用身份。PostgreSQL `materials` 是对象元数据、配额和状态唯一事实源；对象 Key 仅服务端生成，不使用用户文件名。
+- 私有 S3 兼容 `ObjectStorage` Protocol、S3v4/MinIO 适配器、版本化私有 Bucket bootstrap，以及无普通 `ListBucket`、仅可按资料对象前缀执行 `ListBucketVersions` 的应用身份。PostgreSQL `materials` 是对象元数据、配额和状态唯一事实源；对象 Key 仅服务端生成，不使用用户文件名。
 - 资料上传采用 `reserved -> available -> deleting -> deleted` 状态、服务器临时文件校验、哈希校验、同课程重复文件拒绝、跨租户隔离、短期签名 GET URL、下载 UI 和旧本地资料删除兼容。
 - 单资料删除、账号注销与崩溃恢复保持 Task 1.4 的预留、用户锁和注销可靠性。恢复入口在 RLS 绑定的单一租户作用域内运行；若索引清理失败，资料保持 `deleting`，重试成功清理向量/BM25 与持久 chunk 后才写 tombstone。
 - 上传安全额外在 ASGI `receive` 层按声明 `Content-Length` 和分块累计字节限制请求体；每块在交给 FastAPI multipart 解析器前检查，合法请求不预缓存完整 body，超限在端点、临时文件、预留或对象写入前返回 `413 FILE_TOO_LARGE`。
@@ -88,6 +88,17 @@
 - Docker Desktop 29.6.2 当前运行 PostgreSQL、Redis 与 MinIO；主库已升级到 `20260812_0007 (head)`，`alembic check` 无漂移，离线迁移 SQL 包含 `0006 -> 0007`。真实 PostgreSQL RLS、删除/配额/上传索引互锁与双 Session stale-worker fencing 合计 `8 passed`；真实低权限 MinIO 私有对象生命周期、签名下载、无列举权限和幂等版本删除 `1 passed`。当前聚焦 Task 2.1 后端回归为 `142 passed`。
 - 最终全量后端回归为 `377 passed, 11 skipped`。作用域 Ruff lint/format、Bandit 中高危、`compileall`、`pip check`、Compose 配置和 `git diff --check` 均通过。
 - 只有本地 GREEN 提交仍待完成。提交后仍停在 Task 2.1 验收门，不推送 GitHub，也不得开始 Task 2.2、ARQ、pgvector 检索、Planner/Agent Runtime 或无关重构。
+
+### 2.4 本会话（2026-08-15 至 2026-08-16）Task 2.1 整改与验收
+
+- 用户选择“先整改后验收”。针对复审发现的 Windows ZIP 路径绕过，先加入 `..\\escape.xml`、`word\\..\\..\\escape.xml` 和 `C:/escape.xml` RED 契约，提交 `d229bec`；随后以 `PurePosixPath` + `PureWindowsPath`、反斜杠和 drive 检查完成最小修复，提交 `011f039`。
+- 真实 MinIO API 集成测试现在强制 `engine.dialect.name == "postgresql"`，在 `flush()` 后保存用户 ID，并让 PostgreSQL 清理、每个对象删除和 `engine.dispose()` 独立执行；失败只向原始异常添加不含 Key/URL 的阶段说明。代码复审指出的测试日志泄露风险再由 `0443100` 修复。
+- 最终对象存储安全 TDD 从 `e29856f`、`add1da9` 开始，关闭 SDK 自动 PUT 重试、增加 `If-None-Match: *`，按精确 Key 分页删除全部版本和 delete marker，并拒绝重复 continuation token；`NoSuchBucket` 不再被任意 HTTP 404 吞掉。MinIO policy 只增加受 `users/*/courses/*/materials/*/objects/*` 前缀约束的 `ListBucketVersions`，普通 `ListBucket` 和无范围版本枚举仍被拒绝；bootstrap 会刷新已有 policy，并以全局占位符替换渲染所有 Bucket ARN。
+- `f0b5b82`、`70f6b5f` 和 `a48a6ef` 先复现上传验证清理、Windows 临时下载清理、boto3/s3transfer 高层下载异常、停滞分页与审计缺口；对应 GREEN 为 `29cd296`、`eeb3977` 和 `faa1e25`。所有对外存储错误均抑制底层异常链，不记录 object key、endpoint、签名查询串或临时路径；部分下载无法删除时只记录固定通用 WARNING。
+- 最新自动化结果：Task 2.1 聚焦 `217 passed`；真实 PostgreSQL/RLS/删除/配额/索引互锁与真实 MinIO 生命周期、受限版本枚举、双版本清理及完整 API 上传/删除共 `10 passed`；后端全量 `403 passed, 12 skipped`，综合覆盖率 `82%`；前端 `103 passed`，行覆盖率 `81.08%`；Playwright Chromium Smoke `6 passed`。
+- Prettier、ESLint、串行 TypeScript、Next 生产构建、Task 2.1 范围 Ruff lint/format、定向 mypy、Bandit 中高危门、`compileall`、`pip check`、`npm ci --dry-run`、生产依赖审计（`0 vulnerabilities`）、Compose 配置和真实 PostgreSQL `alembic check` 均通过。代码、Python 与安全复审均为 PASS。全仓 Ruff 仍有既有 `_index_chunks` 未定义、未使用 `datetime` 及历史格式债务，未在本 Task 修改。
+- readiness 真实调用返回 `database: ok`、`redis: ok`、`object_storage: ok`。为满足启动安全校验，使用了临时随机最小权限 MinIO 身份并在 `finally` 删除；凭据未写入仓库。当前运行容器的 bootstrap 应用身份仍是占位配置，README 已明确要求部署者替换，不应把它当作可公开部署凭据。
+- 当前仍是 **Task 2.1 用户验收门**。不得开始 Task 2.2、ARQ、pgvector 检索切换、Planner/Agent Runtime 或无关重构；等待用户明确确认后再更新审批状态。
 
 ## 2.1 本会话（2026-08-06）收尾记录
 
