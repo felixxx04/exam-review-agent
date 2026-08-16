@@ -161,7 +161,9 @@ async def test_index_chunks_honors_caller_preallocated_ids(make_retrieval_servic
     )
 
     assert chunk_ids == expected_ids
-    assert [document["id"] for document in service._vector_store.documents] == expected_ids
+    assert [
+        document["id"] for document in service._vector_store.documents
+    ] == expected_ids
 
 
 @pytest.mark.asyncio
