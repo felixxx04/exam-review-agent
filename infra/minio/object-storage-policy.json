@@ -3,6 +3,16 @@
   "Statement": [
     {
       "Effect": "Allow",
+      "Action": ["s3:ListBucketVersions"],
+      "Resource": ["arn:aws:s3:::__S3_BUCKET__"],
+      "Condition": {
+        "StringLike": {
+          "s3:prefix": "users/*/courses/*/materials/*/objects/*"
+        }
+      }
+    },
+    {
+      "Effect": "Allow",
       "Action": [
         "s3:GetObject",
         "s3:GetObjectVersion",

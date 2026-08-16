@@ -18,6 +18,8 @@ _OBJECT_ID_PATTERN = re.compile(r"[a-zA-Z0-9-]{16,128}\Z")
 _SHA256_PATTERN = re.compile(r"[0-9a-f]{64}\Z")
 _VALID_DISPOSITIONS = frozenset({"attachment", "inline"})
 _READINESS_OBJECT_KEY = "__system__/object-storage-ready"
+_NOT_FOUND_ERROR_CODES = frozenset({"NoSuchKey", "NoSuchVersion", "NotFound"})
+_DELETE_VERIFICATION_ATTEMPTS = 3
 
 
 class ObjectStorageError(AppException):
@@ -150,6 +152,7 @@ class S3ObjectStorage:
                 signature_version="s3v4",
                 connect_timeout=connect_timeout_seconds,
                 read_timeout=read_timeout_seconds,
+                retries={"total_max_attempts": 1, "mode": "standard"},
                 s3={"addressing_style": "path"},
             ),
         )
@@ -170,7 +173,7 @@ class S3ObjectStorage:
         try:
             source_size = source.stat().st_size
         except OSError as exc:
-            raise self._storage_error(exc) from exc
+            raise self._storage_error(exc) from None
         if source_size != size_bytes:
             raise ObjectStorageError(
                 "Object upload could not be verified", "OBJECT_VERIFICATION_FAILED"
@@ -186,7 +189,7 @@ class S3ObjectStorage:
                 sha256,
             )
         except (BotoCoreError, ClientError, OSError) as exc:
-            raise self._storage_error(exc) from exc
+            raise self._storage_error(exc) from None
 
         return StoredObject(
             key=key,
@@ -210,6 +213,7 @@ class S3ObjectStorage:
                 Body=handle,
                 ContentLength=size_bytes,
                 ContentType=content_type,
+                IfNoneMatch="*",
                 Metadata={"sha256": sha256},
             )
         version_id = put_response.get("VersionId")
@@ -252,46 +256,65 @@ class S3ObjectStorage:
                 Key=_READINESS_OBJECT_KEY,
             )
         except (BotoCoreError, ClientError) as exc:
-            raise self._storage_error(exc) from exc
+            raise self._storage_error(exc) from None
 
     @staticmethod
     def _is_not_found(exc: ClientError) -> bool:
         error = exc.response.get("Error", {})
-        status = exc.response.get("ResponseMetadata", {}).get("HTTPStatusCode")
-        return (
-            error.get("Code") in {"404", "NoSuchKey", "NoSuchVersion", "NotFound"}
-            or status == 404
-        )
+        return error.get("Code") in _NOT_FOUND_ERROR_CODES
 
-    def _current_version(self, key: str) -> tuple[bool, str | None]:
-        try:
-            response = self._client.head_object(Bucket=self.bucket, Key=key)
-        except ClientError as exc:
-            if self._is_not_found(exc):
-                return False, None
-            raise
-        version_id = response.get("VersionId")
-        return True, version_id if isinstance(version_id, str) else None
+    def _exact_version_ids(self, key: str) -> list[str]:
+        request: dict[str, Any] = {"Bucket": self.bucket, "Prefix": key}
+        version_ids: list[str] = []
+        while True:
+            response = self._client.list_object_versions(**request)
+            for group in ("Versions", "DeleteMarkers"):
+                for entry in response.get(group) or ():
+                    version_id = entry.get("VersionId")
+                    if entry.get("Key") == key and isinstance(version_id, str):
+                        version_ids.append(version_id)
+
+            if not response.get("IsTruncated"):
+                return version_ids
+
+            next_key_marker = response.get("NextKeyMarker")
+            if not isinstance(next_key_marker, str):
+                raise ObjectStorageError(
+                    "Object storage cleanup could not be verified",
+                    "OBJECT_STORAGE_UNAVAILABLE",
+                )
+            request["KeyMarker"] = next_key_marker
+            next_version_marker = response.get("NextVersionIdMarker")
+            if isinstance(next_version_marker, str):
+                request["VersionIdMarker"] = next_version_marker
+            else:
+                request.pop("VersionIdMarker", None)
 
     def _delete(self, key: str, version_id: str | None) -> None:
-        if version_id is None:
-            exists, resolved_version_id = self._current_version(key)
-            if not exists:
+        for _attempt in range(_DELETE_VERIFICATION_ATTEMPTS):
+            version_ids = self._exact_version_ids(key)
+            if not version_ids:
                 return
-        else:
-            resolved_version_id = version_id
-        if resolved_version_id is None:
-            # The provider is unversioned; DeleteObject itself is idempotent.
-            self._client.delete_object(Bucket=self.bucket, Key=key)
-            return
-        kwargs: dict[str, Any] = {"Bucket": self.bucket, "Key": key}
-        if resolved_version_id is not None:
-            kwargs["VersionId"] = resolved_version_id
-        try:
-            self._client.delete_object(**kwargs)
-        except ClientError as exc:
-            if not self._is_not_found(exc):
-                raise
+
+            ordered_ids = list(dict.fromkeys(version_ids))
+            if version_id is not None and version_id in ordered_ids:
+                ordered_ids.remove(version_id)
+                ordered_ids.insert(0, version_id)
+            for exact_version_id in ordered_ids:
+                try:
+                    self._client.delete_object(
+                        Bucket=self.bucket,
+                        Key=key,
+                        VersionId=exact_version_id,
+                    )
+                except ClientError as exc:
+                    if not self._is_not_found(exc):
+                        raise
+
+        raise ObjectStorageError(
+            "Object storage cleanup could not be verified",
+            "OBJECT_STORAGE_UNAVAILABLE",
+        )
 
     async def download_to_path(
         self,
@@ -305,7 +328,7 @@ class S3ObjectStorage:
             await asyncio.to_thread(self._download_file, key, destination, version_id)
         except (BotoCoreError, ClientError, OSError) as exc:
             destination.unlink(missing_ok=True)
-            raise self._storage_error(exc) from exc
+            raise self._storage_error(exc) from None
 
     def _download_file(
         self, key: str, destination: Path, version_id: str | None
@@ -323,7 +346,7 @@ class S3ObjectStorage:
         try:
             await asyncio.to_thread(self._delete, key, version_id)
         except (BotoCoreError, ClientError) as exc:
-            raise self._storage_error(exc) from exc
+            raise self._storage_error(exc) from None
 
     async def presign_get(
         self,
@@ -357,7 +380,7 @@ class S3ObjectStorage:
                 HttpMethod="GET",
             )
         except (BotoCoreError, ClientError) as exc:
-            raise self._storage_error(exc) from exc
+            raise self._storage_error(exc) from None
         return PresignedGet(url=url, expires_in_seconds=expires_in_seconds)
 
     @staticmethod

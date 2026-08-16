@@ -81,9 +81,7 @@ services:
         fi
         policy_template=$$(cat /policy/object-storage-policy.json)
         printf '%s\n' "$${policy_template/__S3_BUCKET__/$${S3_BUCKET}}" > /tmp/object-storage-policy.json
-        if ! mc admin policy info local exam-review-object-storage >/dev/null 2>&1; then
-          mc admin policy create local exam-review-object-storage /tmp/object-storage-policy.json
-        fi
+        mc admin policy create local exam-review-object-storage /tmp/object-storage-policy.json
         mc admin policy attach local exam-review-object-storage --user "$${S3_ACCESS_KEY_ID}"
     volumes:
       - ./infra/minio/object-storage-policy.json:/policy/object-storage-policy.json:ro
