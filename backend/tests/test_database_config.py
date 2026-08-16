@@ -1,3 +1,4 @@
+import json
 from pathlib import Path
 
 import yaml
@@ -78,3 +79,39 @@ def test_compose_minio_initialization_does_not_require_sed():
     assert "sed " not in script
     assert "policy_template=$$(cat /policy/object-storage-policy.json)" in script
     assert "policy_template/__S3_BUCKET__" in script
+
+
+def test_minio_policy_only_allows_version_listing_for_material_object_prefixes():
+    policy = json.loads(
+        (REPOSITORY_ROOT / "infra" / "minio" / "object-storage-policy.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    statements = policy["Statement"]
+    all_actions = {action for statement in statements for action in statement["Action"]}
+
+    assert "s3:ListBucket" not in all_actions
+    version_listing = next(
+        statement
+        for statement in statements
+        if "s3:ListBucketVersions" in statement["Action"]
+    )
+    assert version_listing["Resource"] == ["arn:aws:s3:::__S3_BUCKET__"]
+    assert version_listing["Condition"] == {
+        "StringLike": {
+            "s3:prefix": "users/*/courses/*/materials/*/objects/*",
+        }
+    }
+
+
+def test_compose_minio_initialization_refreshes_an_existing_policy():
+    compose = yaml.safe_load(
+        (REPOSITORY_ROOT / "compose.yaml").read_text(encoding="utf-8")
+    )
+    script = compose["services"]["minio-init"]["command"][1]
+
+    assert "if ! mc admin policy info" not in script
+    assert (
+        "mc admin policy create local exam-review-object-storage "
+        "/tmp/object-storage-policy.json"
+    ) in script

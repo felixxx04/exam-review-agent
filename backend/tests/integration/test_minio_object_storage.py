@@ -73,7 +73,10 @@ async def test_minio_private_object_lifecycle_and_presigned_download(tmp_path):
     assert MINIO_SECRET_KEY is not None
     source = tmp_path / "source.pdf"
     source.write_bytes(b"private storage integration test")
-    key = f"tests/{uuid.uuid4().hex}/object"
+    key = (
+        "users/900000001/courses/900000002/materials/900000003/objects/"
+        f"{uuid.uuid4().hex}"
+    )
     storage = S3ObjectStorage(
         bucket=MINIO_BUCKET,
         region="us-east-1",
@@ -127,8 +130,45 @@ async def test_minio_private_object_lifecycle_and_presigned_download(tmp_path):
         await asyncio.to_thread(client.list_objects_v2, Bucket=MINIO_BUCKET)
     assert denied_listing.value.response["ResponseMetadata"]["HTTPStatusCode"] == 403
 
+    exact_versions = await asyncio.to_thread(
+        client.list_object_versions,
+        Bucket=MINIO_BUCKET,
+        Prefix=key,
+    )
+    assert any(
+        version.get("Key") == key for version in exact_versions.get("Versions", [])
+    )
+    with pytest.raises(ClientError) as denied_unscoped_version_listing:
+        await asyncio.to_thread(client.list_object_versions, Bucket=MINIO_BUCKET)
+    assert (
+        denied_unscoped_version_listing.value.response["ResponseMetadata"][
+            "HTTPStatusCode"
+        ]
+        == 403
+    )
+
+    await asyncio.to_thread(
+        client.put_object,
+        Bucket=MINIO_BUCKET,
+        Key=key,
+        Body=b"historical retry version",
+        ContentType="application/pdf",
+        Metadata={"sha256": hashlib.sha256(b"historical retry version").hexdigest()},
+    )
+
     await storage.delete_object(key=stored.key, version_id=stored.version_id)
     await storage.delete_object(key=stored.key, version_id=stored.version_id)
+
+    remaining = await asyncio.to_thread(
+        client.list_object_versions,
+        Bucket=MINIO_BUCKET,
+        Prefix=key,
+    )
+    assert not any(
+        entry.get("Key") == key
+        for group in ("Versions", "DeleteMarkers")
+        for entry in remaining.get(group, [])
+    )
 
 
 @pytest.mark.skipif(

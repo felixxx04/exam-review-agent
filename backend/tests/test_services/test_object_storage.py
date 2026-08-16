@@ -1,10 +1,11 @@
 from __future__ import annotations
 
+import traceback
 from dataclasses import dataclass
 from pathlib import Path
 
 import pytest
-from botocore.exceptions import ClientError
+from botocore.exceptions import ClientError, EndpointConnectionError
 
 from app.services.object_storage import (
     ObjectStorageError,
@@ -23,10 +24,13 @@ class RecordingS3Client:
     def __init__(self) -> None:
         self.calls: list[_RecordedCall] = []
         self.metadata: dict[str, str] = {}
+        self.versions: list[dict[str, str]] = []
+        self.delete_markers: list[dict[str, str]] = []
 
     def put_object(self, **kwargs):
         self.calls.append(_RecordedCall("put_object", kwargs))
         self.metadata = kwargs["Metadata"]
+        self.versions.append({"Key": kwargs["Key"], "VersionId": "version-1"})
         return {"ETag": '"etag-123"', "VersionId": "version-1"}
 
     def head_object(self, **kwargs):
@@ -43,7 +47,32 @@ class RecordingS3Client:
 
     def delete_object(self, **kwargs):
         self.calls.append(_RecordedCall("delete_object", kwargs))
+        target = {
+            "Key": kwargs["Key"],
+            "VersionId": kwargs.get("VersionId", "null"),
+        }
+        self.versions = [entry for entry in self.versions if entry != target]
+        self.delete_markers = [
+            entry for entry in self.delete_markers if entry != target
+        ]
         return {}
+
+    def list_object_versions(self, **kwargs):
+        self.calls.append(_RecordedCall("list_object_versions", kwargs))
+        prefix = kwargs["Prefix"]
+        return {
+            "Versions": [
+                entry.copy()
+                for entry in self.versions
+                if entry["Key"].startswith(prefix)
+            ],
+            "DeleteMarkers": [
+                entry.copy()
+                for entry in self.delete_markers
+                if entry["Key"].startswith(prefix)
+            ],
+            "IsTruncated": False,
+        }
 
     def download_file(self, **kwargs):
         self.calls.append(_RecordedCall("download_file", kwargs))
@@ -78,6 +107,30 @@ def _client_error(code: str, status_code: int, operation: str) -> ClientError:
         },
         operation,
     )
+
+
+def test_s3_client_disables_automatic_request_retries(monkeypatch) -> None:
+    captured: dict = {}
+    client = RecordingS3Client()
+
+    def build_client(*_args, **kwargs):
+        captured.update(kwargs)
+        return client
+
+    monkeypatch.setattr("app.services.object_storage.boto3.client", build_client)
+
+    S3ObjectStorage(
+        bucket="exam-review-materials",
+        region="us-east-1",
+        endpoint_url="http://minio.test:9000",
+        access_key_id="test-access-key",
+        secret_access_key="test-secret-key",
+    )
+
+    assert captured["config"].retries == {
+        "total_max_attempts": 1,
+        "mode": "standard",
+    }
 
 
 def test_material_object_key_is_server_generated_and_scoped() -> None:
@@ -135,6 +188,7 @@ async def test_s3_storage_uploads_verified_object_with_private_metadata(
     assert put.kwargs["Key"] == "users/1/courses/2/materials/3/objects/random"
     assert put.kwargs["Metadata"] == {"sha256": "a" * 64}
     assert put.kwargs["ContentType"] == "application/pdf"
+    assert put.kwargs["IfNoneMatch"] == "*"
 
 
 @pytest.mark.asyncio
@@ -225,6 +279,7 @@ async def test_s3_storage_delete_and_download_use_the_single_server_key(
     storage = _storage(client)
     destination = tmp_path / "temporary-download.pdf"
     key = "users/1/courses/2/materials/3/objects/random"
+    client.versions.append({"Key": key, "VersionId": "version-1"})
 
     await storage.download_to_path(
         key=key, destination=destination, version_id="version-1"
@@ -323,58 +378,119 @@ async def test_s3_storage_hides_missing_source_and_sdk_upload_failures(
 
 
 @pytest.mark.asyncio
-async def test_s3_storage_deletes_the_current_or_unversioned_object_idempotently() -> (
-    None
-):
+async def test_s3_storage_deletes_all_exact_versions_and_markers_idempotently() -> None:
     key = "users/1/courses/2/materials/3/objects/random"
-    versioned_client = RecordingS3Client()
+    sibling = f"{key}-sibling"
+    client = RecordingS3Client()
+    client.versions = [
+        {"Key": key, "VersionId": "version-2"},
+        {"Key": key, "VersionId": "version-1"},
+        {"Key": sibling, "VersionId": "sibling-version"},
+    ]
+    client.delete_markers = [
+        {"Key": key, "VersionId": "delete-marker-1"},
+        {"Key": sibling, "VersionId": "sibling-marker"},
+    ]
 
-    await _storage(versioned_client).delete_object(key=key)
+    storage = _storage(client)
+    await storage.delete_object(key=key, version_id="version-1")
+    await storage.delete_object(key=key, version_id="version-1")
 
-    versioned_delete = next(
-        call for call in versioned_client.calls if call.name == "delete_object"
-    )
-    assert versioned_delete.kwargs["VersionId"] == "version-1"
-
-    unversioned_client = RecordingS3Client()
-    unversioned_client.head_object = lambda **_kwargs: {"VersionId": None}  # type: ignore[method-assign]
-    await _storage(unversioned_client).delete_object(key=key)
-
-    unversioned_delete = next(
-        call for call in unversioned_client.calls if call.name == "delete_object"
-    )
-    assert unversioned_delete.kwargs == {"Bucket": "exam-review-materials", "Key": key}
+    listed = [call for call in client.calls if call.name == "list_object_versions"]
+    deleted = [call.kwargs for call in client.calls if call.name == "delete_object"]
+    assert listed
+    assert all(call.kwargs["Prefix"] == key for call in listed)
+    assert {(call["Key"], call["VersionId"]) for call in deleted} == {
+        (key, "version-2"),
+        (key, "version-1"),
+        (key, "delete-marker-1"),
+    }
+    assert client.versions == [{"Key": sibling, "VersionId": "sibling-version"}]
+    assert client.delete_markers == [{"Key": sibling, "VersionId": "sibling-marker"}]
 
 
 @pytest.mark.asyncio
-async def test_s3_storage_ignores_not_found_during_idempotent_delete() -> None:
+async def test_s3_storage_does_not_head_an_unknown_put_before_cleanup() -> None:
     client = RecordingS3Client()
 
-    def missing_head(**_kwargs):
-        raise _client_error("NoSuchKey", 404, "HeadObject")
+    def denied_head(**_kwargs):
+        raise _client_error("AccessDenied", 403, "HeadObject")
 
-    client.head_object = missing_head  # type: ignore[method-assign]
+    client.head_object = denied_head  # type: ignore[method-assign]
 
     await _storage(client).delete_object(
         key="users/1/courses/2/materials/3/objects/missing"
     )
 
+    assert not any(call.name == "head_object" for call in client.calls)
     assert not any(call.name == "delete_object" for call in client.calls)
 
 
 @pytest.mark.asyncio
 async def test_s3_storage_ignores_a_missing_explicit_object_version() -> None:
     client = RecordingS3Client()
+    key = "users/1/courses/2/materials/3/objects/missing"
+    client.versions = [{"Key": key, "VersionId": "missing-version"}]
 
     def missing_delete(**_kwargs):
+        client.versions.clear()
         raise _client_error("NoSuchVersion", 404, "DeleteObject")
 
     client.delete_object = missing_delete  # type: ignore[method-assign]
 
     await _storage(client).delete_object(
-        key="users/1/courses/2/materials/3/objects/missing",
+        key=key,
         version_id="missing-version",
     )
+
+
+@pytest.mark.asyncio
+async def test_s3_storage_does_not_treat_a_missing_bucket_as_a_missing_object() -> None:
+    client = RecordingS3Client()
+    key = "users/1/courses/2/materials/3/objects/random"
+    client.versions = [{"Key": key, "VersionId": "version-1"}]
+
+    def missing_bucket(**_kwargs):
+        raise _client_error("NoSuchBucket", 404, "DeleteObject")
+
+    client.delete_object = missing_bucket  # type: ignore[method-assign]
+
+    with pytest.raises(ObjectStorageError) as error:
+        await _storage(client).delete_object(key=key, version_id="version-1")
+
+    assert error.value.code == "OBJECT_STORAGE_UNAVAILABLE"
+
+
+@pytest.mark.asyncio
+async def test_s3_storage_drops_sensitive_sdk_exception_context(tmp_path) -> None:
+    client = RecordingS3Client()
+    source = tmp_path / "upload.pdf"
+    source.write_bytes(b"hello world")
+    key = "users/1/courses/2/materials/3/objects/secret-object-key"
+    leaked_url = (
+        f"http://minio.test:9000/exam-review-materials/{key}"
+        "?X-Amz-Signature=secret-signature"
+    )
+
+    def failed_put(**_kwargs):
+        raise EndpointConnectionError(endpoint_url=leaked_url)
+
+    client.put_object = failed_put  # type: ignore[method-assign]
+
+    with pytest.raises(ObjectStorageError) as error:
+        await _storage(client).put_file(
+            key=key,
+            source=source,
+            size_bytes=11,
+            content_type="application/pdf",
+            sha256="a" * 64,
+        )
+
+    rendered = "".join(traceback.format_exception(error.value))
+    assert error.value.__cause__ is None
+    assert key not in rendered
+    assert "minio.test:9000" not in rendered
+    assert "X-Amz-Signature" not in rendered
 
 
 @pytest.mark.asyncio
