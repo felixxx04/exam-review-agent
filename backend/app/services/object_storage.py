@@ -233,6 +233,8 @@ class S3ObjectStorage:
             # A verification failure cannot make an unverified version available.
             try:
                 self._delete(key, version_id)
+            except ObjectStorageError as cleanup_error:
+                raise cleanup_error from None
             except (BotoCoreError, ClientError):
                 pass
             raise
@@ -327,7 +329,10 @@ class S3ObjectStorage:
         try:
             await asyncio.to_thread(self._download_file, key, destination, version_id)
         except (BotoCoreError, ClientError, OSError) as exc:
-            destination.unlink(missing_ok=True)
+            try:
+                destination.unlink(missing_ok=True)
+            except OSError:
+                pass
             raise self._storage_error(exc) from None
 
     def _download_file(
