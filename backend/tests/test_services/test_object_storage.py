@@ -5,7 +5,9 @@ from dataclasses import dataclass
 from pathlib import Path
 
 import pytest
+from boto3.exceptions import RetriesExceededError
 from botocore.exceptions import ClientError, EndpointConnectionError
+from s3transfer.exceptions import S3DownloadFailedError
 
 from app.services.object_storage import (
     ObjectStorageError,
@@ -642,6 +644,49 @@ async def test_s3_storage_hides_download_context_when_partial_cleanup_fails(
     assert "minio.test:9000" not in rendered
     assert "X-Amz-Signature" not in rendered
     assert "locked temporary path" not in rendered
+
+
+@pytest.mark.parametrize(
+    "failure_kind",
+    ["download_failed", "retries_exceeded"],
+)
+@pytest.mark.asyncio
+async def test_s3_storage_maps_high_level_download_failures(
+    tmp_path, failure_kind
+) -> None:
+    client = RecordingS3Client()
+    destination = tmp_path / "partial-download.pdf"
+    key = "users/1/courses/2/materials/3/objects/secret-object-key"
+    leaked_url = (
+        f"http://minio.test:9000/exam-review-materials/{key}"
+        "?X-Amz-Signature=secret-signature"
+    )
+    failure = (
+        S3DownloadFailedError(f"failed bucket=exam-review-materials key={key}")
+        if failure_kind == "download_failed"
+        else RetriesExceededError(EndpointConnectionError(endpoint_url=leaked_url))
+    )
+
+    def failed_download(**kwargs):
+        Path(kwargs["Filename"]).write_bytes(b"partial")
+        raise failure
+
+    client.download_file = failed_download  # type: ignore[method-assign]
+
+    with pytest.raises(ObjectStorageError) as error:
+        await _storage(client).download_to_path(
+            key=key,
+            destination=destination,
+        )
+
+    rendered = "".join(traceback.format_exception(error.value))
+    assert error.value.__cause__ is None
+    assert error.value.__suppress_context__ is True
+    assert key not in rendered
+    assert "exam-review-materials" not in rendered
+    assert "minio.test:9000" not in rendered
+    assert "X-Amz-Signature" not in rendered
+    assert not destination.exists()
 
 
 @pytest.mark.asyncio
