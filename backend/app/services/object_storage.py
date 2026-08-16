@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import hmac
+import logging
 import re
 from dataclasses import dataclass
 from pathlib import Path
@@ -16,6 +17,7 @@ from s3transfer.exceptions import S3DownloadFailedError
 from app.core.exceptions import AppException
 
 
+logger = logging.getLogger(__name__)
 _OBJECT_ID_PATTERN = re.compile(r"[a-zA-Z0-9-]{16,128}\Z")
 _SHA256_PATTERN = re.compile(r"[0-9a-f]{64}\Z")
 _VALID_DISPOSITIONS = frozenset({"attachment", "inline"})
@@ -121,10 +123,14 @@ class S3ObjectStorage:
             connect_timeout_seconds=connect_timeout_seconds,
             read_timeout_seconds=read_timeout_seconds,
         )
-        self._presign_client = (
-            self._client
-            if client is not None or public_endpoint_url in (None, endpoint_url)
-            else self._build_client(
+        if (
+            client is not None
+            or public_endpoint_url is None
+            or public_endpoint_url == endpoint_url
+        ):
+            self._presign_client = self._client
+        else:
+            self._presign_client = self._build_client(
                 endpoint_url=public_endpoint_url,
                 region=region,
                 access_key_id=access_key_id,
@@ -132,7 +138,6 @@ class S3ObjectStorage:
                 connect_timeout_seconds=connect_timeout_seconds,
                 read_timeout_seconds=read_timeout_seconds,
             )
-        )
 
     @staticmethod
     def _build_client(
@@ -269,6 +274,7 @@ class S3ObjectStorage:
 
     def _exact_version_ids(self, key: str) -> list[str]:
         request: dict[str, Any] = {"Bucket": self.bucket, "Prefix": key}
+        seen_markers: set[tuple[str | None, str | None]] = {(None, None)}
         version_ids: list[str] = []
         while True:
             response = self._client.list_object_versions(**request)
@@ -289,8 +295,18 @@ class S3ObjectStorage:
                 )
             request["KeyMarker"] = next_key_marker
             next_version_marker = response.get("NextVersionIdMarker")
-            if isinstance(next_version_marker, str):
-                request["VersionIdMarker"] = next_version_marker
+            normalized_version_marker = (
+                next_version_marker if isinstance(next_version_marker, str) else None
+            )
+            next_markers = (next_key_marker, normalized_version_marker)
+            if next_markers in seen_markers:
+                raise ObjectStorageError(
+                    "Object storage cleanup could not be verified",
+                    "OBJECT_STORAGE_UNAVAILABLE",
+                )
+            seen_markers.add(next_markers)
+            if normalized_version_marker is not None:
+                request["VersionIdMarker"] = normalized_version_marker
             else:
                 request.pop("VersionIdMarker", None)
 
@@ -340,7 +356,7 @@ class S3ObjectStorage:
             try:
                 destination.unlink(missing_ok=True)
             except OSError:
-                pass
+                logger.warning("Partial object download cleanup failed")
             raise self._storage_error(exc) from None
 
     def _download_file(
