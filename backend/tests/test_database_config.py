@@ -78,7 +78,7 @@ def test_compose_minio_initialization_does_not_require_sed():
 
     assert "sed " not in script
     assert "policy_template=$$(cat /policy/object-storage-policy.json)" in script
-    assert "policy_template/__S3_BUCKET__" in script
+    assert "policy_template//__S3_BUCKET__" in script
 
 
 def test_minio_policy_only_allows_version_listing_for_material_object_prefixes():
