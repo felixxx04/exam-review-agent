@@ -463,6 +463,33 @@ async def test_s3_storage_paginates_exact_version_cleanup() -> None:
 
 
 @pytest.mark.asyncio
+async def test_s3_storage_rejects_a_stalled_version_pagination_token() -> None:
+    key = "users/1/courses/2/materials/3/objects/random"
+    client = RecordingS3Client()
+
+    def stalled_versions(**kwargs):
+        client.calls.append(_RecordedCall("list_object_versions", kwargs))
+        if len(client.calls) > 3:
+            raise AssertionError("version pagination did not stop")
+        return {
+            "Versions": [],
+            "DeleteMarkers": [],
+            "IsTruncated": True,
+            "NextKeyMarker": key,
+            "NextVersionIdMarker": "version-1",
+        }
+
+    client.list_object_versions = stalled_versions  # type: ignore[method-assign]
+
+    with pytest.raises(ObjectStorageError) as error:
+        await _storage(client).delete_object(key=key)
+
+    assert error.value.code == "OBJECT_STORAGE_UNAVAILABLE"
+    listed = [call for call in client.calls if call.name == "list_object_versions"]
+    assert len(listed) == 2
+
+
+@pytest.mark.asyncio
 async def test_s3_storage_does_not_head_an_unknown_put_before_cleanup() -> None:
     client = RecordingS3Client()
 
@@ -612,7 +639,7 @@ async def test_s3_storage_removes_partial_downloads_and_hides_sdk_errors(
 
 @pytest.mark.asyncio
 async def test_s3_storage_hides_download_context_when_partial_cleanup_fails(
-    tmp_path, monkeypatch
+    tmp_path, monkeypatch, caplog
 ) -> None:
     client = RecordingS3Client()
     destination = tmp_path / "locked-download.pdf"
@@ -631,11 +658,12 @@ async def test_s3_storage_hides_download_context_when_partial_cleanup_fails(
     client.download_file = failed_download  # type: ignore[method-assign]
     monkeypatch.setattr(Path, "unlink", locked_unlink)
 
-    with pytest.raises(ObjectStorageError) as error:
-        await _storage(client).download_to_path(
-            key=key,
-            destination=destination,
-        )
+    with caplog.at_level("WARNING", logger="app.services.object_storage"):
+        with pytest.raises(ObjectStorageError) as error:
+            await _storage(client).download_to_path(
+                key=key,
+                destination=destination,
+            )
 
     rendered = "".join(traceback.format_exception(error.value))
     assert error.value.__cause__ is None
@@ -644,6 +672,9 @@ async def test_s3_storage_hides_download_context_when_partial_cleanup_fails(
     assert "minio.test:9000" not in rendered
     assert "X-Amz-Signature" not in rendered
     assert "locked temporary path" not in rendered
+    assert "Partial object download cleanup failed" in caplog.text
+    assert key not in caplog.text
+    assert str(destination) not in caplog.text
 
 
 @pytest.mark.parametrize(
