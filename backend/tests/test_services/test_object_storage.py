@@ -545,6 +545,46 @@ async def test_s3_storage_drops_sensitive_sdk_exception_context(tmp_path) -> Non
 
 
 @pytest.mark.asyncio
+async def test_s3_storage_drops_verification_context_when_cleanup_does_not_converge(
+    tmp_path,
+) -> None:
+    client = RecordingS3Client()
+    source = tmp_path / "upload.pdf"
+    source.write_bytes(b"hello world")
+    key = "users/1/courses/2/materials/3/objects/secret-object-key"
+    leaked_url = (
+        f"http://minio.test:9000/exam-review-materials/{key}"
+        "?X-Amz-Signature=secret-signature"
+    )
+
+    def failed_head(**_kwargs):
+        raise EndpointConnectionError(endpoint_url=leaked_url)
+
+    def ineffective_delete(**kwargs):
+        client.calls.append(_RecordedCall("delete_object", kwargs))
+        return {}
+
+    client.head_object = failed_head  # type: ignore[method-assign]
+    client.delete_object = ineffective_delete  # type: ignore[method-assign]
+
+    with pytest.raises(ObjectStorageError) as error:
+        await _storage(client).put_file(
+            key=key,
+            source=source,
+            size_bytes=11,
+            content_type="application/pdf",
+            sha256="a" * 64,
+        )
+
+    rendered = "".join(traceback.format_exception(error.value))
+    assert error.value.__cause__ is None
+    assert error.value.__suppress_context__ is True
+    assert key not in rendered
+    assert "minio.test:9000" not in rendered
+    assert "X-Amz-Signature" not in rendered
+
+
+@pytest.mark.asyncio
 async def test_s3_storage_removes_partial_downloads_and_hides_sdk_errors(
     tmp_path,
 ) -> None:
@@ -566,6 +606,42 @@ async def test_s3_storage_removes_partial_downloads_and_hides_sdk_errors(
     assert error.value.code == "OBJECT_STORAGE_UNAVAILABLE"
     assert "network path" not in error.value.message
     assert not destination.exists()
+
+
+@pytest.mark.asyncio
+async def test_s3_storage_hides_download_context_when_partial_cleanup_fails(
+    tmp_path, monkeypatch
+) -> None:
+    client = RecordingS3Client()
+    destination = tmp_path / "locked-download.pdf"
+    key = "users/1/courses/2/materials/3/objects/secret-object-key"
+    leaked_url = (
+        f"http://minio.test:9000/exam-review-materials/{key}"
+        "?X-Amz-Signature=secret-signature"
+    )
+
+    def failed_download(**_kwargs):
+        raise EndpointConnectionError(endpoint_url=leaked_url)
+
+    def locked_unlink(_path, *_args, **_kwargs):
+        raise PermissionError("locked temporary path must not escape")
+
+    client.download_file = failed_download  # type: ignore[method-assign]
+    monkeypatch.setattr(Path, "unlink", locked_unlink)
+
+    with pytest.raises(ObjectStorageError) as error:
+        await _storage(client).download_to_path(
+            key=key,
+            destination=destination,
+        )
+
+    rendered = "".join(traceback.format_exception(error.value))
+    assert error.value.__cause__ is None
+    assert error.value.__suppress_context__ is True
+    assert key not in rendered
+    assert "minio.test:9000" not in rendered
+    assert "X-Amz-Signature" not in rendered
+    assert "locked temporary path" not in rendered
 
 
 @pytest.mark.asyncio
