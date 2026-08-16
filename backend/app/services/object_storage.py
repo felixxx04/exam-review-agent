@@ -8,8 +8,10 @@ from pathlib import Path
 from typing import Any, Protocol
 
 import boto3
+from boto3.exceptions import RetriesExceededError
 from botocore.config import Config
 from botocore.exceptions import BotoCoreError, ClientError
+from s3transfer.exceptions import S3DownloadFailedError
 
 from app.core.exceptions import AppException
 
@@ -328,7 +330,13 @@ class S3ObjectStorage:
         destination.parent.mkdir(parents=True, exist_ok=True)
         try:
             await asyncio.to_thread(self._download_file, key, destination, version_id)
-        except (BotoCoreError, ClientError, OSError) as exc:
+        except (
+            BotoCoreError,
+            ClientError,
+            OSError,
+            RetriesExceededError,
+            S3DownloadFailedError,
+        ) as exc:
             try:
                 destination.unlink(missing_ok=True)
             except OSError:
