@@ -76,6 +76,14 @@ class ProcessingStatus(str, enum.Enum):
     FAILED = "failed"
 
 
+class MaterialJobStatus(str, enum.Enum):
+    QUEUED = "queued"
+    RUNNING = "running"
+    SUCCEEDED = "succeeded"
+    FAILED = "failed"
+    CANCELLED = "cancelled"
+
+
 class StorageStatus(str, enum.Enum):
     RESERVED = "reserved"
     AVAILABLE = "available"
@@ -139,6 +147,9 @@ class User(Base):
     )
     materials = relationship(
         "Material", back_populates="user", cascade="all, delete-orphan"
+    )
+    material_jobs = relationship(
+        "MaterialJob", back_populates="user", cascade="all, delete-orphan"
     )
     quiz_sessions = relationship(
         "QuizSession", back_populates="user", cascade="all, delete-orphan"
@@ -646,6 +657,9 @@ class Material(Base):
     chunks = relationship(
         "MaterialChunk", back_populates="material", cascade="all, delete-orphan"
     )
+    jobs = relationship(
+        "MaterialJob", back_populates="material", cascade="all, delete-orphan"
+    )
 
 
 class MaterialChunk(Base):
@@ -698,6 +712,95 @@ class MaterialChunk(Base):
         back_populates="chunks",
         foreign_keys=[material_id, user_id, course_id],
     )
+
+
+class MaterialJob(Base):
+    """PostgreSQL-backed state for one material processing attempt series."""
+
+    __tablename__ = "material_jobs"
+    __table_args__ = (
+        ForeignKeyConstraint(
+            ["course_id", "user_id"],
+            ["courses.id", "courses.user_id"],
+            ondelete="CASCADE",
+            name="fk_material_jobs_course_owner",
+        ),
+        ForeignKeyConstraint(
+            ["material_id", "user_id", "course_id"],
+            ["materials.id", "materials.user_id", "materials.course_id"],
+            ondelete="CASCADE",
+            name="fk_material_jobs_material_scope",
+        ),
+        CheckConstraint(
+            "status IN ('queued', 'running', 'succeeded', 'failed', 'cancelled')",
+            name="ck_material_jobs_status",
+        ),
+        CheckConstraint(
+            "attempt_count >= 0 AND max_attempts > 0",
+            name="ck_material_jobs_attempts",
+        ),
+        CheckConstraint(
+            "progress_percent >= 0 AND progress_percent <= 100",
+            name="ck_material_jobs_progress",
+        ),
+        Index("ix_material_jobs_user_status", "user_id", "status"),
+        Index(
+            "ix_material_jobs_queue_scan",
+            "status",
+            "available_at",
+            "priority",
+            "created_at",
+        ),
+        Index("ix_material_jobs_user_material", "user_id", "material_id"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    public_id: Mapped[str] = mapped_column(
+        String(64), default=_public_id, unique=True, nullable=False, index=True
+    )
+    user_id: Mapped[int] = mapped_column(
+        Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    course_id: Mapped[int] = mapped_column(Integer, nullable=False, index=True)
+    material_id: Mapped[int] = mapped_column(Integer, nullable=False, index=True)
+    job_type: Mapped[str] = mapped_column(
+        String(64), default="material.process", nullable=False
+    )
+    idempotency_key: Mapped[str] = mapped_column(
+        String(200), unique=True, nullable=False, index=True
+    )
+    status: Mapped[str] = mapped_column(
+        _string_enum(MaterialJobStatus, "ck_material_jobs_status_value", length=16),
+        default=MaterialJobStatus.QUEUED,
+        nullable=False,
+        index=True,
+    )
+    progress_percent: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    current_step: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    attempt_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    max_attempts: Mapped[int] = mapped_column(Integer, default=3, nullable=False)
+    priority: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    available_at: Mapped[datetime.datetime] = mapped_column(
+        DateTime(timezone=True), default=_utcnow, nullable=False
+    )
+    redis_job_id: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    error_code: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    error_message: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    created_at: Mapped[datetime.datetime] = mapped_column(
+        DateTime(timezone=True), default=_utcnow, nullable=False
+    )
+    started_at: Mapped[datetime.datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    completed_at: Mapped[datetime.datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    updated_at: Mapped[datetime.datetime] = mapped_column(
+        DateTime(timezone=True), default=_utcnow, onupdate=_utcnow, nullable=False
+    )
+
+    user = relationship("User", back_populates="material_jobs")
+    material = relationship("Material", back_populates="jobs")
 
 
 class QuizSession(Base):
