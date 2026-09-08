@@ -12,7 +12,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.database import bind_tenant_context
 from app.db.models import Material, MaterialJob, MaterialJobStatus, ProcessingStatus
-from app.tasks.worker import WorkerConfig
 
 
 logger = logging.getLogger(__name__)
@@ -43,6 +42,12 @@ class JobService:
 
     def _now(self) -> datetime.datetime:
         value = self._now_factory()
+        if value.tzinfo is None:
+            return value.replace(tzinfo=datetime.UTC)
+        return value
+
+    @staticmethod
+    def _aware(value: datetime.datetime) -> datetime.datetime:
         if value.tzinfo is None:
             return value.replace(tzinfo=datetime.UTC)
         return value
@@ -116,6 +121,8 @@ class JobService:
         owns_queue = queue is None
         if queue is None:
             try:
+                from app.tasks.worker import WorkerConfig
+
                 queue = await WorkerConfig.get_pool()
             except Exception:
                 logger.warning("Material job queue is unavailable")
@@ -126,6 +133,7 @@ class JobService:
                 job.public_id,
                 job.user_id,
                 _job_id=job.public_id,
+                _defer_until=self._aware(job.available_at),
             )
             job.redis_job_id = getattr(result, "job_id", None) or job.public_id
             await self.db.commit()
@@ -245,7 +253,7 @@ class JobService:
             await self.db.rollback()
             return None
         now = self._now()
-        if job.available_at > now:
+        if self._aware(job.available_at) > now:
             await self.db.rollback()
             return None
         job.status = MaterialJobStatus.RUNNING
@@ -286,6 +294,25 @@ class JobService:
                 completed_at=self._now(),
                 error_code=None,
                 error_message=None,
+            )
+        )
+        await self.db.commit()
+
+    async def mark_cancelled(self, *, user_id: int, job_id: str) -> None:
+        await bind_tenant_context(self.db, user_id)
+        await self.db.execute(
+            update(MaterialJob)
+            .where(
+                MaterialJob.public_id == job_id,
+                MaterialJob.user_id == user_id,
+                MaterialJob.status == MaterialJobStatus.RUNNING,
+            )
+            .values(
+                status=MaterialJobStatus.CANCELLED,
+                current_step="cancelled",
+                completed_at=self._now(),
+                error_code="PROCESSING_CANCELLED",
+                error_message=SAFE_PROCESSING_CANCELLED,
             )
         )
         await self.db.commit()

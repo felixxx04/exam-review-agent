@@ -8,6 +8,10 @@ from sqlalchemy import select
 
 from app.db.models import Course, Material, MaterialJob, MaterialJobStatus, User
 from app.services.job_service import JobService
+from app.services.object_storage import StoredObject
+
+
+MINIMAL_PDF = b"%PDF-1.4\n1 0 obj\n<< /Type /Catalog >>\nendobj\ntrailer\n<<>>\n%%EOF\n"
 
 
 class RecordingQueue:
@@ -229,3 +233,76 @@ async def test_job_queries_are_scoped_to_the_authenticated_user(
             user_id=authenticated_user.id,
             material_id=material.id,
         )
+
+
+@pytest.mark.asyncio
+async def test_upload_returns_queued_without_running_parser(
+    client_with_db, db_session, object_storage, monkeypatch
+):
+    class ParserMustNotRun:
+        async def parse(self, *_args, **_kwargs):
+            raise AssertionError("parser must run in the worker")
+
+    monkeypatch.setattr(
+        "app.services.parser_service.ParserService", lambda: ParserMustNotRun()
+    )
+
+    response = await client_with_db.post(
+        "/api/materials",
+        files={"file": ("queued.pdf", MINIMAL_PDF, "application/pdf")},
+    )
+
+    assert response.status_code == 200
+    data = response.json()["data"]
+    assert data["processing_status"] == "pending"
+    job = await db_session.scalar(select(MaterialJob))
+    assert job is not None
+    assert job.status == MaterialJobStatus.QUEUED
+
+
+@pytest.mark.asyncio
+async def test_worker_processes_one_job_and_duplicate_delivery_is_idempotent(
+    db_session, authenticated_user, object_storage, monkeypatch
+):
+    from app.services.parser_service import Chunk, ParseResult
+    from app.tasks.parse_material import process_material_job
+
+    material = await _material(db_session, authenticated_user)
+    object_storage.objects[material.object_key] = b"%PDF-1.4\nworker"
+
+    class ParserStub:
+        async def parse(self, *_args, **_kwargs):
+            return ParseResult(chunks=[Chunk(text="worker text")], page_count=1)
+
+    class RetrievalStub:
+        index_calls = 0
+
+        async def index_chunks(self, **kwargs):
+            self.index_calls += 1
+            return kwargs["chunk_ids"]
+
+        async def delete_chunks(self, **_kwargs):
+            return None
+
+    retrieval = RetrievalStub()
+    monkeypatch.setattr("app.services.parser_service.ParserService", lambda: ParserStub())
+    monkeypatch.setattr("app.services.retrieval_service.RetrievalService", lambda: retrieval)
+
+    queue = RecordingQueue()
+    service = JobService(db_session, queue=queue)
+    job = await service.create_material_job(
+        user_id=authenticated_user.id,
+        material_id=material.id,
+        course_id=material.course_id,
+    )
+
+    ctx = {"db_session": db_session, "object_storage": object_storage}
+    await process_material_job(ctx, job.public_id, authenticated_user.id)
+    await process_material_job(ctx, job.public_id, authenticated_user.id)
+
+    await db_session.refresh(job)
+    await db_session.refresh(material)
+    assert job.status == MaterialJobStatus.SUCCEEDED
+    assert job.progress_percent == 100
+    assert material.processing_status == "ready"
+    assert retrieval.index_calls == 1

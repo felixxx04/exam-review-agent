@@ -36,6 +36,7 @@ class Settings(BaseSettings):
     s3_presigned_url_ttl_seconds: int = 300
     s3_connect_timeout_seconds: int = 5
     s3_read_timeout_seconds: int = 30
+    material_job_stale_seconds: int = 900
     cors_origins: str = "http://localhost:3000,http://127.0.0.1:3000"
 
     model_config = {"env_file": ".env", "env_file_encoding": "utf-8"}

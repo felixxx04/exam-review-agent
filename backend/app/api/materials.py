@@ -6,6 +6,7 @@ import hashlib
 import logging
 import tempfile
 import uuid
+from collections.abc import Awaitable, Callable
 from pathlib import Path
 
 from fastapi import APIRouter, Depends, HTTPException, Response, UploadFile
@@ -13,7 +14,7 @@ from sqlalchemy import delete, select, update
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.dependencies import get_object_storage
+from app.api.dependencies import get_job_service, get_object_storage
 from app.core.auth import AuthenticatedUser, get_current_user
 from app.core.config import settings
 from app.core.exceptions import AppException
@@ -43,6 +44,7 @@ from app.services.object_storage import (
     build_material_object_key,
 )
 from app.services.quota_service import QuotaService
+from app.services.job_service import JobService
 
 
 router = APIRouter(prefix="/api/materials", tags=["materials"])
@@ -51,6 +53,13 @@ UPLOAD_CHUNK_SIZE = 1024 * 1024
 LEGACY_UPLOAD_ROOT = Path("uploads")
 INDEXING_LEASE_DURATION = datetime.timedelta(hours=1)
 logger = logging.getLogger(__name__)
+
+ProgressCallback = Callable[[int, str], Awaitable[None]]
+CancellationCheck = Callable[[], Awaitable[bool]]
+
+
+class MaterialProcessingCancelled(asyncio.CancelledError):
+    """Cooperative cancellation requested by a durable MaterialJob."""
 
 
 def _lexical_tokens(text: str) -> str:
@@ -235,6 +244,7 @@ async def upload_material(
     current_user: AuthenticatedUser = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
     storage: ObjectStorage = Depends(get_object_storage),
+    jobs: JobService = Depends(get_job_service),
 ):
     course = await CourseService(db).resolve_course(current_user.id, course_id)
     if file.filename is None:
@@ -415,17 +425,14 @@ async def upload_material(
                 raise
             raise
 
-        # Keep the deletion/upload lock until indexing reaches a durable terminal
-        # state, so account cleanup cannot finish before this upload's vectors.
-        await QuotaService(db).lock_upload(current_user.id)
-        await _process_material(
-            db,
-            storage=storage,
-            material=material,
-            user_subject=current_user.subject,
-            course_id=course.id,
-        )
         await db.refresh(material)
+    job_service = jobs if isinstance(jobs, JobService) else JobService(db)
+    await job_service.create_material_job(
+        user_id=current_user.id,
+        material_id=material.id,
+        course_id=course.id,
+    )
+    await db.refresh(material)
     return ApiResponse.ok(data=MaterialResponse.model_validate(material))
 
 
@@ -436,13 +443,25 @@ async def _process_material(
     material: Material,
     user_subject: str,
     course_id: int,
+    progress: ProgressCallback | None = None,
+    cancellation_check: CancellationCheck | None = None,
 ) -> None:
+    async def report(percent: int, step: str) -> None:
+        if progress is not None:
+            await progress(percent, step)
+
+    async def ensure_not_cancelled() -> None:
+        if cancellation_check is not None and await cancellation_check():
+            raise MaterialProcessingCancelled()
+
     material_id = material.id
     lease_id = uuid.uuid4().hex
     retrieval = None
     indexed_chunk_ids: list[str] = []
     indexing_intent_persisted = False
     try:
+        await ensure_not_cancelled()
+        await report(5, "starting")
         material.processing_status = ProcessingStatus.PROCESSING
         material.processing_lease_expires_at = _indexing_lease_expires_at()
         material.processing_lease_id = lease_id
@@ -455,6 +474,8 @@ async def _process_material(
                 destination=source_path,
                 version_id=material.object_version_id,
             )
+            await ensure_not_cancelled()
+            await report(25, "downloaded")
 
             from app.services.parser_service import ParserService
 
@@ -462,6 +483,8 @@ async def _process_material(
                 str(source_path),
                 file_type=material.file_type,
             )
+        await ensure_not_cancelled()
+        await report(45, "parsed")
 
         from dataclasses import asdict
 
@@ -470,6 +493,7 @@ async def _process_material(
 
         retrieval = RetrievalService()
         normalized_chunks = ChunkingService().normalize(result.chunks)
+        await report(55, "chunked")
         chunk_payloads = []
         for chunk in normalized_chunks:
             payload = asdict(chunk)
@@ -509,6 +533,8 @@ async def _process_material(
             if material is None:
                 await db.rollback()
                 return
+            await ensure_not_cancelled()
+            await report(70, "indexing")
             await retrieval.index_chunks(
                 user_id=user_subject,
                 chunks=chunk_payloads,
@@ -535,12 +561,14 @@ async def _process_material(
                 )
                 return
         else:
+            await ensure_not_cancelled()
             material.processing_status = ProcessingStatus.READY
             material.chunk_count = len(normalized_chunks)
             material.page_count = result.page_count
             material.processed_at = datetime.datetime.now(datetime.UTC)
             material.processing_lease_expires_at = None
             material.processing_lease_id = None
+        await report(95, "indexed")
     except asyncio.CancelledError:
         await db.rollback()
         if indexing_intent_persisted:

@@ -1,4 +1,6 @@
-"""ARQ worker setup with Redis connection from application settings."""
+"""ARQ worker settings and the Redis delivery pool."""
+
+from __future__ import annotations
 
 from arq import create_pool
 from arq.connections import RedisSettings
@@ -6,13 +8,10 @@ from arq.connections import RedisSettings
 from app.core.config import settings
 
 
-async def get_redis_settings() -> RedisSettings:
-    """Build Redis settings from the application configuration."""
-    # Support both full redis:// URLs and host:port pairs
+def _redis_settings() -> RedisSettings:
     redis_url = settings.redis_url
     if redis_url.startswith("redis://"):
         return RedisSettings.from_dsn(redis_url)
-    # Default: parse host and port
     host = "localhost"
     port = 6379
     if "://" in redis_url:
@@ -22,34 +21,42 @@ async def get_redis_settings() -> RedisSettings:
     if "@" in rest:
         _, rest = rest.split("@", 1)
     if ":" in rest:
-        host, port_str = rest.rsplit(":", 1)
+        host, port_text = rest.rsplit(":", 1)
         try:
-            port = int(port_str)
+            port = int(port_text)
         except ValueError:
-            port = 6379
+            pass
     else:
         host = rest or host
     return RedisSettings(host=host, port=port)
 
 
-class WorkerConfig:
-    """Configuration holder for the ARQ worker."""
+async def get_redis_settings() -> RedisSettings:
+    """Build Redis settings from the application configuration."""
+    return _redis_settings()
 
-    # Functions exposed to the ARQ worker
-    functions: list = []
-    redis_settings: RedisSettings | None = None
+
+class WorkerSettings:
+    """ARQ's importable worker configuration."""
+
+    from app.tasks.parse_material import process_material_job, recover_material_jobs
+
+    functions = [process_material_job, recover_material_jobs]
+    redis_settings = _redis_settings()
+
+
+class WorkerConfig:
+    """Compatibility holder used by API-side enqueue calls."""
+
+    functions = WorkerSettings.functions
+    redis_settings = WorkerSettings.redis_settings
 
     @classmethod
     async def initialize(cls) -> None:
-        """Initialize the worker configuration."""
         cls.redis_settings = await get_redis_settings()
-        # Discover and register task functions
-        from app.tasks.parse_material import parse_material
-        cls.functions = [parse_material]
 
     @classmethod
     async def get_pool(cls):
-        """Get or create a Redis connection pool for enqueuing tasks."""
         if cls.redis_settings is None:
             await cls.initialize()
         return await create_pool(cls.redis_settings)

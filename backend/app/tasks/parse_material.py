@@ -1,137 +1,112 @@
-"""Background task for parsing uploaded materials.
+"""ARQ entrypoints for durable material processing jobs."""
 
-This defines the ``parse_material`` function which is enqueued as an
-ARQ job after a file is uploaded. It orchestrates:
-
-1. Updating material status to "processing"
-2. Calling ParserService.parse() to extract text chunks
-3. Indexing chunks in the vector store
-4. Updating material status to "ready" or "failed"
-"""
+from __future__ import annotations
 
 import logging
-from typing import Optional
+import datetime
+from contextlib import asynccontextmanager
+from typing import Any
 
-from app.core.exceptions import FileParsingError
+from sqlalchemy import select
+
+from app.api.dependencies import get_object_storage
+from app.api.materials import MaterialProcessingCancelled, _process_material
+from app.core.config import settings
 from app.db.database import AsyncSessionLocal
-from app.db.models import Material, ProcessingStatus
-from app.services.parser_service import ParserService
+from app.db.models import Material, ProcessingStatus, StorageStatus
+from app.services.job_service import JobService
+from app.services.object_storage import ObjectStorage
+
 
 logger = logging.getLogger(__name__)
 
 
-async def parse_material(ctx: dict, material_id: int) -> None:
-    """Parse an uploaded material file and index its content.
-
-    Args:
-        ctx: ARQ job context (contains Redis connection, etc.).
-        material_id: The database ID of the Material record to process.
-
-    Side effects:
-        - Updates Material.processing_status to 'processing' then
-          'ready' or 'failed'.
-        - Stores parsed chunks in the vector store via
-          ctx["vector_store"] if available.
-    """
-    parser = ParserService()
-
-    # 1) Update material status to "processing"
-    await _update_material_status(material_id, ProcessingStatus.PROCESSING, error_msg=None)
-
-    try:
-        # 2) Load the material record to get file path
-        material = await _get_material(material_id)
-        if material is None:
-            logger.error("Material %d not found in database", material_id)
-            return
-
-        file_path = _build_file_path(material.filename)
-
-        # 3) Parse the file
-        result = await parser.parse(file_path, file_type=material.file_type.value if hasattr(material.file_type, 'value') else material.file_type)
-
-        # 4) Index chunks into vector store
-        await _index_chunks(ctx, material, result)
-
-        # 5) Update material status to "ready"
-        await _update_material_status(
-            material_id,
-            ProcessingStatus.READY,
-            chunk_count=len(result.chunks),
-            page_count=result.page_count,
-        )
-
-        logger.info(
-            "Material %d (%s) parsed successfully: %d chunks",
-            material_id,
-            material.original_filename,
-            len(result.chunks),
-        )
-        return result
-
-    except Exception as exc:
-        error_msg = str(exc)
-        logger.exception("Failed to parse material %d: %s", material_id, error_msg)
-        await _update_material_status(
-            material_id,
-            ProcessingStatus.FAILED,
-            error_msg=error_msg,
-        )
-        raise FileParsingError(str(material_id), error_msg) from exc
-
-
-# ---------------------------------------------------------------------------
-# Internal helpers
-# ---------------------------------------------------------------------------
-
-
-async def _get_material(material_id: int) -> Optional[Material]:
-    """Fetch a Material record from the database."""
+@asynccontextmanager
+async def _job_session(ctx: dict[str, Any]):
+    supplied = ctx.get("db_session")
+    if supplied is not None:
+        yield supplied
+        return
     async with AsyncSessionLocal() as session:
-        from sqlalchemy import select
-        result = await session.execute(
-            select(Material).where(Material.id == material_id)
-        )
-        return result.scalar_one_or_none()
+        yield session
 
 
-async def _update_material_status(
-    material_id: int,
-    status: ProcessingStatus,
-    error_msg: Optional[str] = None,
-    chunk_count: Optional[int] = None,
-    page_count: Optional[int] = None,
+async def process_material_job(
+    ctx: dict[str, Any], job_id: str, user_id: int
 ) -> None:
-    """Update a Material record's processing fields."""
-    async with AsyncSessionLocal() as session:
-        from sqlalchemy import select
-        result = await session.execute(
-            select(Material).where(Material.id == material_id)
-        )
-        material = result.scalar_one_or_none()
-        if material is None:
-            logger.warning("Material %d not found for status update", material_id)
+    """Claim and execute one material job, keeping PostgreSQL authoritative."""
+    async with _job_session(ctx) as db:
+        jobs = JobService(db)
+        job = await jobs.claim_job(user_id=user_id, job_id=job_id)
+        if job is None:
             return
 
-        material.processing_status = status  # type: ignore[assignment]
-        if error_msg is not None:
-            material.error_message = error_msg
-        if chunk_count is not None:
-            material.chunk_count = chunk_count
-        if page_count is not None:
-            material.page_count = page_count
+        material = await db.scalar(
+            select(Material).where(
+                Material.id == job.material_id,
+                Material.user_id == user_id,
+                Material.course_id == job.course_id,
+            )
+        )
+        if material is None or material.storage_status != StorageStatus.AVAILABLE:
+            await jobs.mark_failed(
+                user_id=user_id,
+                job_id=job_id,
+                error_code="MATERIAL_UNAVAILABLE",
+            )
+            return
 
-        await session.commit()
+        storage: ObjectStorage = ctx.get("object_storage") or get_object_storage()
+
+        async def progress(percent: int, step: str) -> None:
+            try:
+                await jobs.update_progress(
+                    user_id=user_id,
+                    job_id=job_id,
+                    percent=percent,
+                    step=step,
+                )
+            except Exception:
+                await db.rollback()
+                logger.warning("Could not persist material job progress")
+
+        async def cancellation_check() -> bool:
+            return await jobs.is_cancelled(user_id=user_id, job_id=job_id)
+
+        try:
+            await _process_material(
+                db,
+                storage=storage,
+                material=material,
+                user_subject=str(user_id),
+                course_id=job.course_id,
+                progress=progress,
+                cancellation_check=cancellation_check,
+            )
+            await db.refresh(material)
+            if material.processing_status == ProcessingStatus.READY:
+                await jobs.mark_succeeded(user_id=user_id, job_id=job_id)
+            else:
+                await jobs.mark_failed(user_id=user_id, job_id=job_id)
+        except MaterialProcessingCancelled:
+            await db.rollback()
+            await jobs.mark_cancelled(user_id=user_id, job_id=job_id)
+        except Exception:
+            await db.rollback()
+            await jobs.mark_failed(user_id=user_id, job_id=job_id)
 
 
-def _build_file_path(filename: str) -> str:
-    """Build the full file system path for an uploaded file.
+# Keep the old import name available to worker discovery code.
+parse_material = process_material_job
 
-    Uploaded files are stored under ./uploads/ relative to the project root.
-    """
-    import os
-    uploads_dir = os.environ.get(
-        "UPLOADS_DIR",
-        os.path.join(os.path.dirname(__file__), "..", "..", "..", "uploads"),
-    )
-    return os.path.join(uploads_dir, filename)
+
+async def recover_material_jobs(ctx: dict[str, Any]) -> int:
+    """Requeue jobs whose DB state outlived Redis or a worker process."""
+    async with _job_session(ctx) as db:
+        jobs = JobService(db)
+        user_id = ctx.get("user_id")
+        return await jobs.recover_jobs(
+            user_id=int(user_id) if user_id is not None else None,
+            older_than=jobs._now()
+            - datetime.timedelta(seconds=settings.material_job_stale_seconds),
+        )

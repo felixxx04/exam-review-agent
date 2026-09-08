@@ -6,6 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.db.database import get_db
 from app.repositories.mistakes import MistakeRepository, SqlAlchemyMistakeRepository
 from app.services.object_storage import ObjectStorage, S3ObjectStorage
+from app.services.job_service import JobService
 from app.core.config import settings
 
 
@@ -27,3 +28,9 @@ def get_object_storage() -> ObjectStorage:
         connect_timeout_seconds=settings.s3_connect_timeout_seconds,
         read_timeout_seconds=settings.s3_read_timeout_seconds,
     )
+
+
+def get_job_service(
+    db: AsyncSession = Depends(get_db),
+) -> JobService:
+    return JobService(db)
