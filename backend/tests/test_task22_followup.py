@@ -19,6 +19,15 @@ class RecordingQueue:
         return SimpleNamespace(job_id=kwargs.get("_job_id"))
 
 
+def test_worker_registers_a_periodic_material_job_recovery_cron():
+    from app.tasks.worker import WorkerSettings
+
+    assert any(
+        getattr(job, "name", "") == "recover_material_jobs"
+        for job in WorkerSettings.cron_jobs
+    )
+
+
 async def _material(db_session, authenticated_user) -> Material:
     course = Course(
         user_id=authenticated_user.id,
@@ -100,7 +109,10 @@ async def test_failed_job_is_requeued_and_delivered_when_attempts_remain(
     assert result is not None
     await db_session.refresh(job)
     assert job.status == MaterialJobStatus.QUEUED
-    assert job.available_at >= datetime.datetime.now(datetime.UTC)
+    available_at = job.available_at
+    if available_at.tzinfo is None:
+        available_at = available_at.replace(tzinfo=datetime.UTC)
+    assert available_at >= datetime.datetime.now(datetime.UTC)
     assert queue.calls[0][0] == "process_material_job"
     assert queue.calls[0][1] == (job.public_id, authenticated_user.id)
 
