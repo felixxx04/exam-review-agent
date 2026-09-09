@@ -2,9 +2,11 @@ from __future__ import annotations
 
 import datetime
 from types import SimpleNamespace
+from unittest.mock import AsyncMock
 
 import pytest
 from sqlalchemy import select
+from sqlalchemy.exc import SQLAlchemyError
 
 from app.db.models import Course, Material, MaterialJob, MaterialJobStatus
 from app.services.job_service import JobService, SAFE_PROCESSING_ERROR
@@ -115,6 +117,94 @@ async def test_failed_job_is_requeued_and_delivered_when_attempts_remain(
     assert available_at >= datetime.datetime.now(datetime.UTC)
     assert queue.calls[0][0] == "process_material_job"
     assert queue.calls[0][1] == (job.public_id, authenticated_user.id)
+
+
+@pytest.mark.asyncio
+async def test_cancel_jobs_can_leave_the_callers_user_lock_open(
+    db_session, authenticated_user
+):
+    material = await _material(db_session, authenticated_user)
+    job = MaterialJob(
+        user_id=authenticated_user.id,
+        course_id=material.course_id,
+        material_id=material.id,
+        status=MaterialJobStatus.QUEUED,
+        idempotency_key="material:lock-window:process:0",
+    )
+    db_session.add(job)
+    await db_session.commit()
+
+    cancelled = await JobService(db_session).cancel_jobs_for_material(
+        user_id=authenticated_user.id,
+        material_id=material.id,
+        commit=False,
+    )
+
+    assert cancelled == 1
+    assert db_session.in_transaction()
+    assert job.status == MaterialJobStatus.CANCELLED
+
+
+@pytest.mark.asyncio
+async def test_upload_job_persistence_failure_compensates_the_available_object(
+    client_with_db, db_session, object_storage, monkeypatch
+):
+    async def fail_create(self, **kwargs):
+        raise SQLAlchemyError("job persistence unavailable")
+
+    monkeypatch.setattr(JobService, "create_material_job", fail_create)
+
+    with pytest.raises(SQLAlchemyError, match="job persistence"):
+        await client_with_db.post(
+            "/api/materials",
+            files={"file": ("job-failure.pdf", b"%PDF-1.4\n", "application/pdf")},
+        )
+
+    assert await db_session.scalar(select(Material)) is None
+    assert object_storage.objects == {}
+
+
+@pytest.mark.asyncio
+async def test_recovery_cron_also_runs_material_storage_recovery(
+    db_session, authenticated_user, object_storage, monkeypatch
+):
+    from app.tasks.parse_material import recover_material_jobs
+
+    recover_storage = AsyncMock()
+    monkeypatch.setattr(
+        "app.tasks.parse_material.recover_stale_material_reservations_for_user",
+        recover_storage,
+    )
+
+    await recover_material_jobs(
+        {"db_session": db_session, "object_storage": object_storage}
+    )
+
+    recover_storage.assert_awaited_once()
+    assert recover_storage.await_args.kwargs["user_id"] == authenticated_user.id
+
+
+@pytest.mark.asyncio
+async def test_admin_cannot_retry_cancelled_material_job(
+    client_with_db, db_session, authenticated_user
+):
+    material = await _material(db_session, authenticated_user)
+    job = MaterialJob(
+        user_id=authenticated_user.id,
+        course_id=material.course_id,
+        material_id=material.id,
+        status=MaterialJobStatus.CANCELLED,
+        idempotency_key="material:admin-cancelled:process:0",
+    )
+    db_session.add(job)
+    authenticated_user.role = "admin"
+    await db_session.commit()
+
+    response = await client_with_db.post(
+        f"/api/admin/material-jobs/{job.public_id}/retry"
+    )
+
+    assert response.status_code == 409
 
 
 @pytest.mark.asyncio
