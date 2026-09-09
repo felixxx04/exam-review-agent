@@ -8,8 +8,18 @@ import pytest
 from sqlalchemy import select
 from sqlalchemy.exc import SQLAlchemyError
 
-from app.db.models import Course, Material, MaterialJob, MaterialJobStatus
+from app.db.models import (
+    Course,
+    Material,
+    MaterialJob,
+    MaterialJobStatus,
+    ProcessingStatus,
+    StorageStatus,
+)
 from app.services.job_service import JobService, SAFE_PROCESSING_ERROR
+
+
+MINIMAL_PDF = b"%PDF-1.4\n1 0 obj\n<< /Type /Catalog >>\nendobj\ntrailer\n<<>>\n%%EOF\n"
 
 
 class RecordingQueue:
@@ -117,6 +127,144 @@ async def test_failed_job_is_requeued_and_delivered_when_attempts_remain(
     assert available_at >= datetime.datetime.now(datetime.UTC)
     assert queue.calls[0][0] == "process_material_job"
     assert queue.calls[0][1] == (job.public_id, authenticated_user.id)
+
+
+@pytest.mark.asyncio
+async def test_recovery_fences_stale_material_processing_attempt(
+    db_session, authenticated_user
+):
+    material = await _material(db_session, authenticated_user)
+    material.processing_status = ProcessingStatus.PROCESSING
+    material.processing_lease_id = "stale-worker-lease"
+    material.processing_lease_expires_at = datetime.datetime.now(datetime.UTC) - datetime.timedelta(
+        minutes=10
+    )
+    db_session.add(
+        MaterialJob(
+            user_id=authenticated_user.id,
+            course_id=material.course_id,
+            material_id=material.id,
+            status=MaterialJobStatus.RUNNING,
+            attempt_count=1,
+            max_attempts=3,
+            started_at=datetime.datetime.now(datetime.UTC)
+            - datetime.timedelta(minutes=10),
+            updated_at=datetime.datetime.now(datetime.UTC)
+            - datetime.timedelta(minutes=10),
+            idempotency_key="material:stale-fence:process:0",
+        )
+    )
+    await db_session.commit()
+
+    queue = RecordingQueue()
+    recovered = await JobService(db_session, queue=queue).recover_jobs(
+        older_than=datetime.datetime.now(datetime.UTC) - datetime.timedelta(minutes=1),
+        user_id=authenticated_user.id,
+    )
+
+    assert recovered == 1
+    await db_session.refresh(material)
+    assert material.processing_status == ProcessingStatus.PENDING
+    assert material.processing_lease_id is None
+    assert material.processing_lease_expires_at is None
+
+
+@pytest.mark.asyncio
+async def test_cancel_material_job_does_not_overwrite_a_terminal_job(
+    db_session, authenticated_user, monkeypatch
+):
+    material = await _material(db_session, authenticated_user)
+    job = MaterialJob(
+        user_id=authenticated_user.id,
+        course_id=material.course_id,
+        material_id=material.id,
+        status=MaterialJobStatus.SUCCEEDED,
+        idempotency_key="material:cancel-race:process:0",
+    )
+    db_session.add(job)
+    await db_session.commit()
+    stale_view = MaterialJob(
+        user_id=authenticated_user.id,
+        course_id=material.course_id,
+        material_id=material.id,
+        public_id=job.public_id,
+        status=MaterialJobStatus.RUNNING,
+        idempotency_key="material:cancel-race:stale-view",
+    )
+    service = JobService(db_session)
+    monkeypatch.setattr(
+        service,
+        "get_material_job",
+        AsyncMock(return_value=stale_view),
+    )
+
+    result = await service.cancel_material_job(
+        user_id=authenticated_user.id,
+        material_id=material.id,
+    )
+
+    assert result.status == MaterialJobStatus.SUCCEEDED
+    await db_session.refresh(job)
+    await db_session.refresh(material)
+    assert job.status == MaterialJobStatus.SUCCEEDED
+    assert material.processing_status == ProcessingStatus.PENDING
+
+
+@pytest.mark.asyncio
+async def test_retry_job_rejects_deleted_material(
+    db_session, authenticated_user
+):
+    material = await _material(db_session, authenticated_user)
+    material.storage_status = StorageStatus.DELETED
+    job = MaterialJob(
+        user_id=authenticated_user.id,
+        course_id=material.course_id,
+        material_id=material.id,
+        status=MaterialJobStatus.FAILED,
+        idempotency_key="material:deleted-retry:process:0",
+    )
+    db_session.add(job)
+    await db_session.commit()
+
+    with pytest.raises(LookupError):
+        await JobService(db_session).retry_material_job(
+            user_id=authenticated_user.id,
+            material_id=material.id,
+        )
+
+
+@pytest.mark.asyncio
+async def test_reprocess_job_creation_failure_does_not_leave_orphaned_pending_material(
+    client_with_db, db_session, monkeypatch
+):
+    response = await client_with_db.post(
+        "/api/materials",
+        files={"file": ("reprocess-failure.pdf", MINIMAL_PDF, "application/pdf")},
+    )
+    assert response.status_code == 200
+    material_id = response.json()["data"]["id"]
+    material = await db_session.get(Material, material_id)
+    assert material is not None
+    material.processing_status = ProcessingStatus.FAILED
+    await db_session.commit()
+
+    async def fail_create(self, **kwargs):
+        raise RuntimeError("job persistence unavailable")
+
+    monkeypatch.setattr(JobService, "create_material_job", fail_create)
+    with pytest.raises(RuntimeError, match="job persistence"):
+        await client_with_db.post(f"/api/materials/{material_id}/reprocess")
+
+    await db_session.refresh(material)
+    assert material.processing_status == ProcessingStatus.FAILED
+    jobs = list(
+        (
+            await db_session.scalars(
+                select(MaterialJob).where(MaterialJob.material_id == material_id)
+            )
+        ).all()
+    )
+    assert all(job.status not in {MaterialJobStatus.QUEUED, MaterialJobStatus.RUNNING} for job in jobs)
 
 
 @pytest.mark.asyncio
