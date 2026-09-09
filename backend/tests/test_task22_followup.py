@@ -333,6 +333,69 @@ async def test_mark_failed_does_not_downgrade_succeeded_material(
 
 
 @pytest.mark.asyncio
+async def test_late_worker_attempt_cannot_change_recovered_job(
+    db_session, authenticated_user
+):
+    material = await _material(db_session, authenticated_user)
+    job = MaterialJob(
+        user_id=authenticated_user.id,
+        course_id=material.course_id,
+        material_id=material.id,
+        status=MaterialJobStatus.RUNNING,
+        attempt_count=2,
+        idempotency_key="material:attempt-fence:process:0",
+    )
+    db_session.add(job)
+    await db_session.commit()
+
+    await JobService(db_session).mark_cancelled(
+        user_id=authenticated_user.id,
+        job_id=job.public_id,
+        attempt_count=1,
+    )
+    result = await JobService(db_session).mark_failed(
+        user_id=authenticated_user.id,
+        job_id=job.public_id,
+        attempt_count=1,
+    )
+
+    assert result is not None
+    await db_session.refresh(job)
+    assert job.status == MaterialJobStatus.RUNNING
+    assert job.attempt_count == 2
+
+
+@pytest.mark.asyncio
+async def test_late_worker_progress_cannot_update_recovered_job(
+    db_session, authenticated_user
+):
+    material = await _material(db_session, authenticated_user)
+    job = MaterialJob(
+        user_id=authenticated_user.id,
+        course_id=material.course_id,
+        material_id=material.id,
+        status=MaterialJobStatus.RUNNING,
+        attempt_count=2,
+        progress_percent=7,
+        idempotency_key="material:attempt-progress-fence:process:0",
+    )
+    db_session.add(job)
+    await db_session.commit()
+
+    await JobService(db_session).update_progress(
+        user_id=authenticated_user.id,
+        job_id=job.public_id,
+        percent=90,
+        step="late-worker",
+        attempt_count=1,
+    )
+
+    await db_session.refresh(job)
+    assert job.progress_percent == 7
+    assert job.current_step is None
+
+
+@pytest.mark.asyncio
 async def test_reprocess_job_creation_failure_does_not_leave_orphaned_pending_material(
     client_with_db, db_session, monkeypatch
 ):
