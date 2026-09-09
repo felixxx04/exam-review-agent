@@ -8,6 +8,7 @@ import pytest
 from sqlalchemy import select
 from sqlalchemy.exc import SQLAlchemyError
 
+from app.core.exceptions import AppException
 from app.db.models import (
     Course,
     Material,
@@ -234,6 +235,104 @@ async def test_retry_job_rejects_deleted_material(
 
 
 @pytest.mark.asyncio
+async def test_create_material_job_rejects_material_leaving_storage(
+    db_session, authenticated_user
+):
+    material = await _material(db_session, authenticated_user)
+    material.storage_status = StorageStatus.DELETING
+    await db_session.commit()
+
+    with pytest.raises(LookupError):
+        await JobService(db_session).create_material_job(
+            user_id=authenticated_user.id,
+            material_id=material.id,
+            course_id=material.course_id,
+        )
+
+
+@pytest.mark.asyncio
+async def test_job_mutations_reject_disabled_account_before_requeue(
+    db_session, authenticated_user
+):
+    material = await _material(db_session, authenticated_user)
+    job = MaterialJob(
+        user_id=authenticated_user.id,
+        course_id=material.course_id,
+        material_id=material.id,
+        status=MaterialJobStatus.FAILED,
+        idempotency_key="material:disabled-retry:process:0",
+    )
+    db_session.add(job)
+    authenticated_user.is_disabled = True
+    await db_session.commit()
+
+    with pytest.raises(AppException) as exc_info:
+        await JobService(db_session).retry_material_job(
+            user_id=authenticated_user.id,
+            material_id=material.id,
+        )
+
+    assert exc_info.value.code == "ACCOUNT_DELETION_IN_PROGRESS"
+    await db_session.refresh(job)
+    assert job.status == MaterialJobStatus.FAILED
+
+
+@pytest.mark.asyncio
+async def test_mark_cancelled_does_not_downgrade_succeeded_material(
+    db_session, authenticated_user
+):
+    material = await _material(db_session, authenticated_user)
+    material.processing_status = ProcessingStatus.READY
+    job = MaterialJob(
+        user_id=authenticated_user.id,
+        course_id=material.course_id,
+        material_id=material.id,
+        status=MaterialJobStatus.SUCCEEDED,
+        idempotency_key="material:late-cancel:process:0",
+    )
+    db_session.add(job)
+    await db_session.commit()
+
+    await JobService(db_session).mark_cancelled(
+        user_id=authenticated_user.id,
+        job_id=job.public_id,
+    )
+
+    await db_session.refresh(job)
+    await db_session.refresh(material)
+    assert job.status == MaterialJobStatus.SUCCEEDED
+    assert material.processing_status == ProcessingStatus.READY
+
+
+@pytest.mark.asyncio
+async def test_mark_failed_does_not_downgrade_succeeded_material(
+    db_session, authenticated_user
+):
+    material = await _material(db_session, authenticated_user)
+    material.processing_status = ProcessingStatus.READY
+    job = MaterialJob(
+        user_id=authenticated_user.id,
+        course_id=material.course_id,
+        material_id=material.id,
+        status=MaterialJobStatus.SUCCEEDED,
+        idempotency_key="material:late-failure:process:0",
+    )
+    db_session.add(job)
+    await db_session.commit()
+
+    result = await JobService(db_session).mark_failed(
+        user_id=authenticated_user.id,
+        job_id=job.public_id,
+    )
+
+    assert result is not None
+    await db_session.refresh(job)
+    await db_session.refresh(material)
+    assert job.status == MaterialJobStatus.SUCCEEDED
+    assert material.processing_status == ProcessingStatus.READY
+
+
+@pytest.mark.asyncio
 async def test_reprocess_job_creation_failure_does_not_leave_orphaned_pending_material(
     client_with_db, db_session, monkeypatch
 ):
@@ -246,6 +345,11 @@ async def test_reprocess_job_creation_failure_does_not_leave_orphaned_pending_ma
     material = await db_session.get(Material, material_id)
     assert material is not None
     material.processing_status = ProcessingStatus.FAILED
+    existing_job = await db_session.scalar(
+        select(MaterialJob).where(MaterialJob.material_id == material_id)
+    )
+    assert existing_job is not None
+    existing_job.status = MaterialJobStatus.FAILED
     await db_session.commit()
 
     async def fail_create(self, **kwargs):
@@ -264,7 +368,13 @@ async def test_reprocess_job_creation_failure_does_not_leave_orphaned_pending_ma
             )
         ).all()
     )
-    assert all(job.status not in {MaterialJobStatus.QUEUED, MaterialJobStatus.RUNNING} for job in jobs)
+    assert not (
+        material.processing_status == ProcessingStatus.PENDING
+        and not any(
+            job.status in {MaterialJobStatus.QUEUED, MaterialJobStatus.RUNNING}
+            for job in jobs
+        )
+    )
 
 
 @pytest.mark.asyncio
