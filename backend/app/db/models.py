@@ -149,7 +149,11 @@ class User(Base):
         "Material", back_populates="user", cascade="all, delete-orphan"
     )
     material_jobs = relationship(
-        "MaterialJob", back_populates="user", cascade="all, delete-orphan"
+        "MaterialJob",
+        back_populates="user",
+        cascade="all, delete-orphan",
+        foreign_keys="MaterialJob.user_id",
+        overlaps="jobs,material",
     )
     quiz_sessions = relationship(
         "QuizSession", back_populates="user", cascade="all, delete-orphan"
@@ -658,7 +662,11 @@ class Material(Base):
         "MaterialChunk", back_populates="material", cascade="all, delete-orphan"
     )
     jobs = relationship(
-        "MaterialJob", back_populates="material", cascade="all, delete-orphan"
+        "MaterialJob",
+        back_populates="material",
+        cascade="all, delete-orphan",
+        foreign_keys="[MaterialJob.material_id, MaterialJob.user_id, MaterialJob.course_id]",
+        overlaps="material_jobs,user",
     )
 
 
@@ -732,10 +740,6 @@ class MaterialJob(Base):
             name="fk_material_jobs_material_scope",
         ),
         CheckConstraint(
-            "status IN ('queued', 'running', 'succeeded', 'failed', 'cancelled')",
-            name="ck_material_jobs_status",
-        ),
-        CheckConstraint(
             "attempt_count >= 0 AND max_attempts > 0",
             name="ck_material_jobs_attempts",
         ),
@@ -770,7 +774,7 @@ class MaterialJob(Base):
         String(200), unique=True, nullable=False, index=True
     )
     status: Mapped[str] = mapped_column(
-        _string_enum(MaterialJobStatus, "ck_material_jobs_status_value", length=16),
+        _string_enum(MaterialJobStatus, "ck_material_jobs_status", length=16),
         default=MaterialJobStatus.QUEUED,
         nullable=False,
         index=True,
@@ -799,8 +803,18 @@ class MaterialJob(Base):
         DateTime(timezone=True), default=_utcnow, onupdate=_utcnow, nullable=False
     )
 
-    user = relationship("User", back_populates="material_jobs")
-    material = relationship("Material", back_populates="jobs")
+    user = relationship(
+        "User",
+        back_populates="material_jobs",
+        foreign_keys=[user_id],
+        overlaps="jobs,material",
+    )
+    material = relationship(
+        "Material",
+        back_populates="jobs",
+        foreign_keys=[material_id, user_id, course_id],
+        overlaps="material_jobs,user",
+    )
 
 
 class QuizSession(Base):

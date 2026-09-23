@@ -113,8 +113,9 @@
 | `DELETE /api/memory/profile?course_id=...` | 已认证 | 删除指定私人课程的学习画像 |
 
 - 用户默认限制 100 个文件、2 GiB；管理员可通过既有 `PATCH /api/auth/users/{id}` 的 `file_limit` 与 `storage_limit_bytes` 覆盖。数量和容量均以 PostgreSQL Material 记录为事实源。
-- `POST /api/materials` 在 FastAPI 解析 multipart 前按整个请求体限制 `Content-Length` 与分块累计字节数；超限在创建临时文件、数据库预留或对象前返回 `413 FILE_TOO_LARGE`。通过该边界后，上传先提交 `reserved` Material 预留，正文再流式写入受限临时文件并校验扩展名、声明 MIME、Magic Bytes、大小与 Office 压缩包安全边界；只有写入私有 S3 对象并验证大小与 SHA-256 后才提交为 `available`。上传与账号注销以同一用户行锁串行化。
-- 删除任务状态为 `pending -> running -> succeeded | failed`。创建接口返回 `202` 与 `status="pending"`；响应发送后，进程内后台执行器使用独立数据库 Session 开始清理。进程中断时数据库保留可查询、可重试状态，阶段 2 再迁移到可靠 Worker。状态令牌只保存哈希，丢失后不能由服务端还原。
+- `POST /api/materials` 在 FastAPI 解析 multipart 前按整个请求体限制 `Content-Length` 与分块累计字节数；超限在创建临时文件、数据库预留或对象前返回 `413 FILE_TOO_LARGE`。通过该边界后，上传先提交 `reserved` Material 预留，正文再流式写入受限临时文件并校验扩展名、声明 MIME、Magic Bytes、大小与 Office 压缩包安全边界；只有写入私有 S3 对象并验证大小与 SHA-256 后才提交为 `available`，并与 queued Material Job 一起持久化后立即响应。上传与账号注销以同一用户行锁串行化。
+- 资料任务公开状态为 `queued -> running -> succeeded | failed | cancelled`。PostgreSQL MaterialJob 是状态、尝试次数、进度、租约、错误码和摘要的唯一事实源；Redis/ARQ 仅投递唤醒。重复投递由数据库 Job ID 与 attempt fencing 幂等处理，恢复扫描补偿丢失投递、停滞 Worker 和待恢复索引清理。用户可查当前资料任务、取消、重试/重处理；管理员可列出任务、调整优先级并重试失败 Job。对象 Key、签名 URL 和底层异常不进入 Job 响应。
+- 删除任务状态为 `pending -> running -> succeeded | failed`。创建接口返回 `202` 与 `status="pending"`；响应发送后，进程内后台执行器使用独立数据库 Session 开始清理。进程中断时数据库保留可查询、可重试状态。状态令牌只保存哈希，丢失后不能由服务端还原。
 - 注销创建后账号立即禁用，活动 Refresh Token 被撤销，管理员创建的邀请码被禁用。相同用户已有删除任务时返回 `CONFLICT`；失败任务使用原 `job_id` 和状态令牌重试。
 - 删除任务公开错误只包含稳定 `error_code` 和安全摘要，不返回路径、数据库异常、令牌、资料内容或堆栈。
 - Material 公开响应不包含对象 Key、对象版本、ETag、Hash、`storage_path` 或解析内部错误。相同用户同一课程的相同 SHA-256 返回 `DUPLICATE_MATERIAL`；不同用户或课程不进行共享去重。

@@ -11,6 +11,8 @@ from app.db.models import (
     Course,
     InviteCode,
     Material,
+    MaterialJob,
+    MaterialJobStatus,
     ProcessingStatus,
     StorageStatus,
     User,
@@ -93,6 +95,44 @@ async def test_account_deletion_removes_database_files_and_vector_scopes(
         str(user.id),
         f"{user.id}_course_{course.id}",
     ]
+
+
+@pytest.mark.asyncio
+async def test_account_deletion_fences_queued_and_running_material_jobs(
+    db_session, object_storage
+):
+    from app.services.account_deletion_service import (
+        AccountArtifactCleaner,
+        AccountDeletionService,
+    )
+
+    user, course, material = await _user_with_material(
+        db_session, object_storage, "delete_with_material_job"
+    )
+    material.processing_status = ProcessingStatus.PROCESSING
+    material.processing_lease_id = "live-worker-attempt"
+    material.processing_lease_expires_at = datetime.datetime.now(
+        datetime.UTC
+    ) + datetime.timedelta(minutes=5)
+    job = MaterialJob(
+        user_id=user.id,
+        course_id=course.id,
+        material_id=material.id,
+        status=MaterialJobStatus.RUNNING,
+        attempt_count=1,
+        idempotency_key="material:account-delete:process:0",
+    )
+    db_session.add(job)
+    await db_session.commit()
+
+    service = AccountDeletionService(
+        db_session, AccountArtifactCleaner(object_storage, RecordingVectorStore())
+    )
+    requested = await service.request(user.id)
+    await service.execute(requested.job.public_id)
+
+    assert requested.job.status == "succeeded"
+    assert await db_session.get(User, user.id) is None
 
 
 @pytest.mark.asyncio

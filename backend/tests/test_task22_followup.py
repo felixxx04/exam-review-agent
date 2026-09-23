@@ -12,6 +12,7 @@ from app.core.exceptions import AppException
 from app.db.models import (
     Course,
     Material,
+    MaterialChunk,
     MaterialJob,
     MaterialJobStatus,
     ProcessingStatus,
@@ -337,8 +338,9 @@ async def test_late_worker_attempt_cannot_change_recovered_job(
     db_session, authenticated_user
 ):
     material = await _material(db_session, authenticated_user)
+    user_id = authenticated_user.id
     job = MaterialJob(
-        user_id=authenticated_user.id,
+        user_id=user_id,
         course_id=material.course_id,
         material_id=material.id,
         status=MaterialJobStatus.RUNNING,
@@ -347,15 +349,16 @@ async def test_late_worker_attempt_cannot_change_recovered_job(
     )
     db_session.add(job)
     await db_session.commit()
+    job_id = job.public_id
 
     await JobService(db_session).mark_cancelled(
-        user_id=authenticated_user.id,
-        job_id=job.public_id,
+        user_id=user_id,
+        job_id=job_id,
         attempt_count=1,
     )
     result = await JobService(db_session).mark_failed(
-        user_id=authenticated_user.id,
-        job_id=job.public_id,
+        user_id=user_id,
+        job_id=job_id,
         attempt_count=1,
     )
 
@@ -597,3 +600,236 @@ async def test_regular_user_cannot_access_admin_job_api(
     response = await client_with_db.get("/api/admin/material-jobs")
 
     assert response.status_code == 403
+
+
+@pytest.mark.asyncio
+async def test_manual_retry_resets_exhausted_attempt_budget_before_claim(
+    db_session, authenticated_user
+):
+    material = await _material(db_session, authenticated_user)
+    job = MaterialJob(
+        user_id=authenticated_user.id,
+        course_id=material.course_id,
+        material_id=material.id,
+        status=MaterialJobStatus.FAILED,
+        attempt_count=3,
+        max_attempts=3,
+        idempotency_key="material:manual-reset:process:0",
+    )
+    db_session.add(job)
+    await db_session.commit()
+
+    clock = [datetime.datetime.now(datetime.UTC)]
+    queue = RecordingQueue()
+    service = JobService(db_session, queue=queue, now=lambda: clock[0])
+    retried = await service.retry_material_job(
+        user_id=authenticated_user.id,
+        material_id=material.id,
+    )
+
+    assert retried.status == MaterialJobStatus.QUEUED
+    assert retried.attempt_count == 0
+    clock[0] = retried.available_at + datetime.timedelta(seconds=1)
+    claimed = await JobService(db_session, now=lambda: clock[0]).claim_job(
+        user_id=authenticated_user.id,
+        job_id=job.public_id,
+    )
+
+    assert claimed is not None
+    assert claimed.attempt_count == 1
+
+
+@pytest.mark.asyncio
+async def test_retry_of_succeeded_job_preserves_live_material_chunks(
+    db_session, authenticated_user, monkeypatch
+):
+    material = await _material(db_session, authenticated_user)
+    material.processing_status = ProcessingStatus.READY
+    chunk = MaterialChunk(
+        material_id=material.id,
+        user_id=material.user_id,
+        course_id=material.course_id,
+        chunk_id="live-success-chunk",
+        content="live indexed content",
+        text_preview="live indexed content",
+        embedding_id="live-success-chunk",
+    )
+    job = MaterialJob(
+        user_id=authenticated_user.id,
+        course_id=material.course_id,
+        material_id=material.id,
+        status=MaterialJobStatus.SUCCEEDED,
+        idempotency_key="material:successful-retry:process:0",
+    )
+    db_session.add_all([chunk, job])
+    await db_session.commit()
+
+    class RetrievalMustNotRun:
+        async def delete_chunks(self, **_kwargs) -> None:
+            raise AssertionError("a successful retry must not delete live vectors")
+
+    monkeypatch.setattr(
+        "app.services.retrieval_service.RetrievalService", RetrievalMustNotRun
+    )
+
+    result = await JobService(db_session).retry_job(
+        user_id=authenticated_user.id,
+        job_id=job.public_id,
+    )
+
+    assert result.status == MaterialJobStatus.SUCCEEDED
+    assert await db_session.scalar(select(MaterialChunk.id)) == chunk.id
+
+
+@pytest.mark.asyncio
+async def test_recovery_finalizes_ready_material_instead_of_requeueing_or_downgrading(
+    db_session, authenticated_user
+):
+    material = await _material(db_session, authenticated_user)
+    material.processing_status = ProcessingStatus.READY
+    job = MaterialJob(
+        user_id=authenticated_user.id,
+        course_id=material.course_id,
+        material_id=material.id,
+        status=MaterialJobStatus.RUNNING,
+        attempt_count=3,
+        max_attempts=3,
+        started_at=datetime.datetime.now(datetime.UTC)
+        - datetime.timedelta(minutes=10),
+        updated_at=datetime.datetime.now(datetime.UTC)
+        - datetime.timedelta(minutes=10),
+        idempotency_key="material:ready-recovery:process:0",
+    )
+    db_session.add(job)
+    await db_session.commit()
+    queue = RecordingQueue()
+
+    recovered = await JobService(db_session, queue=queue).recover_jobs(
+        older_than=datetime.datetime.now(datetime.UTC) - datetime.timedelta(minutes=1),
+        user_id=authenticated_user.id,
+    )
+
+    assert recovered == 1
+    await db_session.refresh(job)
+    await db_session.refresh(material)
+    assert job.status == MaterialJobStatus.SUCCEEDED
+    assert job.progress_percent == 100
+    assert material.processing_status == ProcessingStatus.READY
+    assert queue.calls == []
+
+
+@pytest.mark.asyncio
+async def test_failed_attempt_cleans_persisted_chunks_before_automatic_retry(
+    db_session, authenticated_user, monkeypatch
+):
+    material = await _material(db_session, authenticated_user)
+    material.processing_status = ProcessingStatus.PROCESSING
+    db_session.add(
+        MaterialChunk(
+            material_id=material.id,
+            user_id=material.user_id,
+            course_id=material.course_id,
+            chunk_id="failed-attempt-cleanup",
+            content="stale chunk",
+            text_preview="stale chunk",
+            embedding_id="failed-attempt-cleanup",
+        )
+    )
+    job = MaterialJob(
+        user_id=authenticated_user.id,
+        course_id=material.course_id,
+        material_id=material.id,
+        status=MaterialJobStatus.RUNNING,
+        attempt_count=1,
+        max_attempts=3,
+        idempotency_key="material:failed-cleanup:process:0",
+    )
+    db_session.add(job)
+    await db_session.commit()
+
+    class RecordingRetrieval:
+        def __init__(self) -> None:
+            self.deleted: list[str] = []
+
+        async def delete_chunks(self, *, chunk_ids, **_kwargs) -> None:
+            self.deleted.extend(chunk_ids)
+
+    retrieval = RecordingRetrieval()
+    monkeypatch.setattr(
+        "app.services.retrieval_service.RetrievalService", lambda: retrieval
+    )
+    queue = RecordingQueue()
+
+    result = await JobService(db_session, queue=queue).mark_failed(
+        user_id=authenticated_user.id,
+        job_id=job.public_id,
+    )
+
+    assert result is not None
+    await db_session.refresh(job)
+    assert job.status == MaterialJobStatus.QUEUED
+    assert retrieval.deleted == ["failed-attempt-cleanup"]
+    assert await db_session.scalar(select(MaterialChunk.id)) is None
+    assert len(queue.calls) == 1
+
+
+@pytest.mark.asyncio
+async def test_recovery_cleans_stale_chunks_before_requeue(
+    db_session, authenticated_user, monkeypatch
+):
+    material = await _material(db_session, authenticated_user)
+    material.processing_status = ProcessingStatus.PROCESSING
+    material.processing_lease_expires_at = datetime.datetime.now(
+        datetime.UTC
+    ) - datetime.timedelta(minutes=5)
+    db_session.add(
+        MaterialChunk(
+            material_id=material.id,
+            user_id=material.user_id,
+            course_id=material.course_id,
+            chunk_id="stale-recovery-cleanup",
+            content="stale recovery chunk",
+            text_preview="stale recovery chunk",
+            embedding_id="stale-recovery-cleanup",
+        )
+    )
+    job = MaterialJob(
+        user_id=authenticated_user.id,
+        course_id=material.course_id,
+        material_id=material.id,
+        status=MaterialJobStatus.RUNNING,
+        attempt_count=1,
+        max_attempts=3,
+        started_at=datetime.datetime.now(datetime.UTC)
+        - datetime.timedelta(minutes=10),
+        updated_at=datetime.datetime.now(datetime.UTC)
+        - datetime.timedelta(minutes=10),
+        idempotency_key="material:recovery-cleanup:process:0",
+    )
+    db_session.add(job)
+    await db_session.commit()
+
+    class RecordingRetrieval:
+        def __init__(self) -> None:
+            self.deleted: list[str] = []
+
+        async def delete_chunks(self, *, chunk_ids, **_kwargs) -> None:
+            self.deleted.extend(chunk_ids)
+
+    retrieval = RecordingRetrieval()
+    monkeypatch.setattr(
+        "app.services.retrieval_service.RetrievalService", lambda: retrieval
+    )
+    queue = RecordingQueue()
+
+    recovered = await JobService(db_session, queue=queue).recover_jobs(
+        older_than=datetime.datetime.now(datetime.UTC) - datetime.timedelta(minutes=1),
+        user_id=authenticated_user.id,
+    )
+
+    assert recovered == 1
+    await db_session.refresh(job)
+    assert job.status == MaterialJobStatus.QUEUED
+    assert retrieval.deleted == ["stale-recovery-cleanup"]
+    assert await db_session.scalar(select(MaterialChunk.id)) is None
+    assert len(queue.calls) == 1

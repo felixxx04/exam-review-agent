@@ -19,6 +19,8 @@ from app.db.models import (
     Course,
     InviteCode,
     Material,
+    MaterialJob,
+    MaterialJobStatus,
     ProcessingStatus,
     RefreshToken,
     StorageStatus,
@@ -255,6 +257,41 @@ class AccountDeletionService:
                     message=DATABASE_FAILURE_MESSAGE,
                 )
                 return
+            # Fence queued and running material workers before collecting
+            # artifacts. The same user-row lock serializes this with upload,
+            # indexing, and single-material deletion; clearing the lease makes
+            # any late worker fail its ownership check before external writes.
+            now = self._now()
+            await self.db.execute(
+                update(MaterialJob)
+                .where(
+                    MaterialJob.user_id == user_id,
+                    MaterialJob.status.in_(
+                        [MaterialJobStatus.QUEUED, MaterialJobStatus.RUNNING]
+                    ),
+                )
+                .values(
+                    status=MaterialJobStatus.CANCELLED,
+                    current_step="cancelled",
+                    completed_at=now,
+                    error_code="PROCESSING_CANCELLED",
+                    error_message="Material processing cancelled",
+                )
+            )
+            await self.db.execute(
+                update(Material)
+                .where(
+                    Material.user_id == user_id,
+                    Material.processing_status == ProcessingStatus.PROCESSING,
+                )
+                .values(
+                    processing_status=ProcessingStatus.FAILED,
+                    processing_lease_id=None,
+                    processing_lease_expires_at=None,
+                    error_message="Material processing cancelled",
+                    parse_error="Material processing cancelled",
+                )
+            )
             await self.db.flush()
 
             course_ids = list(

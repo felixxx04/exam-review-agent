@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from arq import create_pool
+from arq import create_pool, cron
 from arq.connections import RedisSettings
 
 from app.core.config import settings
@@ -41,7 +41,17 @@ class WorkerSettings:
 
     from app.tasks.parse_material import process_material_job, recover_material_jobs
 
-    functions = [process_material_job, recover_material_jobs]
+    functions = [process_material_job]
+    cron_jobs = [
+        cron(
+            recover_material_jobs,
+            name="recover_material_jobs",
+            job_id="material-job-recovery",
+            minute={0, 15, 30, 45},
+            timeout=60,
+            keep_result=0,
+        )
+    ]
     redis_settings = _redis_settings()
 
 
@@ -49,6 +59,7 @@ class WorkerConfig:
     """Compatibility holder used by API-side enqueue calls."""
 
     functions = WorkerSettings.functions
+    cron_jobs = WorkerSettings.cron_jobs
     redis_settings = WorkerSettings.redis_settings
 
     @classmethod

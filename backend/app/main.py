@@ -12,6 +12,7 @@ from fastapi.responses import JSONResponse
 from app.api.chat import router as chat_router
 from app.api.account import router as account_router
 from app.api.auth import router as auth_router
+from app.api.admin import router as admin_router
 from app.api.conversations import router as conversations_router
 from app.api.courses import router as courses_router
 from app.api.materials import router as materials_router
@@ -153,6 +154,7 @@ app.add_middleware(
 app.add_middleware(RateLimitMiddleware)
 
 app.include_router(auth_router)
+app.include_router(admin_router)
 app.include_router(account_router)
 app.include_router(courses_router)
 app.include_router(materials_router)

@@ -8,13 +8,17 @@ from contextlib import asynccontextmanager
 from typing import Any
 
 from sqlalchemy import select
+from sqlalchemy.exc import SQLAlchemyError
 
 from app.api.dependencies import get_object_storage
 from app.api.materials import MaterialProcessingCancelled, _process_material
 from app.core.config import settings
 from app.db.database import AsyncSessionLocal
-from app.db.models import Material, ProcessingStatus, StorageStatus
+from app.db.models import Material, ProcessingStatus, StorageStatus, User
 from app.services.job_service import JobService
+from app.services.material_storage_cleanup import (
+    recover_stale_material_reservations_for_user,
+)
 from app.services.object_storage import ObjectStorage
 
 
@@ -36,10 +40,12 @@ async def process_material_job(
 ) -> None:
     """Claim and execute one material job, keeping PostgreSQL authoritative."""
     async with _job_session(ctx) as db:
-        jobs = JobService(db)
+        queue = ctx.get("redis")
+        jobs = JobService(db, queue=queue if hasattr(queue, "enqueue_job") else None)
         job = await jobs.claim_job(user_id=user_id, job_id=job_id)
         if job is None:
             return
+        attempt_count = job.attempt_count
 
         material = await db.scalar(
             select(Material).where(
@@ -53,6 +59,7 @@ async def process_material_job(
                 user_id=user_id,
                 job_id=job_id,
                 error_code="MATERIAL_UNAVAILABLE",
+                attempt_count=attempt_count,
             )
             return
 
@@ -65,13 +72,21 @@ async def process_material_job(
                     job_id=job_id,
                     percent=percent,
                     step=step,
+                    attempt_count=attempt_count,
                 )
+            except SQLAlchemyError:
+                await db.rollback()
+                raise
             except Exception:
                 await db.rollback()
                 logger.warning("Could not persist material job progress")
 
         async def cancellation_check() -> bool:
-            return await jobs.is_cancelled(user_id=user_id, job_id=job_id)
+            return await jobs.is_cancelled(
+                user_id=user_id,
+                job_id=job_id,
+                attempt_count=attempt_count,
+            )
 
         try:
             await _process_material(
@@ -84,16 +99,43 @@ async def process_material_job(
                 cancellation_check=cancellation_check,
             )
             await db.refresh(material)
+            if await jobs.is_cancelled(
+                user_id=user_id,
+                job_id=job_id,
+                attempt_count=attempt_count,
+            ):
+                await jobs.mark_cancelled(
+                    user_id=user_id,
+                    job_id=job_id,
+                    attempt_count=attempt_count,
+                )
+                return
             if material.processing_status == ProcessingStatus.READY:
-                await jobs.mark_succeeded(user_id=user_id, job_id=job_id)
+                await jobs.mark_succeeded(
+                    user_id=user_id,
+                    job_id=job_id,
+                    attempt_count=attempt_count,
+                )
             else:
-                await jobs.mark_failed(user_id=user_id, job_id=job_id)
+                await jobs.mark_failed(
+                    user_id=user_id,
+                    job_id=job_id,
+                    attempt_count=attempt_count,
+                )
         except MaterialProcessingCancelled:
             await db.rollback()
-            await jobs.mark_cancelled(user_id=user_id, job_id=job_id)
+            await jobs.mark_cancelled(
+                user_id=user_id,
+                job_id=job_id,
+                attempt_count=attempt_count,
+            )
         except Exception:
             await db.rollback()
-            await jobs.mark_failed(user_id=user_id, job_id=job_id)
+            await jobs.mark_failed(
+                user_id=user_id,
+                job_id=job_id,
+                attempt_count=attempt_count,
+            )
 
 
 # Keep the old import name available to worker discovery code.
@@ -103,10 +145,32 @@ parse_material = process_material_job
 async def recover_material_jobs(ctx: dict[str, Any]) -> int:
     """Requeue jobs whose DB state outlived Redis or a worker process."""
     async with _job_session(ctx) as db:
-        jobs = JobService(db)
+        queue = ctx.get("redis")
+        jobs = JobService(db, queue=queue if hasattr(queue, "enqueue_job") else None)
         user_id = ctx.get("user_id")
-        return await jobs.recover_jobs(
-            user_id=int(user_id) if user_id is not None else None,
-            older_than=jobs._now()
-            - datetime.timedelta(seconds=settings.material_job_stale_seconds),
+        older_than = jobs._now() - datetime.timedelta(
+            seconds=settings.material_job_stale_seconds
         )
+        owner_ids = (
+            [int(user_id)]
+            if user_id is not None
+            else list((await db.scalars(select(User.id))).all())
+        )
+        recovered = await jobs.recover_jobs(
+            user_id=int(user_id) if user_id is not None else None,
+            older_than=older_than,
+        )
+        storage: ObjectStorage = ctx.get("object_storage") or get_object_storage()
+        for owner_id in owner_ids:
+            try:
+                await recover_stale_material_reservations_for_user(
+                    db,
+                    storage,
+                    user_id=owner_id,
+                    older_than=older_than,
+                )
+            except Exception:
+                logger.warning(
+                    "Could not recover material storage for tenant", exc_info=True
+                )
+        return recovered

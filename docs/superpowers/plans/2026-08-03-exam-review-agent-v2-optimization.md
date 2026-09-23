@@ -496,12 +496,20 @@ run.cancelled
 
 **工作项**
 
-- [ ] 上传 API 只保存对象和任务，立即返回 `queued`。
-- [ ] Worker 执行下载、解析、切片、Embedding、索引和图谱增量任务。
-- [ ] 每一步持久化进度、尝试次数、错误码和安全的错误摘要。
-- [ ] 支持取消、指数退避重试、用户重新处理和管理员优先级调整。
-- [ ] 使用幂等 Key，重复投递不得重复写 chunk 或扣配额。
-- [ ] PostgreSQL Job 是事实源；增加恢复扫描器，补投“数据库已提交但 Redis 入队失败”或 Worker 中断的任务。
+- [x] 上传 API 只保存对象和任务，立即返回 `queued`。
+- [x] Worker 执行下载、解析、切片、Embedding、索引和图谱增量任务。
+- [x] 每一步持久化进度、尝试次数、错误码和安全的错误摘要。
+- [x] 支持取消、指数退避重试、用户重新处理和管理员优先级调整。
+- [x] 使用幂等 Key，重复投递不得重复写 chunk 或扣配额。
+- [x] PostgreSQL Job 是事实源；增加恢复扫描器，补投“数据库已提交但 Redis 入队失败”或 Worker 中断的任务。
+
+**完成记录（2026-09-24，实现与离线回归完成，等待用户验收）**
+
+- 上传仅持久化 `Material` 与 PostgreSQL `MaterialJob` 后返回；Redis/ARQ 只负责唤醒 Worker。Job 保留 attempt、lease fencing、进度、退避重试和安全错误摘要；重复投递按 Job ID 幂等。
+- Worker 处理对象下载、解析、切片、索引和 READY 状态；支持取消、用户重处理、管理员列表/优先级/重试，以及每 15 分钟恢复扫描。恢复也调用 Task 2.1 的租户绑定资料/对象预留清理入口，不另造存储事实源。
+- 资料删除、账号注销、Job 持久化失败、重处理事务失败和跨租户访问均由数据库状态与所有权围栏保护。索引部分写入且补偿失败时保留持久 chunk 清理意图并终结当前 Job；恢复扫描清理成功后才重新排队。
+- 离线验证：`tests/test_material_jobs.py tests/test_task22_followup.py` 为 `33 passed`；Task 2.2 部分索引失败恢复单测 `1 passed`；`git diff --check`、`compileall` 与 Task 2.2 代码范围 Ruff 检查通过。资料 API 全组因环境中 Redis 未运行而等待 ARQ 连接，未获得完整结果；真实 PostgreSQL/Redis/MinIO 集成验证和 mypy/Bandit 尚未完成，不记为通过。
+- Task 2.2 生产代码与测试已实现并经离线聚焦验证；此记录不等于用户验收。阶段 2 审批门仍待用户确认，未开始 Task 2.3。
 
 ### Task 2.3：解析与切片质量
 
@@ -1026,10 +1034,10 @@ V2 只有同时满足以下条件才算完成：
 
 ## 13. 审批门
 
-阶段 0 与 Phase 1 已获用户确认。阶段 2 仅授权并完成 Task 2.1；Task 2.2、ARQ、pgvector 检索切换、Planner/Agent Runtime 与无关重构仍未获授权。
+阶段 0、Phase 1 和 Task 2.1 已获确认；用户已授权 Task 2.2。Task 2.2 实现与离线聚焦验证已完成，当前等待用户验收。Task 2.3、pgvector 检索切换、Planner/Agent Runtime 与无关重构仍未授权。
 
 下一步由用户选择：
 
-- `验收 Task 2.1，确认后开始 Task 2.2`
+- `验收 Task 2.2，确认后开始 Task 2.3`
 - `修改计划：<需要调整的内容>`
-- `暂停实施，保留当前 Task 2.1 结果`
+- `暂停实施，保留当前 Task 2.2 结果`

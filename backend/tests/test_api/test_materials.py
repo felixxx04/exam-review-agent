@@ -6,6 +6,7 @@ import asyncio
 import datetime
 import hashlib
 from io import BytesIO
+from types import SimpleNamespace
 from zipfile import ZIP_STORED, ZipFile
 
 import pytest
@@ -24,6 +25,8 @@ from app.db.models import (
     Course,
     Material,
     MaterialChunk,
+    MaterialJob,
+    MaterialJobStatus,
     ProcessingStatus,
     StorageStatus,
     User,
@@ -103,6 +106,33 @@ def _data(response):
     body = response.json()
     assert body["success"] is True
     return body["data"]
+
+
+class _TestJobQueue:
+    async def enqueue_job(self, _function_name, *args, **kwargs):
+        return SimpleNamespace(job_id=kwargs.get("_job_id") or args[0])
+
+
+async def _run_material_job(db_session, object_storage, material_id: int):
+    from app.tasks.parse_material import process_material_job
+
+    job = await db_session.scalar(
+        select(MaterialJob)
+        .where(MaterialJob.material_id == material_id)
+        .order_by(MaterialJob.id.desc())
+    )
+    assert job is not None
+    await process_material_job(
+        {
+            "db_session": db_session,
+            "object_storage": object_storage,
+            "redis": _TestJobQueue(),
+        },
+        job.public_id,
+        job.user_id,
+    )
+    await db_session.refresh(job)
+    return job
 
 
 @pytest.fixture(autouse=True)
@@ -392,16 +422,17 @@ class TestMaterialsUpload:
             "app.services.parser_service.ParserService", lambda: ParserStub()
         )
         content = MINIMAL_PDF
-
-        with pytest.raises(SQLAlchemyError):
-            await client_with_db.post(
-                "/api/materials",
-                files={"file": ("database-error.pdf", content, "application/pdf")},
-            )
+        response = await client_with_db.post(
+            "/api/materials",
+            files={"file": ("database-error.pdf", content, "application/pdf")},
+        )
+        assert response.status_code == 200
 
         material = await db_session.scalar(select(Material))
         assert material is not None
+        job = await _run_material_job(db_session, object_storage, material.id)
         await db_session.refresh(material)
+        assert job.status == MaterialJobStatus.QUEUED
         assert material.processing_status == ProcessingStatus.PENDING
         assert material.file_size == len(content)
         assert material.hash == hashlib.sha256(content).hexdigest()
@@ -419,36 +450,18 @@ class TestMaterialsUpload:
         monkeypatch.setattr(
             "app.services.parser_service.ParserService", lambda: ParserStub()
         )
-        original_commit = db_session.commit
-
-        async def fail_processing_commit():
-            material = next(
-                (
-                    instance
-                    for instance in db_session.identity_map.values()
-                    if isinstance(instance, Material)
-                ),
-                None,
-            )
-            if (
-                material is not None
-                and material.processing_status != ProcessingStatus.PENDING
-            ):
-                raise SQLAlchemyError("final commit unavailable")
-            await original_commit()
-
-        monkeypatch.setattr(db_session, "commit", fail_processing_commit)
         content = MINIMAL_PDF
-
-        with pytest.raises(SQLAlchemyError):
-            await client_with_db.post(
-                "/api/materials",
-                files={"file": ("final-error.pdf", content, "application/pdf")},
-            )
+        response = await client_with_db.post(
+            "/api/materials",
+            files={"file": ("final-error.pdf", content, "application/pdf")},
+        )
+        assert response.status_code == 200
 
         material = await db_session.scalar(select(Material))
         assert material is not None
+        job = await _run_material_job(db_session, object_storage, material.id)
         await db_session.refresh(material)
+        assert job.status == MaterialJobStatus.QUEUED
         assert material.processing_status == ProcessingStatus.PENDING
         assert material.file_size == len(content)
         assert material.hash == hashlib.sha256(content).hexdigest()
@@ -457,7 +470,12 @@ class TestMaterialsUpload:
 
     @pytest.mark.asyncio
     async def test_final_database_commit_compensates_indexed_vectors(
-        self, client_with_db, db_session, authenticated_user, monkeypatch
+        self,
+        client_with_db,
+        db_session,
+        authenticated_user,
+        object_storage,
+        monkeypatch,
     ):
         from app.services.parser_service import Chunk, ParseResult
 
@@ -512,19 +530,27 @@ class TestMaterialsUpload:
         )
         monkeypatch.setattr(db_session, "commit", fail_index_metadata_commit)
 
-        with pytest.raises(SQLAlchemyError, match="indexed metadata"):
-            await client_with_db.post(
-                "/api/materials",
-                files={"file": ("index-commit.pdf", MINIMAL_PDF, "application/pdf")},
-            )
+        response = await client_with_db.post(
+            "/api/materials",
+            files={"file": ("index-commit.pdf", MINIMAL_PDF, "application/pdf")},
+        )
+        assert response.status_code == 200
+        material_id = _data(response)["id"]
+        job = await _run_material_job(db_session, object_storage, material_id)
 
         assert final_commit_failed is True
+        assert job.status == MaterialJobStatus.QUEUED
         assert retrieval.indexed == set()
         assert (await db_session.scalar(select(MaterialChunk))) is None
 
     @pytest.mark.asyncio
     async def test_cancelled_final_database_commit_compensates_indexed_vectors(
-        self, db_session, authenticated_user, object_storage, monkeypatch
+        self,
+        client_with_db,
+        db_session,
+        authenticated_user,
+        object_storage,
+        monkeypatch,
     ):
         from app.services.parser_service import Chunk, ParseResult
 
@@ -578,24 +604,15 @@ class TestMaterialsUpload:
             "app.services.retrieval_service.RetrievalService", lambda: retrieval
         )
         monkeypatch.setattr(db_session, "commit", cancel_ready_metadata_commit)
-        upload_file = UploadFile(
-            file=BytesIO(MINIMAL_PDF),
-            filename="cancelled-index-commit.pdf",
-            headers=Headers({"content-type": "application/pdf"}),
+        response = await client_with_db.post(
+            "/api/materials",
+            files={"file": ("cancelled-index-commit.pdf", MINIMAL_PDF, "application/pdf")},
         )
+        assert response.status_code == 200
+        material_id = _data(response)["id"]
 
         with pytest.raises(asyncio.CancelledError):
-            await materials_api.upload_material(
-                file=upload_file,
-                current_user=AuthenticatedUser(
-                    id=authenticated_user.id,
-                    username=authenticated_user.username,
-                    role=authenticated_user.role,
-                    session_id="test-session",
-                ),
-                db=db_session,
-                storage=object_storage,
-            )
+            await _run_material_job(db_session, object_storage, material_id)
 
         assert cancelled_once is True
         assert retrieval.indexed == set()
@@ -648,6 +665,8 @@ class TestMaterialsUpload:
         )
 
         assert response.status_code == 200
+        material_id = _data(response)["id"]
+        job = await _run_material_job(db_session, object_storage, material_id)
         material = await db_session.scalar(select(Material))
         assert material is not None
         chunk_rows = (
@@ -663,24 +682,31 @@ class TestMaterialsUpload:
         )
         assert [row.chunk_id for row in chunk_rows] == list(retrieval.indexed)
         assert material.processing_status == ProcessingStatus.FAILED
+        assert job.status == MaterialJobStatus.FAILED
+        assert job.error_code == "INDEX_CLEANUP_PENDING"
+        # The failed worker has already attempted external cleanup once. It
+        # must leave the durable intent for the scheduled recovery boundary,
+        # rather than retrying the external side effect inline.
+        assert retrieval.delete_attempts == 1
 
-        material.created_at = datetime.datetime.now(datetime.UTC) - datetime.timedelta(
-            hours=2
-        )
-        await db_session.commit()
-        report = await recover_stale_material_reservations(
-            db_session,
-            object_storage,
+        from app.services.job_service import JobService
+
+        recovered = await JobService(
+            db_session, queue=_TestJobQueue()
+        ).recover_jobs(
             older_than=datetime.datetime.now(datetime.UTC)
             - datetime.timedelta(minutes=1),
+            user_id=job.user_id,
         )
 
+        await db_session.refresh(job)
         await db_session.refresh(material)
-        assert report.scanned == 1
-        assert report.pending == 0
+        assert recovered == 1
+        assert job.status == MaterialJobStatus.QUEUED
         assert material.storage_status == StorageStatus.AVAILABLE
-        assert material.processing_status == ProcessingStatus.FAILED
+        assert material.processing_status == ProcessingStatus.PENDING
         assert retrieval.indexed == set()
+        assert retrieval.delete_attempts == 2
         assert (
             await db_session.scalar(
                 select(MaterialChunk).where(MaterialChunk.material_id == material.id)
@@ -690,7 +716,7 @@ class TestMaterialsUpload:
 
     @pytest.mark.asyncio
     async def test_stale_processing_attempt_is_fenced_before_writing_vectors(
-        self, db_session, authenticated_user, object_storage, monkeypatch
+        self, client_with_db, db_session, authenticated_user, object_storage, monkeypatch
     ):
         from app.services.parser_service import Chunk, ParseResult
 
@@ -716,16 +742,17 @@ class TestMaterialsUpload:
                 return None
 
         retrieval = RecordingRetrieval()
+        from app.tasks.parse_material import process_material_job
+
         original_lock_upload = materials_api.QuotaService.lock_upload
         lock_calls = 0
 
         async def pause_before_reacquiring_lock(service, user_id):
             nonlocal lock_calls
             lock_calls += 1
-            # The upload acquires the shared user lock five times before the
-            # durable indexing intent. Pause exactly between that intent's
-            # commit and the worker's lock reacquisition.
-            if lock_calls == 6:
+            # The worker pauses after the durable chunk intent commit and
+            # before reacquiring the shared user lock for the external index.
+            if lock_calls == 1:
                 intent_committed.set()
                 await continue_processing.wait()
             return await original_lock_upload(service, user_id)
@@ -741,22 +768,25 @@ class TestMaterialsUpload:
             "lock_upload",
             pause_before_reacquiring_lock,
         )
-        upload_file = UploadFile(
-            file=BytesIO(MINIMAL_PDF),
-            filename="fenced-stale-worker.pdf",
-            headers=Headers({"content-type": "application/pdf"}),
+        response = await client_with_db.post(
+            "/api/materials",
+            files={"file": ("fenced-stale-worker.pdf", MINIMAL_PDF, "application/pdf")},
         )
+        assert response.status_code == 200
+        material_id = _data(response)["id"]
+        job = await db_session.scalar(
+            select(MaterialJob).where(MaterialJob.material_id == material_id)
+        )
+        assert job is not None
         task = asyncio.create_task(
-            materials_api.upload_material(
-                file=upload_file,
-                current_user=AuthenticatedUser(
-                    id=authenticated_user.id,
-                    username=authenticated_user.username,
-                    role=authenticated_user.role,
-                    session_id="test-session",
-                ),
-                db=db_session,
-                storage=object_storage,
+            process_material_job(
+                {
+                    "db_session": db_session,
+                    "object_storage": object_storage,
+                    "redis": _TestJobQueue(),
+                },
+                job.public_id,
+                authenticated_user.id,
             )
         )
         await asyncio.wait_for(intent_committed.wait(), timeout=1)
@@ -785,7 +815,7 @@ class TestMaterialsUpload:
             continue_processing.set()
         result = await asyncio.wait_for(task, timeout=1)
 
-        assert result.data is not None
+        assert result is None
         assert retrieval.index_calls == 0
         await db_session.refresh(material)
         assert material.processing_status == ProcessingStatus.FAILED
@@ -793,7 +823,7 @@ class TestMaterialsUpload:
 
     @pytest.mark.asyncio
     async def test_cancelled_indexing_keeps_durable_chunks_for_recovery(
-        self, db_session, authenticated_user, object_storage, monkeypatch
+        self, client_with_db, db_session, authenticated_user, object_storage, monkeypatch
     ):
         from app.services.parser_service import Chunk, ParseResult
 
@@ -832,22 +862,27 @@ class TestMaterialsUpload:
         monkeypatch.setattr(
             "app.services.retrieval_service.RetrievalService", lambda: retrieval
         )
-        upload_file = UploadFile(
-            file=BytesIO(MINIMAL_PDF),
-            filename="cancelled-index.pdf",
-            headers=Headers({"content-type": "application/pdf"}),
+        from app.tasks.parse_material import process_material_job
+
+        response = await client_with_db.post(
+            "/api/materials",
+            files={"file": ("cancelled-index.pdf", MINIMAL_PDF, "application/pdf")},
         )
+        assert response.status_code == 200
+        material_id = _data(response)["id"]
+        job = await db_session.scalar(
+            select(MaterialJob).where(MaterialJob.material_id == material_id)
+        )
+        assert job is not None
         task = asyncio.create_task(
-            materials_api.upload_material(
-                file=upload_file,
-                current_user=AuthenticatedUser(
-                    id=authenticated_user.id,
-                    username=authenticated_user.username,
-                    role=authenticated_user.role,
-                    session_id="test-session",
-                ),
-                db=db_session,
-                storage=object_storage,
+            process_material_job(
+                {
+                    "db_session": db_session,
+                    "object_storage": object_storage,
+                    "redis": _TestJobQueue(),
+                },
+                job.public_id,
+                authenticated_user.id,
             )
         )
         await asyncio.wait_for(indexing_started.wait(), timeout=1)
@@ -1073,7 +1108,7 @@ class TestMaterialsUpload:
 
     @pytest.mark.asyncio
     async def test_upload_indexes_chunks_with_original_filename_metadata(
-        self, client_with_db, monkeypatch
+        self, client_with_db, db_session, object_storage, monkeypatch
     ):
         class ParserStub:
             async def parse(self, file_path, file_type=None):
@@ -1111,6 +1146,9 @@ class TestMaterialsUpload:
         )
 
         assert response.status_code == 200
+        await _run_material_job(
+            db_session, object_storage, _data(response)["id"]
+        )
         indexed_chunks = retrieval.index_chunks.call_args.kwargs["chunks"]
         metadata = indexed_chunks[0]["metadata"]
         assert metadata["source"] == "MQ.docx"
@@ -1121,7 +1159,7 @@ class TestMaterialsUpload:
 
     @pytest.mark.asyncio
     async def test_upload_indexes_normalized_chunks(
-        self, client_with_db, db_session, monkeypatch
+        self, client_with_db, db_session, object_storage, monkeypatch
     ):
         from app.services.parser_service import Chunk, ParseResult
 
@@ -1191,8 +1229,13 @@ class TestMaterialsUpload:
         )
 
         assert response.status_code == 200
+        await _run_material_job(
+            db_session, object_storage, _data(response)["id"]
+        )
         data = _data(response)
-        assert data["chunk_count"] == 2
+        material = await db_session.get(Material, data["id"])
+        assert material is not None
+        assert material.chunk_count == 2
 
         indexed_chunks = retrieval.index_chunks.call_args.kwargs["chunks"]
         assert [chunk["text"] for chunk in indexed_chunks] == [

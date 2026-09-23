@@ -26,6 +26,7 @@ from app.schemas.materials import (
     MaterialListResponse,
     MaterialResponse,
 )
+from app.schemas.material_jobs import MaterialJobResponse
 from app.services.course_service import CourseService
 from app.services.material_upload_validation import (
     MaterialUploadValidationError,
@@ -170,6 +171,55 @@ async def _discard_reservation(
     await db.rollback()
     assert last_error is not None
     raise last_error
+
+
+async def _discard_available_material_after_job_failure(
+    db: AsyncSession,
+    storage: ObjectStorage,
+    *,
+    material_id: int,
+    user_id: int,
+) -> None:
+    """Compensate a committed object when durable Job creation fails."""
+    await db.rollback()
+    await QuotaService(db).lock_upload(user_id)
+    material = await _get_owned_material(
+        db,
+        material_id=material_id,
+        user_id=user_id,
+        include_deleting=True,
+        lock=True,
+    )
+    if material is None:
+        return
+    if material.storage_status not in {
+        StorageStatus.RESERVED,
+        StorageStatus.AVAILABLE,
+    }:
+        return
+    material.storage_status = StorageStatus.DELETING
+    material.error_message = "Material cleanup is pending"
+    await db.commit()
+    try:
+        if material.storage_backend == "legacy_local":
+            await _delete_legacy_material(material)
+        elif material.object_key is not None:
+            await storage.delete_object(
+                key=material.object_key,
+                version_id=material.object_version_id,
+            )
+        else:
+            raise ObjectStorageError(
+                "Material storage metadata is unavailable",
+                "OBJECT_STORAGE_UNAVAILABLE",
+            )
+        await db.refresh(material)
+        await delete_material_chunks(db, material=material)
+        await db.delete(material)
+        await db.commit()
+    except BaseException:
+        await db.rollback()
+        raise
 
 
 async def _settle_object_upload(
@@ -367,8 +417,6 @@ async def upload_material(
             material.object_etag = stored.etag
             material.object_write_uncertain = False
             material.storage_status = StorageStatus.AVAILABLE
-            await db.commit()
-            await db.refresh(material)
         except AppException as exc:
             if exc.code != "DUPLICATE_MATERIAL":
                 await _discard_reservation(
@@ -425,13 +473,27 @@ async def upload_material(
                 raise
             raise
 
-        await db.refresh(material)
     job_service = jobs if isinstance(jobs, JobService) else JobService(db)
-    await job_service.create_material_job(
-        user_id=current_user.id,
-        material_id=material.id,
-        course_id=course.id,
-    )
+    try:
+        job = await job_service.create_material_job(
+            user_id=current_user.id,
+            material_id=material.id,
+            course_id=course.id,
+            commit=False,
+            enqueue=False,
+        )
+        # The available object and its durable job become visible together.
+        await db.commit()
+        await db.refresh(material)
+        await job_service.enqueue_material_job(job)
+    except BaseException:
+        await _discard_available_material_after_job_failure(
+            db,
+            storage,
+            material_id=material.id,
+            user_id=current_user.id,
+        )
+        raise
     await db.refresh(material)
     return ApiResponse.ok(data=MaterialResponse.model_validate(material))
 
@@ -542,6 +604,12 @@ async def _process_material(
                 chunk_ids=indexed_chunk_ids,
             )
 
+        # Persist the last visible progress while the material is still in its
+        # processing state. The following commit is the single durable READY
+        # boundary, so a failed or cancelled commit can compensate the index.
+        await ensure_not_cancelled()
+        await report(95, "indexed")
+
         if indexed_chunk_ids:
             marked_ready = await _mark_processing_attempt_ready(
                 db,
@@ -560,15 +628,20 @@ async def _process_material(
                     chunk_ids=indexed_chunk_ids,
                 )
                 return
+            await db.refresh(material)
         else:
             await ensure_not_cancelled()
-            material.processing_status = ProcessingStatus.READY
-            material.chunk_count = len(normalized_chunks)
-            material.page_count = result.page_count
-            material.processed_at = datetime.datetime.now(datetime.UTC)
-            material.processing_lease_expires_at = None
-            material.processing_lease_id = None
-        await report(95, "indexed")
+            marked_ready = await _mark_processing_attempt_ready(
+                db,
+                material_id=material_id,
+                lease_id=lease_id,
+                chunk_count=len(normalized_chunks),
+                page_count=result.page_count,
+            )
+            if not marked_ready:
+                await db.rollback()
+                return
+            await db.refresh(material)
     except asyncio.CancelledError:
         await db.rollback()
         if indexing_intent_persisted:
@@ -910,12 +983,67 @@ async def get_material(
     return ApiResponse.ok(data=MaterialResponse.model_validate(material))
 
 
+@router.get("/{material_id}/job")
+async def get_material_job(
+    material_id: int,
+    current_user: AuthenticatedUser = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+    jobs: JobService = Depends(get_job_service),
+):
+    service = jobs if isinstance(jobs, JobService) else JobService(db)
+    try:
+        job = await service.get_material_job(
+            user_id=current_user.id,
+            material_id=material_id,
+        )
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail="任务不存在") from exc
+    return ApiResponse.ok(data=MaterialJobResponse.model_validate(job))
+
+
+@router.post("/{material_id}/job/cancel")
+async def cancel_material_job(
+    material_id: int,
+    current_user: AuthenticatedUser = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+    jobs: JobService = Depends(get_job_service),
+):
+    service = jobs if isinstance(jobs, JobService) else JobService(db)
+    try:
+        job = await service.cancel_material_job(
+            user_id=current_user.id,
+            material_id=material_id,
+        )
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail="任务不存在") from exc
+    return ApiResponse.ok(data=MaterialJobResponse.model_validate(job))
+
+
+@router.post("/{material_id}/job/retry")
+async def retry_material_job(
+    material_id: int,
+    current_user: AuthenticatedUser = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+    jobs: JobService = Depends(get_job_service),
+):
+    service = jobs if isinstance(jobs, JobService) else JobService(db)
+    try:
+        job = await service.retry_material_job(
+            user_id=current_user.id,
+            material_id=material_id,
+        )
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail="任务不存在") from exc
+    return ApiResponse.ok(data=MaterialJobResponse.model_validate(job))
+
+
 @router.delete("/{material_id}")
 async def delete_material(
     material_id: int,
     current_user: AuthenticatedUser = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
     storage: ObjectStorage = Depends(get_object_storage),
+    jobs: JobService = Depends(get_job_service),
 ):
     await QuotaService(db).lock_upload(current_user.id)
     material = await _get_owned_material(
@@ -929,6 +1057,13 @@ async def delete_material(
         raise HTTPException(status_code=404, detail="材料不存在")
     if material.storage_status == StorageStatus.DELETED:
         return ApiResponse.ok(data={"detail": "已删除"})
+    job_service = jobs if isinstance(jobs, JobService) else JobService(db)
+    await job_service.cancel_jobs_for_material(
+        user_id=current_user.id,
+        material_id=material.id,
+        commit=False,
+    )
+    await db.refresh(material)
     if (
         material.storage_status == StorageStatus.RESERVED
         or material.object_write_uncertain
@@ -966,13 +1101,26 @@ async def delete_material(
         raise
 
     try:
+        # The intent commit above deliberately releases the user lock while
+        # external storage is touched. Reacquire it before removing durable
+        # chunk intent and writing the deleted tombstone.
+        await QuotaService(db).lock_upload(current_user.id)
+        material = await _get_owned_material(
+            db,
+            material_id=material_id,
+            user_id=current_user.id,
+            include_deleting=True,
+            lock=True,
+        )
+        if material is None or material.storage_status != StorageStatus.DELETING:
+            return ApiResponse.ok(data={"detail": "已删除"})
         await delete_material_chunks(db, material=material)
+        material.storage_status = StorageStatus.DELETED
+        material.error_message = None
+        await db.commit()
     except Exception:
         await db.rollback()
         raise
-    material.storage_status = StorageStatus.DELETED
-    material.error_message = None
-    await db.commit()
     return ApiResponse.ok(data={"detail": "已删除"})
 
 
@@ -981,6 +1129,7 @@ async def reprocess_material(
     material_id: int,
     current_user: AuthenticatedUser = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
+    jobs: JobService = Depends(get_job_service),
 ):
     await QuotaService(db).lock_upload(current_user.id)
     material = await _get_owned_material(
@@ -990,12 +1139,20 @@ async def reprocess_material(
     )
     if material is None:
         raise HTTPException(status_code=404, detail="材料不存在")
+    was_ready = material.processing_status == ProcessingStatus.READY
     if (
         material.processing_status == ProcessingStatus.PROCESSING
         and is_processing_lease_active(material.processing_lease_expires_at)
     ):
         await db.rollback()
         raise AppException("Material processing is in progress", "CONFLICT")
+    service = jobs if isinstance(jobs, JobService) else JobService(db)
+    await service.cancel_jobs_for_material(
+        user_id=current_user.id,
+        material_id=material.id,
+        commit=False,
+    )
+    await db.refresh(material)
     persisted_chunk_ids = list(
         (
             await db.scalars(
@@ -1005,7 +1162,7 @@ async def reprocess_material(
             )
         ).all()
     )
-    if persisted_chunk_ids and material.processing_status != ProcessingStatus.READY:
+    if persisted_chunk_ids and material.processing_status != ProcessingStatus.READY and not was_ready:
         await db.rollback()
         raise AppException("Material index cleanup is pending", "CONFLICT")
 
@@ -1045,9 +1202,21 @@ async def reprocess_material(
     material.processing_lease_expires_at = None
     material.processing_lease_id = None
     try:
+        job = await service.create_material_job(
+            user_id=current_user.id,
+            material_id=material.id,
+            course_id=material.course_id,
+            commit=False,
+            enqueue=False,
+        )
+        # Resetting the material and creating its next durable job are one
+        # transaction. A failed insert must roll back to the recoverable
+        # processing intent committed before external index cleanup.
         await db.commit()
     except BaseException:
         await db.rollback()
         raise
+    await db.refresh(material)
+    await service.enqueue_material_job(job)
     await db.refresh(material)
     return ApiResponse.ok(data=MaterialResponse.model_validate(material))

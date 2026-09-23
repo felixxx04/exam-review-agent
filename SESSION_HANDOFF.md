@@ -1,10 +1,11 @@
 # Exam Review Agent 会话交接文档
 
-> 更新日期：2026-08-16
+> 更新日期：2026-09-24
 > 项目目录：`C:\Users\asus\Documents\exam-review-agent`  
 > 当前分支：`codex/phase-1-postgres`  
 > Task 1.4 最终功能提交：`3b5e37e feat: complete deletion and quota reliability`
 > Task 2.1 最终生产 GREEN checkpoint：`faa1e25 fix: bound object version pagination`（完整安全加固提交链见 2.4；均为本地提交，不推送 GitHub）
+> Task 2.2 当前状态：实现及离线聚焦回归完成，等待用户验收；尚无 Task 2.2 GREEN 提交。
 > 基线提交：`23c17b5 feat: polish learning workspace UI and review flows`
 
 ## 1. 给新会话的执行指令
@@ -25,7 +26,7 @@
 - Docker/PostgreSQL/MinIO 当前环境缺口及不应伪造的验证结论
 - Task 2.2 的明确非目标与审批条件
 
-当前审批点是 **Task 2.1 验收**。未经用户确认，不得开始 Task 2.2 或更后面的工作。
+当前审批点是 **Task 2.2 验收**。未经用户确认，不得开始 Task 2.3 或更后面的工作。
 
 不要推送 GitHub。不要重置、清理或覆盖当前工作树中的任何已有改动。
 
@@ -37,13 +38,23 @@
 - 阶段 1 的 **Task 1.2（邀请码认证和会话安全）已由用户确认**。
 - 阶段 1 的 **Task 1.3（私人多课程领域模型）已由用户确认**。
 - 阶段 1 的 **Task 1.4（用户数据删除与配额）已完成并经用户确认的 Phase 1 验收**。
-- 阶段 2 的 **Task 2.1（S3 对象存储抽象）已完成实现、TDD、复审和真实容器验证，等待用户验收**。
+- 阶段 2 的 **Task 2.1（S3 对象存储抽象）已由用户验收**。
+- 阶段 2 的 **Task 2.2（ARQ 任务状态机）实现与离线聚焦回归已完成，当前等待用户验收**。
 - Task 1.4 采用连续 RED/GREEN checkpoint；`17cbda7`、`7eed32d`、`64e4a8a`、`6ce7ce0`、`726d2c2`、`c153644` 记录契约、首轮实现与多轮并发/恢复安全 RED，最终功能 GREEN checkpoint 为 `3b5e37e`。
 - 全局 Git 身份已配置为 `felixxx04 <rifuturech@163.com>`；用户只授权本地提交，不得推送。
 - 用户要求成果只保存在本地，不上传 GitHub。
 - 仓库根目录目前没有 `.codegraph/`，因此无需使用 CodeGraph；如果新会话发现该目录后来出现，再按 `AGENTS.md` 先使用 CodeGraph。
 
-实施计划的 Task 2.1 checkbox、完成记录和第 13 节审批门均已更新；本会话已补齐 Docker 真实验证和最后的回归修复。下一项只有在用户验收 Task 2.1 后才能开始 Task 2.2。
+Task 2.2 已完成实现和当前可运行的离线聚焦验证；资料 API 全组、真实 PostgreSQL/Redis/MinIO 集成与安全/type 检查仍有验证缺口。验收通过前不得开始 Task 2.3。
+
+## 2.5 Task 2.2（2026-09-24）执行状态
+
+- PostgreSQL MaterialJob 是唯一任务状态事实源，ARQ/Redis 仅作唤醒；上传和 Job 在同一事务内持久化。Worker 支持解析/索引、进度、取消、attempt fencing、指数退避、用户重处理、管理员优先级/重试和周期恢复扫描。
+- 删除、注销及创建 Job 失败时保留 Task 1.4/2.1 的事务、用户锁、配额与对象清理边界。部分索引写入后的外部清理失败会保存 `INDEX_CLEANUP_PENDING`，由恢复扫描清理完成后重新排队。
+- 验证：`tests/test_material_jobs.py tests/test_task22_followup.py` 为 `33 passed`；部分索引清理恢复场景 `1 passed`；`git diff --check`、`compileall`、Task 2.2 代码范围 Ruff 通过。
+- 未通过/未完成：`tests/test_api/test_materials.py` 全组在本机 Redis 未运行时等待 ARQ enqueue，未获得最终汇总；Docker CLI/Engine 当前不可用，真实 PostgreSQL/Redis/MinIO 验证未执行。全 Task 2.2 全量后端回归、Bandit、mypy、coverage 尚未完成。
+- 当前 Task 2.2 改动尚未提交；分支 `codex/phase-1-postgres` 仍领先远程 9 个提交。未跟踪 `frontend/.capture-screenshots.mjs` 与 `frontend/screenshots/` 是已有用户文件，未修改或清理。
+- 当前停止于 **Task 2.2 用户验收门**；不开始 Task 2.3，不推送。用户验收后下一项才是 Task 2.3。
 
 ## 2.2 本会话（2026-08-08）Task 2.1 初始收尾记录
 
