@@ -565,7 +565,7 @@ async def test_material_chunk_and_extended_fields(session):
         chunk_id="chunk-1",
         text_preview="事务隔离级别",
         page_number=3,
-        token_count=42,
+        char_count=42,
         embedding_id="chunk-1",
     )
     session.add(chunk)
@@ -585,6 +585,17 @@ def test_material_chunk_has_v2_retrieval_columns():
     assert columns["lexical_tokens"].nullable is False
     assert columns["embedding_model"].nullable is True
     assert columns["embedding"].type.dim == 1024
+    assert "token_count" not in columns
+    for field in (
+        "slide_number",
+        "section_title",
+        "section_level",
+        "parent_chunk_index",
+        "char_start",
+        "char_end",
+        "char_count",
+    ):
+        assert field in columns
 
 
 def test_mistake_record_supports_review_workbench_without_persisted_question():

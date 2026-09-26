@@ -22,6 +22,8 @@ def test_v2_migrations_form_a_clean_chain():
         "20260808_0005_object_storage.py",
         "20260809_0006_material_processing_leases.py",
         "20260812_0007_material_processing_lease_fencing.py",
+        "20260909_0008_material_jobs.py",
+        "20260925_0009_material_chunk_char_ranges.py",
     ]
     initial = versions[0].read_text(encoding="utf-8")
     auth = versions[1].read_text(encoding="utf-8")
@@ -30,6 +32,8 @@ def test_v2_migrations_form_a_clean_chain():
     storage = versions[4].read_text(encoding="utf-8")
     leases = versions[5].read_text(encoding="utf-8")
     fencing = versions[6].read_text(encoding="utf-8")
+    jobs = versions[7].read_text(encoding="utf-8")
+    chunk_ranges = versions[8].read_text(encoding="utf-8")
     assert "down_revision = None" in initial
     assert 'down_revision = "20260803_0001"' in auth
     assert 'down_revision = "20260804_0002"' in courses
@@ -37,6 +41,24 @@ def test_v2_migrations_form_a_clean_chain():
     assert 'down_revision = "20260805_0004"' in storage
     assert 'down_revision = "20260808_0005"' in leases
     assert 'down_revision = "20260809_0006"' in fencing
+    assert 'down_revision = "20260812_0007"' in jobs
+    assert 'down_revision = "20260909_0008"' in chunk_ranges
+
+
+def test_material_chunk_migration_renames_token_count_to_char_count():
+    migration = (
+        BACKEND_ROOT
+        / "alembic"
+        / "versions"
+        / "20260925_0009_material_chunk_char_ranges.py"
+    )
+
+    assert migration.exists()
+    source = migration.read_text(encoding="utf-8")
+    assert "token_count" in source
+    assert "char_count" in source
+    assert "alter_column" in source
+    assert "downgrade" in source
 
 
 def test_v2_migration_enables_pgvector_and_retrieval_indexes():

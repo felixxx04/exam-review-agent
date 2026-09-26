@@ -1265,6 +1265,67 @@ class TestMaterialsUpload:
         assert rows[0].lexical_tokens
         assert rows[0].chunk_metadata["source"] == "Redis.docx"
 
+    @pytest.mark.asyncio
+    async def test_upload_persists_unified_chunk_location_and_character_ranges(
+        self, client_with_db, db_session, object_storage, monkeypatch
+    ):
+        from app.services.parser_service import Chunk, ParseResult
+
+        text = "矩阵用于表示线性变换。"
+        metadata = {
+            "source": "quality.docx",
+            "file_type": "docx",
+            "page_number": None,
+            "slide_number": None,
+            "section_title": "第一节 矩阵",
+            "section_level": 2,
+            "parent_chunk_index": 4,
+            "char_start": 12,
+            "char_end": 12 + len(text),
+            "char_count": len(text),
+        }
+
+        class ParserStub:
+            async def parse(self, file_path, file_type=None):
+                return ParseResult(
+                    chunks=[Chunk(text=text, metadata=metadata, chunk_index=4)],
+                    page_count=1,
+                )
+
+        retrieval = AsyncMock()
+        retrieval.index_chunks = AsyncMock(return_value=["quality-chunk"])
+        monkeypatch.setattr(
+            "app.services.parser_service.ParserService", lambda: ParserStub()
+        )
+        monkeypatch.setattr(
+            "app.services.retrieval_service.RetrievalService", lambda: retrieval
+        )
+
+        response = await client_with_db.post(
+            "/api/materials",
+            files={
+                "file": (
+                    "quality.docx",
+                    MINIMAL_DOCX,
+                    "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                )
+            },
+        )
+        assert response.status_code == 200
+        await _run_material_job(db_session, object_storage, _data(response)["id"])
+
+        row = await db_session.scalar(select(MaterialChunk))
+        assert row is not None
+        assert row.page_number is None
+        assert row.slide_number is None
+        assert row.section_title == "第一节 矩阵"
+        assert row.section_level == 2
+        assert row.parent_chunk_index == 4
+        assert row.char_start == 12
+        assert row.char_end == 12 + len(text)
+        assert row.char_count == len(text)
+        assert row.chunk_metadata["char_start"] == 12
+
 
 class TestMaterialsList:
     @pytest.mark.asyncio
@@ -1401,7 +1462,7 @@ class TestMaterialsDelete:
                 chunk_id="chunk-delete-test",
                 text_preview="preview",
                 page_number=1,
-                token_count=3,
+                char_count=3,
                 embedding_id="chunk-delete-test",
             )
         )
@@ -1431,7 +1492,7 @@ class TestMaterialsDelete:
                 chunk_id="chunk-vector-delete-test",
                 text_preview="preview",
                 page_number=1,
-                token_count=3,
+                char_count=3,
                 embedding_id="chunk-vector-delete-test",
             )
         )
@@ -1473,7 +1534,7 @@ class TestMaterialsReprocess:
                 course_id=material.course_id,
                 chunk_id="ready-material-chunk",
                 text_preview="ready material index",
-                token_count=3,
+                char_count=3,
                 embedding_id="ready-material-chunk",
             )
         )
@@ -1529,7 +1590,7 @@ class TestMaterialsReprocess:
                 course_id=material.course_id,
                 chunk_id="ready-material-crash-window",
                 text_preview="ready material index",
-                token_count=3,
+                char_count=3,
                 embedding_id="ready-material-crash-window",
             )
         )
@@ -1655,7 +1716,7 @@ class TestMaterialsReprocess:
                 course_id=material.course_id,
                 chunk_id="failed-cleanup-intent",
                 text_preview="durable cleanup intent",
-                token_count=3,
+                char_count=3,
                 embedding_id="failed-cleanup-intent",
             )
         )

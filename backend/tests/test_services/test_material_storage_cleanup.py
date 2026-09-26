@@ -143,7 +143,7 @@ async def test_stale_deleting_material_with_chunks_remains_retryable(
             course_id=material.course_id,
             chunk_id="storage-cleanup-chunk",
             text_preview="pending vector cleanup",
-            token_count=1,
+            char_count=1,
             embedding_id="storage-cleanup-chunk",
         )
     )
@@ -192,7 +192,7 @@ async def test_recovery_skips_an_active_material_processing_lease(
             course_id=material.course_id,
             chunk_id="active-processing-lease",
             text_preview="must not be reclaimed while indexing",
-            token_count=6,
+            char_count=6,
             embedding_id="active-processing-lease",
         )
     )
@@ -238,7 +238,7 @@ async def test_recovery_does_not_bypass_an_active_lease_while_deleting(
             course_id=material.course_id,
             chunk_id="active-deleting-processing-lease",
             text_preview="must not be reclaimed while indexing",
-            token_count=6,
+            char_count=6,
             embedding_id="active-deleting-processing-lease",
         )
     )
@@ -341,7 +341,7 @@ async def test_recovery_removes_searchable_chunks_after_transient_delete_failure
             chunk_id=chunk_ids[0],
             content="durable cleanup search token",
             text_preview="durable cleanup search token",
-            token_count=4,
+            char_count=4,
             embedding_id=chunk_ids[0],
         )
     )
@@ -459,7 +459,7 @@ async def test_recovery_finishes_legacy_cleanup_after_index_delete_failure(
             course_id=material.course_id,
             chunk_id="legacy-retry-chunk",
             text_preview="legacy retryable cleanup",
-            token_count=1,
+            char_count=1,
             embedding_id="legacy-retry-chunk",
         )
     )

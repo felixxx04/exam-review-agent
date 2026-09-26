@@ -2,6 +2,11 @@
 
 import pytest
 
+from tests.fixtures.parser_quality import (
+    write_chinese_docx,
+    write_chinese_pdf,
+    write_chinese_pptx,
+)
 from app.services.parser_service import Chunk, ParserService
 
 
@@ -231,6 +236,78 @@ class TestParserService:
         assert "file_type" in result.metadata
         assert result.metadata["file_type"] == "pdf"
         assert "filename" in result.metadata
+
+    @pytest.mark.parametrize(
+        ("file_kind", "writer"),
+        [
+            ("pdf", write_chinese_pdf),
+            ("docx", write_chinese_docx),
+            ("pptx", write_chinese_pptx),
+        ],
+    )
+    async def test_chinese_fixtures_emit_unified_location_metadata(
+        self, tmp_path, file_kind, writer
+    ):
+        path = writer(tmp_path / f"quality.{file_kind}")
+
+        result = await ParserService().parse(str(path), file_type=file_kind)
+
+        assert result.chunks
+        for chunk in result.chunks:
+            metadata = chunk.metadata
+            assert {
+                "page_number",
+                "slide_number",
+                "section_title",
+                "section_level",
+                "parent_chunk_index",
+                "char_start",
+                "char_end",
+                "char_count",
+            } <= metadata.keys()
+            assert metadata["char_start"] >= 0
+            assert metadata["char_end"] - metadata["char_start"] == len(chunk.text)
+            assert metadata["char_count"] == len(chunk.text)
+            assert metadata["char_start"] < metadata["char_end"]
+            assert metadata["parent_chunk_index"] == chunk.chunk_index
+
+        extracted = "".join(chunk.text for chunk in result.chunks)
+        assert any(char in extracted for char in "线性代数矩阵特征值")
+
+    async def test_pdf_fixture_preserves_page_numbers(self, tmp_path):
+        path = write_chinese_pdf(tmp_path / "quality.pdf")
+
+        result = await ParserService().parse(str(path), file_type="pdf")
+
+        assert result.page_count == 2
+        assert {chunk.metadata["page_number"] for chunk in result.chunks} == {1, 2}
+        assert all(chunk.metadata["slide_number"] is None for chunk in result.chunks)
+
+    async def test_docx_fixture_preserves_heading_title_and_level(self, tmp_path):
+        path = write_chinese_docx(tmp_path / "quality.docx")
+
+        result = await ParserService().parse(str(path), file_type="docx")
+
+        sections = {
+            (chunk.metadata["section_title"], chunk.metadata["section_level"])
+            for chunk in result.chunks
+        }
+        assert ("第一节 矩阵", 2) in sections
+        assert ("第二节 向量空间", 2) in sections
+        assert all(chunk.metadata["page_number"] is None for chunk in result.chunks)
+
+    async def test_pptx_fixture_preserves_slide_numbers_and_titles(self, tmp_path):
+        path = write_chinese_pptx(tmp_path / "quality.pptx")
+
+        result = await ParserService().parse(str(path), file_type="pptx")
+
+        assert result.page_count == 2
+        assert [chunk.metadata["slide_number"] for chunk in result.chunks] == [1, 2]
+        assert [chunk.metadata["section_title"] for chunk in result.chunks] == [
+            "第一节 矩阵",
+            "第二节 特征值",
+        ]
+        assert all(chunk.metadata["section_level"] == 1 for chunk in result.chunks)
 
 
 class TestChunkAndParseResult:
