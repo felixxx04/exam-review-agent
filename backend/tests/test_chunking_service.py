@@ -92,14 +92,22 @@ def test_long_chunk_tracks_inclusive_start_and_exclusive_end_ranges():
 
     assert [item.metadata["parent_chunk_index"] for item in result] == [7, 7, 7]
     assert [
-        (item.metadata["char_start"], item.metadata["char_end"], item.metadata["char_count"])
+        (
+            item.metadata["char_start"],
+            item.metadata["char_end"],
+            item.metadata["char_count"],
+        )
         for item in result
     ] == [(100, 110, 10), (108, 118, 10), (116, 122, 6)]
     for item in result:
-        assert item.text == source.text[
-            item.metadata["char_start"] - source.metadata["char_start"] :
-            item.metadata["char_end"] - source.metadata["char_start"]
-        ]
+        assert (
+            item.text
+            == source.text[
+                item.metadata["char_start"]
+                - source.metadata["char_start"] : item.metadata["char_end"]
+                - source.metadata["char_start"]
+            ]
+        )
         assert item.metadata["char_end"] - item.metadata["char_start"] == len(item.text)
 
 

@@ -20,21 +20,37 @@ class ChunkingService:
         normalized: list[Chunk] = []
 
         for chunk in chunks:
+            source_start = int(chunk.metadata.get("char_start", 0))
+            parent_chunk_index = int(
+                chunk.metadata.get("parent_chunk_index", chunk.chunk_index)
+            )
+            base_metadata = {
+                "page_number": None,
+                "slide_number": None,
+                "section_title": None,
+                "section_level": None,
+                **chunk.metadata,
+                "parent_chunk_index": parent_chunk_index,
+                "char_start": source_start,
+                "char_end": source_start + len(chunk.text),
+                "char_count": len(chunk.text),
+            }
             if len(chunk.text) <= self.chunk_size:
                 normalized.append(
                     Chunk(
                         text=chunk.text,
                         metadata={
-                            **chunk.metadata,
+                            **base_metadata,
                             "chunking": "semantic",
-                            "parent_chunk_index": chunk.chunk_index,
                         },
                         chunk_index=len(normalized),
                     )
                 )
                 continue
 
-            normalized.extend(self._split_with_overlap(chunk, start_index=len(normalized)))
+            normalized.extend(
+                self._split_with_overlap(chunk, start_index=len(normalized))
+            )
 
         return [
             Chunk(text=chunk.text, metadata=chunk.metadata, chunk_index=index)
@@ -45,6 +61,10 @@ class ChunkingService:
         windows: list[Chunk] = []
         step = self.chunk_size - self.chunk_overlap
         start = 0
+        source_start = int(chunk.metadata.get("char_start", 0))
+        parent_chunk_index = int(
+            chunk.metadata.get("parent_chunk_index", chunk.chunk_index)
+        )
 
         while start < len(chunk.text):
             end = min(start + self.chunk_size, len(chunk.text))
@@ -53,9 +73,16 @@ class ChunkingService:
                 Chunk(
                     text=text,
                     metadata={
+                        "page_number": None,
+                        "slide_number": None,
+                        "section_title": None,
+                        "section_level": None,
                         **chunk.metadata,
                         "chunking": "overlap_window",
-                        "parent_chunk_index": chunk.chunk_index,
+                        "parent_chunk_index": parent_chunk_index,
+                        "char_start": source_start + start,
+                        "char_end": source_start + end,
+                        "char_count": end - start,
                         "window_index": len(windows),
                         "chunk_size": self.chunk_size,
                         "chunk_overlap": self.chunk_overlap,

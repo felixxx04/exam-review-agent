@@ -727,8 +727,28 @@ def _add_material_chunk_intent(
                 chunk_id=chunk_id,
                 content=chunk_text,
                 text_preview=chunk_text[:300],
-                page_number=metadata.get("page"),
-                token_count=len(chunk_text),
+                page_number=(
+                    metadata["page_number"]
+                    if metadata.get("page_number") is not None
+                    else metadata.get("page")
+                ),
+                slide_number=(
+                    metadata["slide_number"]
+                    if metadata.get("slide_number") is not None
+                    else metadata.get("slide")
+                ),
+                section_title=(
+                    metadata["section_title"]
+                    if metadata.get("section_title") is not None
+                    else metadata.get("section")
+                ),
+                section_level=metadata.get("section_level"),
+                parent_chunk_index=metadata.get(
+                    "parent_chunk_index", chunk.get("chunk_index")
+                ),
+                char_start=metadata.get("char_start", 0),
+                char_end=metadata.get("char_end", len(chunk_text)),
+                char_count=metadata.get("char_count", len(chunk_text)),
                 content_hash=hashlib.sha256(chunk_text.encode("utf-8")).hexdigest(),
                 lexical_tokens=_lexical_tokens(chunk_text),
                 chunk_metadata=metadata,
@@ -1162,7 +1182,11 @@ async def reprocess_material(
             )
         ).all()
     )
-    if persisted_chunk_ids and material.processing_status != ProcessingStatus.READY and not was_ready:
+    if (
+        persisted_chunk_ids
+        and material.processing_status != ProcessingStatus.READY
+        and not was_ready
+    ):
         await db.rollback()
         raise AppException("Material index cleanup is pending", "CONFLICT")
 

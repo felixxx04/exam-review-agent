@@ -606,7 +606,9 @@ class TestMaterialsUpload:
         monkeypatch.setattr(db_session, "commit", cancel_ready_metadata_commit)
         response = await client_with_db.post(
             "/api/materials",
-            files={"file": ("cancelled-index-commit.pdf", MINIMAL_PDF, "application/pdf")},
+            files={
+                "file": ("cancelled-index-commit.pdf", MINIMAL_PDF, "application/pdf")
+            },
         )
         assert response.status_code == 200
         material_id = _data(response)["id"]
@@ -691,9 +693,7 @@ class TestMaterialsUpload:
 
         from app.services.job_service import JobService
 
-        recovered = await JobService(
-            db_session, queue=_TestJobQueue()
-        ).recover_jobs(
+        recovered = await JobService(db_session, queue=_TestJobQueue()).recover_jobs(
             older_than=datetime.datetime.now(datetime.UTC)
             - datetime.timedelta(minutes=1),
             user_id=job.user_id,
@@ -716,7 +716,12 @@ class TestMaterialsUpload:
 
     @pytest.mark.asyncio
     async def test_stale_processing_attempt_is_fenced_before_writing_vectors(
-        self, client_with_db, db_session, authenticated_user, object_storage, monkeypatch
+        self,
+        client_with_db,
+        db_session,
+        authenticated_user,
+        object_storage,
+        monkeypatch,
     ):
         from app.services.parser_service import Chunk, ParseResult
 
@@ -823,7 +828,12 @@ class TestMaterialsUpload:
 
     @pytest.mark.asyncio
     async def test_cancelled_indexing_keeps_durable_chunks_for_recovery(
-        self, client_with_db, db_session, authenticated_user, object_storage, monkeypatch
+        self,
+        client_with_db,
+        db_session,
+        authenticated_user,
+        object_storage,
+        monkeypatch,
     ):
         from app.services.parser_service import Chunk, ParseResult
 
@@ -1146,9 +1156,7 @@ class TestMaterialsUpload:
         )
 
         assert response.status_code == 200
-        await _run_material_job(
-            db_session, object_storage, _data(response)["id"]
-        )
+        await _run_material_job(db_session, object_storage, _data(response)["id"])
         indexed_chunks = retrieval.index_chunks.call_args.kwargs["chunks"]
         metadata = indexed_chunks[0]["metadata"]
         assert metadata["source"] == "MQ.docx"
@@ -1229,9 +1237,7 @@ class TestMaterialsUpload:
         )
 
         assert response.status_code == 200
-        await _run_material_job(
-            db_session, object_storage, _data(response)["id"]
-        )
+        await _run_material_job(db_session, object_storage, _data(response)["id"])
         data = _data(response)
         material = await db_session.get(Material, data["id"])
         assert material is not None
@@ -1275,6 +1281,7 @@ class TestMaterialsUpload:
         metadata = {
             "source": "quality.docx",
             "file_type": "docx",
+            "page": 3,
             "page_number": None,
             "slide_number": None,
             "section_title": "第一节 矩阵",
@@ -1316,7 +1323,7 @@ class TestMaterialsUpload:
 
         row = await db_session.scalar(select(MaterialChunk))
         assert row is not None
-        assert row.page_number is None
+        assert row.page_number == 3
         assert row.slide_number is None
         assert row.section_title == "第一节 矩阵"
         assert row.section_level == 2

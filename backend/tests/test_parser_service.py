@@ -112,19 +112,11 @@ def sample_docx_path(tmp_path):
         "几何学是研究空间形状和大小关系的学科。"
         "初等几何主要研究平面图形和立体图形的基本性质。"
     )
-    doc.add_paragraph(
-        "定义1：点是最基本的几何元素，没有大小，只有位置。"
-    )
-    doc.add_paragraph(
-        "定义2：线是由无数个点组成的集合，具有长度但没有宽度。"
-    )
+    doc.add_paragraph("定义1：点是最基本的几何元素，没有大小，只有位置。")
+    doc.add_paragraph("定义2：线是由无数个点组成的集合，具有长度但没有宽度。")
     doc.add_heading("第二节 角度与三角形", level=2)
-    doc.add_paragraph(
-        "角度是由两条从同一点出发的射线组成的图形。"
-    )
-    doc.add_paragraph(
-        "三角形是由三条线段首尾相连组成的封闭图形。"
-    )
+    doc.add_paragraph("角度是由两条从同一点出发的射线组成的图形。")
+    doc.add_paragraph("三角形是由三条线段首尾相连组成的封闭图形。")
     doc.save(str(path))
     return str(path)
 
@@ -149,10 +141,7 @@ def sample_pptx_path(tmp_path):
     slide2 = prs.slides.add_slide(prs.slide_layouts[1])
     slide2.shapes.title.text = "三角形性质"
     content2 = slide2.placeholders[1]
-    content2.text = (
-        "三角形内角和等于一百八十度。\n"
-        "证明：过点A作直线DE平行于BC。"
-    )
+    content2.text = "三角形内角和等于一百八十度。\n证明：过点A作直线DE平行于BC。"
     prs.save(str(path))
     return str(path)
 
@@ -273,6 +262,7 @@ class TestParserService:
 
         extracted = "".join(chunk.text for chunk in result.chunks)
         assert any(char in extracted for char in "线性代数矩阵特征值")
+        assert "\x00" not in extracted
 
     async def test_pdf_fixture_preserves_page_numbers(self, tmp_path):
         path = write_chinese_pdf(tmp_path / "quality.pdf")
