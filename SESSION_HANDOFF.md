@@ -1,20 +1,20 @@
 # Exam Review Agent 会话交接文档
 
-> 更新日期：2026-09-24
+> 更新日期：2026-09-27
 > 项目目录：`C:\Users\asus\Documents\exam-review-agent`  
 > 当前分支：`main`
-> 当前提交：`4d15af9 feat: add offline free-resource benchmark harness`
-> 远程状态：`main`、`origin/main` 及其远程 HEAD 当前指向 `4d15af9`；`codex/phase-1-postgres` 仍指向 `4a0ed0c`。
+> 当前提交：`702f375 fix: harden Task 2.2 retries and integration coverage`
+> 远程状态：`main`、`origin/main` 及其远程 HEAD 当前指向 `702f375`；`codex/phase-1-postgres` 仍指向 `4a0ed0c`。
 >
-> **当前状态覆盖（2026-09-27）：** 用户已验收 Task 2.2 并授权 Task 2.3。Task 2.3 已由 `7bd3ffd`（RED 契约）和 `57c0c3d`（实现）完成；真实 PostgreSQL、Redis、MinIO 集成验证现为 `10 passed`，Task 2.3 当前停在用户验收门。下文 2026-09-24 的 Task 2.2 状态是历史快照，不作为当前执行指令。不要开始 Task 2.4、Task 3.1、pgvector 检索切换、Planner/Agent Runtime 或无关重构；不要推送远程。
+> **当前状态覆盖（2026-09-27）：** Task 2.2 已完成 lease 修复、聚焦回归和交接；Task 2.3 已由 `7bd3ffd`（RED 契约）和 `57c0c3d`（实现）完成；Task 2.4 已完成离线 RED/GREEN benchmark。Task 3.1、pgvector 检索切换、Planner/Agent Runtime 和无关重构仍未开始。下文 2026-09-24 的 Task 2.2 状态是历史快照，不作为当前执行指令。
 >
-> **本次会话状态覆盖（2026-09-27）：** 用户授权 Task 2.4。离线基准 RED 契约提交为 `e0d735c`，可注入 Embedding/Cross-Encoder benchmark runner 与 ADR/计划更新提交为 `4d15af9`，该提交已推送到 `origin/main`。离线契约 19 项通过，连同既有 Retrieval/Embedding 回归共 `30 passed`，benchmark 模块覆盖率 `88%`；Ruff、格式、`compileall` 和 `--offline` JSON 验证通过。当前只验证了 fixture，不是实际模型比较：本机约有 1.9 GiB 可用内存，且未配置远端 benchmark endpoint，因此小型本地模型与真实远端 provider 的冷启动、吞吐、峰值内存和检索质量数据仍待补齐。Task 3.1 仍未开始。
+> **本次会话状态覆盖（2026-09-27）：** 用户授权 Task 2.4。离线基准 RED 契约提交为 `e0d735c`，可注入 Embedding/Cross-Encoder benchmark runner 与 ADR/计划更新提交为 `4d15af9`，随后由 `702f375` 补齐 Task 2.2 lease 修复并推送到 `origin/main`。离线契约 19 项通过，Task 2.2 聚焦测试 34 项、Materials API 测试 43 项通过；真实 PostgreSQL/MinIO 集成缺少服务变量时跳过。当前 Task 2.4 只验证了 fixture，不是实际模型比较：本机约有 1.9 GiB 可用内存，且未配置远端 benchmark endpoint，因此小型本地模型与真实远端 provider 的冷启动、吞吐、峰值内存和检索质量数据仍待补齐。Task 3.1 仍未开始。
 > Task 1.4 最终功能提交：`3b5e37e feat: complete deletion and quota reliability`
 > Task 2.1 最终生产 GREEN checkpoint：`faa1e25 fix: bound object version pagination`（完整安全加固提交链见 2.4；Task 2.1 已获用户验收）
-> Task 2.2 当前状态：实现、离线聚焦回归和本地提交已完成，等待用户验收；真实 PostgreSQL/Redis/MinIO 集成验证仍未完成。
+> Task 2.2 当前状态：实现、lease 修复、离线聚焦回归和提交已完成；真实 PostgreSQL/Redis/MinIO 集成在缺少服务变量时跳过。
 > 基线提交：`23c17b5 feat: polish learning workspace UI and review flows`
 >
-> 重要区分：`4a0ed0c` 证明 Task 2.2 已提交，不等于用户已经验收 Task 2.2。Task 2.3/2.4 的本地 checkpoint 已推送；新会话仍必须先处理本文件记录的 Task 2.2 风险并报告证据，不得直接开始 Task 3.1。
+> 重要区分：`702f375` 是当前本地与远程同步的提交，包含 Task 2.2 lease 清理修复及回归测试。Task 2.3/2.4 的 checkpoint 已推送；Task 2.4 的真实模型/provider 数据仍未补齐，不得直接开始 Task 3.1。
 
 ## 1. 给新会话的执行指令
 
@@ -34,7 +34,7 @@
 - Docker/PostgreSQL/MinIO 当前环境缺口及不应伪造的验证结论
 - Task 2.2 的提交、离线验证缺口、已知风险、明确非目标与审批条件
 
-当前审批点是 **Task 2.2 验收**。先补充并验证 processing lease 清理风险，再请求用户验收；未经用户确认，不得开始 Task 2.3 或更后面的工作。
+当前停止点是 **Task 2.4 离线 benchmark 用户验收**。processing lease 清理风险已在 `702f375` 修复并由聚焦测试覆盖；未经用户确认，不得开始 Task 3.1 或生产检索路径切换。
 
 不要再次推送或合并无关改动，除非用户明确要求。不要重置、清理或覆盖当前工作树中的任何已有改动。
 
@@ -47,12 +47,12 @@
 - 阶段 1 的 **Task 1.3（私人多课程领域模型）已由用户确认**。
 - 阶段 1 的 **Task 1.4（用户数据删除与配额）已完成并经用户确认的 Phase 1 验收**。
 - 阶段 2 的 **Task 2.1（S3 对象存储抽象）已由用户验收**。
-- 阶段 2 的 **Task 2.2（ARQ 任务状态机）实现与离线聚焦回归已完成，当前等待用户验收**。
+- 阶段 2 的 **Task 2.2（ARQ 任务状态机）实现、lease 修复与离线聚焦回归已完成**。
 - Task 1.4 采用连续 RED/GREEN checkpoint；`17cbda7`、`7eed32d`、`64e4a8a`、`6ce7ce0`、`726d2c2`、`c153644` 记录契约、首轮实现与多轮并发/恢复安全 RED，最终功能 GREEN checkpoint 为 `3b5e37e`。
 - 全局 Git 身份已配置为 `felixxx04 <rifuturech@163.com>`；截至本交接，Task 2.2 已按用户此前要求提交并推送，远程与本地同步。
 - 仓库根目录目前没有 `.codegraph/`，因此无需使用 CodeGraph；如果新会话发现该目录后来出现，再按 `AGENTS.md` 先使用 CodeGraph。
 
-Task 2.2 已完成实现、提交和当前可运行的离线聚焦验证；资料 API 全组、真实 PostgreSQL/Redis/MinIO 集成与安全/type 检查仍有验证缺口。验收通过前不得开始 Task 2.3。
+Task 2.2 已完成实现、提交和当前可运行的离线聚焦验证；资料 API 全组通过，真实 PostgreSQL/Redis/MinIO 集成与安全/type 检查仍有验证缺口。Task 2.4 已完成离线 benchmark；验收通过前不得开始 Task 3.1。
 
 ## 2.5 Task 2.2（2026-09-24）执行状态
 
@@ -61,8 +61,8 @@ Task 2.2 已完成实现、提交和当前可运行的离线聚焦验证；资�
 - 验证：`tests/test_material_jobs.py tests/test_task22_followup.py` 为 `33 passed`；部分索引清理恢复场景 `1 passed`；`git diff --check`、`compileall`、Task 2.2 代码范围 Ruff 通过。
 - 未通过/未完成：`tests/test_api/test_materials.py` 全组在本机 Redis 未运行时等待 ARQ enqueue，未获得最终汇总；Docker CLI/Engine 当前不可用，真实 PostgreSQL/Redis/MinIO 验证未执行。全 Task 2.2 全量后端回归、Bandit、mypy、coverage 尚未完成。
 - 当前 Task 2.2 已由 `4a0ed0c` 提交，`main` 与远程同步。工作树没有已跟踪修改；未跟踪的 `frontend/.capture-screenshots.mjs` 与 `frontend/screenshots/` 是已有用户文件，未修改、未清理、不得纳入本任务提交。
-- 已知待处理风险：`backend/app/services/job_service.py` 的 `JobService.mark_failed()` 普通自动重试分支更新 Job/Material 状态时，可能没有清除 `processing_lease_id` 与 `processing_lease_expires_at`。下一会话应先为该场景补失败测试，再做最小修复并运行 Task 2.2 聚焦回归。
-- 当前停止于 **Task 2.2 用户验收门**；风险修复和可用环境验证完成后请求用户验收。不得开始 Task 2.3、pgvector 检索切换、Planner/Agent Runtime 或无关重构。
+- processing lease 风险已修复：`702f375` 在 `JobService.mark_failed()` 自动重试路径清除 `processing_lease_id` 与 `processing_lease_expires_at`，并由 `test_task22_followup.py` 回归覆盖。
+- 当前停止于 **Task 2.4 离线 benchmark 用户验收门**；真实模型/provider 数据和部分真实服务验证仍有缺口。不得开始 Task 3.1、pgvector 检索切换、Planner/Agent Runtime 或无关重构。
 
 ## 2.2 本会话（2026-08-08）Task 2.1 初始收尾记录
 
