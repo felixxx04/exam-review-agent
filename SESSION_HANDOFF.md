@@ -2,11 +2,19 @@
 
 > 更新日期：2026-09-24
 > 项目目录：`C:\Users\asus\Documents\exam-review-agent`  
-> 当前分支：`codex/phase-1-postgres`  
+> 当前分支：`main`
+> 当前提交：`4d15af9 feat: add offline free-resource benchmark harness`
+> 远程状态：`main`、`origin/main` 及其远程 HEAD 当前指向 `4d15af9`；`codex/phase-1-postgres` 仍指向 `4a0ed0c`。
+>
+> **当前状态覆盖（2026-09-27）：** 用户已验收 Task 2.2 并授权 Task 2.3。Task 2.3 已由 `7bd3ffd`（RED 契约）和 `57c0c3d`（实现）完成；真实 PostgreSQL、Redis、MinIO 集成验证现为 `10 passed`，Task 2.3 当前停在用户验收门。下文 2026-09-24 的 Task 2.2 状态是历史快照，不作为当前执行指令。不要开始 Task 2.4、Task 3.1、pgvector 检索切换、Planner/Agent Runtime 或无关重构；不要推送远程。
+>
+> **本次会话状态覆盖（2026-09-27）：** 用户授权 Task 2.4。离线基准 RED 契约提交为 `e0d735c`，可注入 Embedding/Cross-Encoder benchmark runner 与 ADR/计划更新提交为 `4d15af9`，该提交已推送到 `origin/main`。离线契约 19 项通过，连同既有 Retrieval/Embedding 回归共 `30 passed`，benchmark 模块覆盖率 `88%`；Ruff、格式、`compileall` 和 `--offline` JSON 验证通过。当前只验证了 fixture，不是实际模型比较：本机约有 1.9 GiB 可用内存，且未配置远端 benchmark endpoint，因此小型本地模型与真实远端 provider 的冷启动、吞吐、峰值内存和检索质量数据仍待补齐。Task 3.1 仍未开始。
 > Task 1.4 最终功能提交：`3b5e37e feat: complete deletion and quota reliability`
-> Task 2.1 最终生产 GREEN checkpoint：`faa1e25 fix: bound object version pagination`（完整安全加固提交链见 2.4；均为本地提交，不推送 GitHub）
-> Task 2.2 当前状态：实现及离线聚焦回归完成，等待用户验收；尚无 Task 2.2 GREEN 提交。
+> Task 2.1 最终生产 GREEN checkpoint：`faa1e25 fix: bound object version pagination`（完整安全加固提交链见 2.4；Task 2.1 已获用户验收）
+> Task 2.2 当前状态：实现、离线聚焦回归和本地提交已完成，等待用户验收；真实 PostgreSQL/Redis/MinIO 集成验证仍未完成。
 > 基线提交：`23c17b5 feat: polish learning workspace UI and review flows`
+>
+> 重要区分：`4a0ed0c` 证明 Task 2.2 已提交，不等于用户已经验收 Task 2.2。Task 2.3/2.4 的本地 checkpoint 已推送；新会话仍必须先处理本文件记录的 Task 2.2 风险并报告证据，不得直接开始 Task 3.1。
 
 ## 1. 给新会话的执行指令
 
@@ -24,11 +32,11 @@
 - Task 1.4 的实现、验证结果和剩余风险
 - Task 2.1 的实现、TDD、测试、审查和真实容器验证证据
 - Docker/PostgreSQL/MinIO 当前环境缺口及不应伪造的验证结论
-- Task 2.2 的明确非目标与审批条件
+- Task 2.2 的提交、离线验证缺口、已知风险、明确非目标与审批条件
 
-当前审批点是 **Task 2.2 验收**。未经用户确认，不得开始 Task 2.3 或更后面的工作。
+当前审批点是 **Task 2.2 验收**。先补充并验证 processing lease 清理风险，再请求用户验收；未经用户确认，不得开始 Task 2.3 或更后面的工作。
 
-不要推送 GitHub。不要重置、清理或覆盖当前工作树中的任何已有改动。
+不要再次推送或合并无关改动，除非用户明确要求。不要重置、清理或覆盖当前工作树中的任何已有改动。
 
 ## 2. 当前状态摘要
 
@@ -41,11 +49,10 @@
 - 阶段 2 的 **Task 2.1（S3 对象存储抽象）已由用户验收**。
 - 阶段 2 的 **Task 2.2（ARQ 任务状态机）实现与离线聚焦回归已完成，当前等待用户验收**。
 - Task 1.4 采用连续 RED/GREEN checkpoint；`17cbda7`、`7eed32d`、`64e4a8a`、`6ce7ce0`、`726d2c2`、`c153644` 记录契约、首轮实现与多轮并发/恢复安全 RED，最终功能 GREEN checkpoint 为 `3b5e37e`。
-- 全局 Git 身份已配置为 `felixxx04 <rifuturech@163.com>`；用户只授权本地提交，不得推送。
-- 用户要求成果只保存在本地，不上传 GitHub。
+- 全局 Git 身份已配置为 `felixxx04 <rifuturech@163.com>`；截至本交接，Task 2.2 已按用户此前要求提交并推送，远程与本地同步。
 - 仓库根目录目前没有 `.codegraph/`，因此无需使用 CodeGraph；如果新会话发现该目录后来出现，再按 `AGENTS.md` 先使用 CodeGraph。
 
-Task 2.2 已完成实现和当前可运行的离线聚焦验证；资料 API 全组、真实 PostgreSQL/Redis/MinIO 集成与安全/type 检查仍有验证缺口。验收通过前不得开始 Task 2.3。
+Task 2.2 已完成实现、提交和当前可运行的离线聚焦验证；资料 API 全组、真实 PostgreSQL/Redis/MinIO 集成与安全/type 检查仍有验证缺口。验收通过前不得开始 Task 2.3。
 
 ## 2.5 Task 2.2（2026-09-24）执行状态
 
@@ -53,8 +60,9 @@ Task 2.2 已完成实现和当前可运行的离线聚焦验证；资料 API 全
 - 删除、注销及创建 Job 失败时保留 Task 1.4/2.1 的事务、用户锁、配额与对象清理边界。部分索引写入后的外部清理失败会保存 `INDEX_CLEANUP_PENDING`，由恢复扫描清理完成后重新排队。
 - 验证：`tests/test_material_jobs.py tests/test_task22_followup.py` 为 `33 passed`；部分索引清理恢复场景 `1 passed`；`git diff --check`、`compileall`、Task 2.2 代码范围 Ruff 通过。
 - 未通过/未完成：`tests/test_api/test_materials.py` 全组在本机 Redis 未运行时等待 ARQ enqueue，未获得最终汇总；Docker CLI/Engine 当前不可用，真实 PostgreSQL/Redis/MinIO 验证未执行。全 Task 2.2 全量后端回归、Bandit、mypy、coverage 尚未完成。
-- 当前 Task 2.2 改动尚未提交；分支 `codex/phase-1-postgres` 仍领先远程 9 个提交。未跟踪 `frontend/.capture-screenshots.mjs` 与 `frontend/screenshots/` 是已有用户文件，未修改或清理。
-- 当前停止于 **Task 2.2 用户验收门**；不开始 Task 2.3，不推送。用户验收后下一项才是 Task 2.3。
+- 当前 Task 2.2 已由 `4a0ed0c` 提交，`main` 与远程同步。工作树没有已跟踪修改；未跟踪的 `frontend/.capture-screenshots.mjs` 与 `frontend/screenshots/` 是已有用户文件，未修改、未清理、不得纳入本任务提交。
+- 已知待处理风险：`backend/app/services/job_service.py` 的 `JobService.mark_failed()` 普通自动重试分支更新 Job/Material 状态时，可能没有清除 `processing_lease_id` 与 `processing_lease_expires_at`。下一会话应先为该场景补失败测试，再做最小修复并运行 Task 2.2 聚焦回归。
+- 当前停止于 **Task 2.2 用户验收门**；风险修复和可用环境验证完成后请求用户验收。不得开始 Task 2.3、pgvector 检索切换、Planner/Agent Runtime 或无关重构。
 
 ## 2.2 本会话（2026-08-08）Task 2.1 初始收尾记录
 
@@ -426,11 +434,20 @@ docs/architecture/adr/0001-postgres-pgvector.md、
 docs/architecture/adr/0003-object-storage.md、
 docs/architecture/adr/0004-auth-and-tenancy.md。
 
-随后检查当前 git status 和 Task 2.1 的实际实现。先向我汇报：
-1. 你对 Phase 1 已验收和 Task 2.1 当前完成状态的理解；
-2. Task 2.1 的对象存储、上传安全、删除/注销恢复和跨租户验证证据；
-3. 真实 PostgreSQL/MinIO 验证的 Docker 环境缺口，以及 Task 2.2 的明确非目标。
+随后检查 `git status --short --branch`、`git log --all --oneline --decorate`，并核对
+`backend/app/services/job_service.py`、`backend/app/tasks/parse_material.py`、
+`backend/app/tasks/worker.py`、`backend/tests/test_material_jobs.py` 和
+`backend/tests/test_task22_followup.py`。
 
-Task 2.1 未经用户验收不得开始 Task 2.2 或更后面的工作；
-不要覆盖现有改动，也不要推送 GitHub。
+先只向我汇报：
+1. 当前 `main` / `4a0ed0c` 与远程同步的事实；
+2. Phase 1、Task 2.1 已验收内容和验证证据；
+3. Task 2.2 已提交但尚未用户验收的范围、测试结果和真实服务缺口；
+4. `JobService.mark_failed()` 普通自动重试分支的 processing lease 风险。
+
+然后严格 TDD：先为 lease 清理风险写失败测试，再做最小修复并运行 Task 2.2
+聚焦验证。Docker/Redis 只有实际检查可用后才能做真实集成验证，不得用内存替代。
+未经用户确认不得开始 Task 2.3、pgvector 检索切换、Planner/Agent Runtime 或无关重构；
+不要覆盖已有改动，不要删除 `frontend/.capture-screenshots.mjs` 或
+`frontend/screenshots/`，除非用户明确要求。
 ```

@@ -6,6 +6,7 @@ import io
 import os
 import uuid
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 from sqlalchemy import select
@@ -23,6 +24,7 @@ from app.db.models import (
     InviteCode,
     Material,
     MaterialChunk,
+    MaterialJob,
     ProcessingStatus,
     User,
 )
@@ -32,11 +34,13 @@ from app.services.account_deletion_service import (
     AccountDeletionService,
 )
 from app.services.object_storage import StoredObject
+from app.services.job_service import JobService
 from app.services.parser_service import Chunk, ParseResult
 from app.services.material_storage_cleanup import (
     recover_stale_material_reservations_for_user,
 )
 from app.services.quota_service import QuotaService
+from app.tasks.parse_material import process_material_job
 
 
 POSTGRES_INTEGRATION_URL = os.getenv("POSTGRES_INTEGRATION_URL")
@@ -119,6 +123,7 @@ class BlockingRetrieval:
         self.vector_store = vector_store
         self.indexing_started = indexing_started
         self.release_indexing = release_indexing
+        self.deleted_chunk_ids: list[str] = []
 
     async def index_chunks(
         self,
@@ -136,6 +141,9 @@ class BlockingRetrieval:
             f"blocked-index-{index}" for index, _chunk in enumerate(chunks)
         ]
 
+    async def delete_chunks(self, *, chunk_ids, **_kwargs) -> None:
+        self.deleted_chunk_ids.extend(chunk_ids)
+
 
 class SingleChunkParser:
     async def parse(self, _file_path: str, file_type: str | None = None) -> ParseResult:
@@ -143,6 +151,11 @@ class SingleChunkParser:
             chunks=[Chunk(text="account deletion indexing race", metadata={})],
             page_count=1,
         )
+
+
+class TestJobQueue:
+    async def enqueue_job(self, _function_name, *args, **kwargs):
+        return SimpleNamespace(job_id=kwargs.get("_job_id") or args[0])
 
 
 @pytest.mark.asyncio
@@ -255,13 +268,30 @@ async def test_postgres_recovery_fences_a_paused_stale_processing_attempt(
                     headers=Headers({"content-type": "application/pdf"}),
                 )
                 try:
-                    return await upload_material(
+                    result = await upload_material(
                         file=uploaded_file,
                         course_id=course_id,
                         current_user=current_user,
                         db=session,
                         storage=storage,
+                        jobs=JobService(session, queue=TestJobQueue()),
                     )
+                    job = await session.scalar(
+                        select(MaterialJob).where(
+                            MaterialJob.material_id == result.data.id
+                        )
+                    )
+                    assert job is not None
+                    await process_material_job(
+                        {
+                            "db_session": session,
+                            "object_storage": storage,
+                            "redis": TestJobQueue(),
+                        },
+                        job.public_id,
+                        user_id,
+                    )
+                    return result
                 finally:
                     await uploaded_file.close()
 
@@ -340,7 +370,7 @@ async def test_postgres_recovery_fences_a_paused_stale_processing_attempt(
             )
             assert material is not None
             assert material.storage_status.value == "available"
-            assert material.processing_status == ProcessingStatus.FAILED
+            assert material.processing_status == ProcessingStatus.PENDING
             assert material.processing_lease_id is None
             assert material.processing_lease_expires_at is None
     finally:
@@ -707,13 +737,30 @@ async def test_account_deletion_waits_for_blocked_upload_indexing_before_vector_
                     headers=Headers({"content-type": "application/pdf"}),
                 )
                 try:
-                    return await upload_material(
+                    result = await upload_material(
                         file=uploaded_file,
                         course_id=course_id,
                         current_user=current_user,
                         db=session,
                         storage=storage,
+                        jobs=JobService(session, queue=TestJobQueue()),
                     )
+                    job = await session.scalar(
+                        select(MaterialJob).where(
+                            MaterialJob.material_id == result.data.id
+                        )
+                    )
+                    assert job is not None
+                    await process_material_job(
+                        {
+                            "db_session": session,
+                            "object_storage": storage,
+                            "redis": TestJobQueue(),
+                        },
+                        job.public_id,
+                        user_id,
+                    )
+                    return result
                 finally:
                     await uploaded_file.close()
 

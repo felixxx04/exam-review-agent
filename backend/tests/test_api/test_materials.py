@@ -768,11 +768,6 @@ class TestMaterialsUpload:
         monkeypatch.setattr(
             "app.services.retrieval_service.RetrievalService", lambda: retrieval
         )
-        monkeypatch.setattr(
-            materials_api.QuotaService,
-            "lock_upload",
-            pause_before_reacquiring_lock,
-        )
         response = await client_with_db.post(
             "/api/materials",
             files={"file": ("fenced-stale-worker.pdf", MINIMAL_PDF, "application/pdf")},
@@ -783,6 +778,11 @@ class TestMaterialsUpload:
             select(MaterialJob).where(MaterialJob.material_id == material_id)
         )
         assert job is not None
+        monkeypatch.setattr(
+            materials_api.QuotaService,
+            "lock_upload",
+            pause_before_reacquiring_lock,
+        )
         task = asyncio.create_task(
             process_material_job(
                 {
@@ -823,7 +823,9 @@ class TestMaterialsUpload:
         assert result is None
         assert retrieval.index_calls == 0
         await db_session.refresh(material)
-        assert material.processing_status == ProcessingStatus.FAILED
+        assert material.processing_status == ProcessingStatus.PENDING
+        assert material.processing_lease_id is None
+        assert material.processing_lease_expires_at is None
         assert await db_session.scalar(select(MaterialChunk)) is None
 
     @pytest.mark.asyncio

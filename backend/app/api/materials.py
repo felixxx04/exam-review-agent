@@ -580,6 +580,9 @@ async def _process_material(
             # stops anywhere below, recovery can delete every possible chunk.
             await db.commit()
             indexing_intent_persisted = True
+            # Progress persistence commits its transaction, so do it before
+            # acquiring the user lock that fences account and course cleanup.
+            await report(70, "indexing")
             # Reacquire and retain the Task 1.4 user serialization lock across
             # the non-transactional index write and its final material state.
             # Course, account, material-delete, and recovery paths take the
@@ -596,7 +599,6 @@ async def _process_material(
                 await db.rollback()
                 return
             await ensure_not_cancelled()
-            await report(70, "indexing")
             await retrieval.index_chunks(
                 user_id=user_subject,
                 chunks=chunk_payloads,

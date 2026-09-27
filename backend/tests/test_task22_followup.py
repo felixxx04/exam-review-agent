@@ -132,6 +132,41 @@ async def test_failed_job_is_requeued_and_delivered_when_attempts_remain(
 
 
 @pytest.mark.asyncio
+async def test_automatic_retry_clears_processing_lease(
+    db_session, authenticated_user
+):
+    material = await _material(db_session, authenticated_user)
+    material.processing_status = ProcessingStatus.PROCESSING
+    material.processing_lease_id = "failed-attempt-lease"
+    material.processing_lease_expires_at = datetime.datetime.now(
+        datetime.UTC
+    ) + datetime.timedelta(minutes=5)
+    job = MaterialJob(
+        user_id=authenticated_user.id,
+        course_id=material.course_id,
+        material_id=material.id,
+        status=MaterialJobStatus.RUNNING,
+        attempt_count=1,
+        max_attempts=3,
+        idempotency_key="material:lease-retry:process:0",
+    )
+    db_session.add(job)
+    await db_session.commit()
+
+    result = await JobService(db_session, queue=RecordingQueue()).mark_failed(
+        user_id=authenticated_user.id,
+        job_id=job.public_id,
+    )
+
+    assert result is not None
+    await db_session.refresh(material)
+    assert result.status == MaterialJobStatus.QUEUED
+    assert material.processing_status == ProcessingStatus.PENDING
+    assert material.processing_lease_id is None
+    assert material.processing_lease_expires_at is None
+
+
+@pytest.mark.asyncio
 async def test_recovery_fences_stale_material_processing_attempt(
     db_session, authenticated_user
 ):

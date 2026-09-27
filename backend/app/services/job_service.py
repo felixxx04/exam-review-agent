@@ -837,6 +837,8 @@ class JobService:
             )
             .values(
                 processing_status=material_status,
+                processing_lease_id=None,
+                processing_lease_expires_at=None,
                 error_message=(
                     None if job.status == MaterialJobStatus.QUEUED else SAFE_PROCESSING_ERROR
                 ),

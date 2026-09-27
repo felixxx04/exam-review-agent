@@ -11,6 +11,14 @@ from pathlib import Path
 import boto3
 import httpx
 import pytest
+from arq.connections import create_pool
+from arq.constants import (
+    abort_jobs_ss,
+    in_progress_key_prefix,
+    job_key_prefix,
+    result_key_prefix,
+    retry_key_prefix,
+)
 from botocore.exceptions import ClientError
 from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
@@ -22,6 +30,8 @@ from app.db.database import bind_tenant_context, get_db
 from app.db.models import (
     Course,
     Material,
+    MaterialJob,
+    MaterialJobStatus,
     ProcessingStatus,
     StorageStatus,
     User,
@@ -29,6 +39,8 @@ from app.db.models import (
 from app.main import app
 from app.services.parser_service import ParseResult
 from app.services.object_storage import S3ObjectStorage
+from app.tasks.parse_material import process_material_job
+from app.tasks.worker import WorkerConfig
 
 
 MINIO_ENDPOINT = os.getenv("MINIO_INTEGRATION_ENDPOINT_URL")
@@ -207,8 +219,29 @@ async def test_real_material_api_uses_postgres_and_private_minio(monkeypatch):
     user_id: int | None = None
     object_key: str | None = None
     object_version_id: str | None = None
+    redis_queue_name = f"minio-api-test:{suffix}"
+    redis_job_id: str | None = None
+    redis_pool = None
 
     try:
+        await WorkerConfig.initialize()
+        redis_pool = await create_pool(
+            WorkerConfig.redis_settings,
+            default_queue_name=redis_queue_name,
+        )
+
+        async def get_isolated_redis_pool(_cls):
+            return await create_pool(
+                WorkerConfig.redis_settings,
+                default_queue_name=redis_queue_name,
+            )
+
+        monkeypatch.setattr(
+            WorkerConfig,
+            "get_pool",
+            classmethod(get_isolated_redis_pool),
+        )
+
         async with session_factory() as setup_session:
             user = User(
                 username=f"minio_api_{suffix}",
@@ -268,7 +301,28 @@ async def test_real_material_api_uses_postgres_and_private_minio(monkeypatch):
                 object_key = material.object_key
                 object_version_id = material.object_version_id
                 assert material.storage_status == StorageStatus.AVAILABLE
+                assert material.processing_status == ProcessingStatus.PENDING
+
+                job = await session.scalar(
+                    select(MaterialJob).where(MaterialJob.material_id == material.id)
+                )
+                assert job is not None
+                assert job.status == MaterialJobStatus.QUEUED
+                assert job.redis_job_id == job.public_id
+                redis_job_id = job.public_id
+                assert (
+                    await redis_pool.zscore(redis_queue_name, redis_job_id) is not None
+                )
+
+                await process_material_job(
+                    {"db_session": session, "object_storage": storage},
+                    job.public_id,
+                    user_id,
+                )
+                await session.refresh(material)
                 assert material.processing_status == ProcessingStatus.READY
+                await session.refresh(job)
+                assert job.status == MaterialJobStatus.SUCCEEDED
 
                 access_response = await api_client.get(
                     f"/api/materials/{material.id}/access-url",
@@ -341,6 +395,30 @@ async def test_real_material_api_uses_postgres_and_private_minio(monkeypatch):
             await engine.dispose()
         except Exception:
             cleanup_failures.append("database engine disposal")
+
+        if redis_pool is not None:
+            try:
+                queued_job_ids = {
+                    value.decode() if isinstance(value, bytes) else str(value)
+                    for value in await redis_pool.zrange(redis_queue_name, 0, -1)
+                }
+                if redis_job_id is not None:
+                    queued_job_ids.add(redis_job_id)
+                for queued_job_id in queued_job_ids:
+                    await redis_pool.zrem(redis_queue_name, queued_job_id)
+                    await redis_pool.zrem(abort_jobs_ss, queued_job_id)
+                    await redis_pool.delete(
+                        f"{job_key_prefix}{queued_job_id}",
+                        f"{result_key_prefix}{queued_job_id}",
+                        f"{in_progress_key_prefix}{queued_job_id}",
+                        f"{retry_key_prefix}{queued_job_id}",
+                    )
+            except Exception:
+                cleanup_failures.append("Redis job cleanup")
+            try:
+                await redis_pool.aclose()
+            except Exception:
+                cleanup_failures.append("Redis pool disposal")
 
         if cleanup_failures:
             cleanup_note = "Integration cleanup failed: " + ", ".join(cleanup_failures)

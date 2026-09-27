@@ -3,6 +3,7 @@ import hashlib
 import os
 import tempfile
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
 import pytest
@@ -26,7 +27,7 @@ os.environ.update(
     }
 )
 
-from app.api.dependencies import get_object_storage  # noqa: E402
+from app.api.dependencies import get_job_service, get_object_storage  # noqa: E402
 from app.core.auth import AuthenticatedUser, get_current_user  # noqa: E402
 from app.core.middleware import RateLimitMiddleware  # noqa: E402
 from app.db.database import get_db  # noqa: E402
@@ -38,6 +39,14 @@ from app.services.object_storage import (  # noqa: E402
     PresignedGet,
     StoredObject,
 )
+from app.services.job_service import JobService  # noqa: E402
+
+
+class TestJobQueue:
+    """Deterministic queue boundary for API tests."""
+
+    async def enqueue_job(self, _function_name, *args, **kwargs):
+        return SimpleNamespace(job_id=kwargs.get("_job_id") or args[0])
 
 
 class InMemoryObjectStorage:
@@ -179,6 +188,10 @@ async def client_with_db(db_session, authenticated_user, object_storage):
         yield db_session
 
     app.dependency_overrides[get_db] = override_get_db
+    app.dependency_overrides[get_job_service] = lambda: JobService(
+        db_session,
+        queue=TestJobQueue(),
+    )
 
     def current_user_override() -> AuthenticatedUser:
         # Avoid async lazy loading from FastAPI's synchronous dependency worker
@@ -199,6 +212,7 @@ async def client_with_db(db_session, authenticated_user, object_storage):
         yield c
 
     app.dependency_overrides.pop(get_db, None)
+    app.dependency_overrides.pop(get_job_service, None)
     app.dependency_overrides.pop(get_current_user, None)
     RateLimitMiddleware.reset()
 
