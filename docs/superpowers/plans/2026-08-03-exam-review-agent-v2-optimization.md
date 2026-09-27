@@ -520,10 +520,12 @@ run.cancelled
 
 ### Task 2.4：免费资源基准
 
-- [ ] 比较至少一个轻量本地 Embedding 配置和一个可插拔远程配置。
-- [ ] 记录模型大小、首次加载、单页吞吐、峰值内存和检索效果。
-- [ ] Cross-Encoder 同样做基准；不能满足免费实例时必须有可配置替代。
-- [ ] 将基准结论写入 ADR，不凭模型名称直接决定生产方案。
+- [x] 建立不触网、可注入的离线基准契约，覆盖轻量本地候选/远程兼容配置的 Embedding 与 Cross-Encoder 指标输出。
+- [ ] 在足够资源的隔离进程中实测至少一个轻量本地 Embedding 配置和一个可插拔远程配置，记录模型大小、首次加载、单页吞吐、峰值内存和检索效果。
+- [ ] Cross-Encoder 同样做真实 provider 基准；不能满足免费实例时必须有可配置替代。
+- [x] 将当前限制与不切生产检索路径的结论写入 ADR；不凭模型名称或 fixture 数值决定生产方案。
+
+**离线契约实现记录（2026-09-27）**：`backend/app/benchmarks/free_resource_benchmark.py` 提供纯注入 runner、固定数据集、JSON 报告及 Recall@k/MRR、首次加载、吞吐、模型 artifact 大小和操作系统进程峰值内存指标。`python -m app.benchmarks.free_resource_benchmark --offline` 只测 fixture，不代表模型实测。当前主机约 1.9 GiB 可用内存，缓存中的 `BAAI/bge-large-zh-v1.5`（约 2.7 GiB）与 `BAAI/bge-reranker-base`（约 1.1 GiB）未冷启动；轻量真实 provider 与远程 endpoint 的资源和检索对照未取得，因此 Task 2.4 的 provider 选择证据仍未完成。详见 `docs/benchmarks/free-resource-benchmark.md` 与 ADR-0001。
 
 **阶段 2 验收门**
 
