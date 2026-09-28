@@ -39,4 +39,6 @@ Task 1.1 已将业务默认连接切换到 PostgreSQL，并建立 `vector(1024)`
 - 新增独立、可注入的离线基准 runner，报告模型 artifact 大小、首次加载、单页吞吐、进程峰值工作集/RSS、Recall@k 和 MRR；固定 fixture 同时验证本地与远程兼容 provider 的 Embedding 和 Cross-Encoder 契约。
 - fixture 性能数值不是模型实测。当前 Windows 主机约有 1.9 GiB 可用内存；缓存中的 `BAAI/bge-large-zh-v1.5` 与 `BAAI/bge-reranker-base` 目录分别约 2.7 GiB 和 1.1 GiB，因此本次没有尝试冷启动，也没有取得小型本地模型或远程 endpoint 的实际测量。
 - 不据模型名称、artifact 大小或 fixture 数值决定生产 provider。Task 2.4 的真实资源/检索效果比较仍需在有足够内存的隔离进程中，对小型本地模型和明确配置的远程兼容 provider 使用同一标注集测量；该证据齐备前维持现有生产路径。
+- 2026-09-28 已在 Windows CPU 隔离进程完成本地实测：`BAAI/bge-small-zh-v1.5` 为 96,405,966 bytes、冷启动 90.5 ms、约 158.1 页/秒、峰值工作集 412.8 MB；`BAAI/bge-reranker-base` 为 1,134,408,930 bytes、冷启动 1,998.4 ms、约 9.65 页/秒、峰值工作集 1,010.1 MB。两者在两文档 fixture 上 Recall@1/MRR 均为 1.0，该质量结果只证明 runner 链路可用。
+- 远程 Embedding 与 Cross-Encoder provider 尚未配置 endpoint/API，因此没有远程实测证据；在补齐同一标注集的远程结果前，不选择或切换生产 provider。
 - 本工作不替换 Embedding/Reranker，不改 Chroma/进程内 BM25，不切换 pgvector 检索；生产检索迁移仍属于 Task 3.1。

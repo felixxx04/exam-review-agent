@@ -8,7 +8,7 @@
 >
 > **当前状态覆盖（2026-09-27）：** Task 2.2 已完成 lease 修复、聚焦回归和交接；Task 2.3 已由 `7bd3ffd`（RED 契约）和 `57c0c3d`（实现）完成；Task 2.4 已完成离线 RED/GREEN benchmark。Task 3.1、pgvector 检索切换、Planner/Agent Runtime 和无关重构仍未开始。下文 2026-09-24 的 Task 2.2 状态是历史快照，不作为当前执行指令。
 >
-> **本次会话状态覆盖（2026-09-27）：** 用户授权 Task 2.4。离线基准 RED 契约提交为 `e0d735c`，可注入 Embedding/Cross-Encoder benchmark runner 与 ADR/计划更新提交为 `4d15af9`，随后由 `702f375` 补齐 Task 2.2 lease 修复并推送到 `origin/main`。离线契约 19 项通过，Task 2.2 聚焦测试 34 项、Materials API 测试 43 项通过；真实 PostgreSQL/MinIO 集成缺少服务变量时跳过。当前 Task 2.4 只验证了 fixture，不是实际模型比较：本机约有 1.9 GiB 可用内存，且未配置远端 benchmark endpoint，因此小型本地模型与真实远端 provider 的冷启动、吞吐、峰值内存和检索质量数据仍待补齐。Task 3.1 仍未开始。
+> **本次会话状态覆盖（2026-09-28）：** 用户授权 Task 2.4。离线契约 19 项通过；Task 2.2 真实 PostgreSQL/MinIO 集成 10 项通过，Task 2.2 聚焦回归与 Materials API 77 项通过，Task 2.3 解析/切片/模型/迁移回归 54 项通过。真实本地 benchmark 已完成：`BAAI/bge-small-zh-v1.5` 冷启动 90.5 ms、约 158.1 页/秒、峰值 412.8 MB；`BAAI/bge-reranker-base` 冷启动 1,998.4 ms、约 9.65 页/秒、峰值 1,010.1 MB；两者在两文档 fixture 上 Recall@1/MRR 均为 1.0。远程 provider 尚未配置，因此远程 Embedding/Cross-Encoder 数据仍待补齐；生产 provider 和检索路径未改变。Task 3.1 仍未开始。
 > Task 1.4 最终功能提交：`3b5e37e feat: complete deletion and quota reliability`
 > Task 2.1 最终生产 GREEN checkpoint：`faa1e25 fix: bound object version pagination`（完整安全加固提交链见 2.4；Task 2.1 已获用户验收）
 > Task 2.2 当前状态：实现、lease 修复、离线聚焦回归和提交已完成；真实 PostgreSQL/Redis/MinIO 集成在缺少服务变量时跳过。
@@ -34,7 +34,7 @@
 - Docker/PostgreSQL/MinIO 当前环境缺口及不应伪造的验证结论
 - Task 2.2 的提交、离线验证缺口、已知风险、明确非目标与审批条件
 
-当前停止点是 **Task 2.4 离线 benchmark 用户验收**。processing lease 清理风险已在 `702f375` 修复并由聚焦测试覆盖；未经用户确认，不得开始 Task 3.1 或生产检索路径切换。
+当前停止点是 **Task 2.4 benchmark 用户验收**。本地 provider 实测已完成，远程 provider 对照仍待配置；processing lease 清理风险已在 `702f375` 修复并由聚焦测试覆盖。未经用户确认，不得开始 Task 3.1 或生产检索路径切换。
 
 不要再次推送或合并无关改动，除非用户明确要求。不要重置、清理或覆盖当前工作树中的任何已有改动。
 
@@ -62,7 +62,7 @@ Task 2.2 已完成实现、提交和当前可运行的离线聚焦验证；资�
 - 未通过/未完成：`tests/test_api/test_materials.py` 全组在本机 Redis 未运行时等待 ARQ enqueue，未获得最终汇总；Docker CLI/Engine 当前不可用，真实 PostgreSQL/Redis/MinIO 验证未执行。全 Task 2.2 全量后端回归、Bandit、mypy、coverage 尚未完成。
 - 当前 Task 2.2 已由 `4a0ed0c` 提交，`main` 与远程同步。工作树没有已跟踪修改；未跟踪的 `frontend/.capture-screenshots.mjs` 与 `frontend/screenshots/` 是已有用户文件，未修改、未清理、不得纳入本任务提交。
 - processing lease 风险已修复：`702f375` 在 `JobService.mark_failed()` 自动重试路径清除 `processing_lease_id` 与 `processing_lease_expires_at`，并由 `test_task22_followup.py` 回归覆盖。
-- 当前停止于 **Task 2.4 离线 benchmark 用户验收门**；真实模型/provider 数据和部分真实服务验证仍有缺口。不得开始 Task 3.1、pgvector 检索切换、Planner/Agent Runtime 或无关重构。
+- 当前停止于 **Task 2.4 benchmark 用户验收门**；本地真实模型数据已记录，远程 provider 数据仍有缺口。不得开始 Task 3.1、pgvector 检索切换、Planner/Agent Runtime 或无关重构。
 
 ## 2.2 本会话（2026-08-08）Task 2.1 初始收尾记录
 

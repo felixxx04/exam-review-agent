@@ -56,3 +56,21 @@ endpoint still need real measurements before a provider can be selected.
 Task 2.4 does not change `EmbeddingService`, `RetrievalService`, Chroma/BM25, or
 production model defaults. PostgreSQL/pgvector retrieval remains a separate
 Task 3.1 decision.
+
+## Real Local Measurements (2026-09-28)
+
+The repository fixture was measured in fresh Python processes on the local
+Windows CPU host. The provider factory loaded each model inside the measured
+process, so `first_load_ms` includes model construction. The fixture is only
+two documents and two queries; its perfect quality score is a pipeline sanity
+check, not a production quality estimate.
+
+| Task | Provider | Artifact | First load | Throughput | Peak working set | Recall@1 | MRR |
+| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| Embedding | `BAAI/bge-small-zh-v1.5` | 96,405,966 bytes | 90.5 ms | 158.1 pages/s | 412.8 MB | 1.0 | 1.0 |
+| Cross-Encoder | `BAAI/bge-reranker-base` | 1,134,408,930 bytes | 1,998.4 ms | 9.65 pages/s | 1,010.1 MB | 1.0 | 1.0 |
+
+Both measurements used CPU inference, the cached immutable snapshot, and the
+same fixture. No remote provider was configured, so the remote Embedding and
+Cross-Encoder rows remain pending. These local results do not authorize a
+production model or retrieval-path change.
