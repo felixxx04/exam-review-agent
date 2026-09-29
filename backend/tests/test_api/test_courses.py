@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import datetime
+from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
 import pytest
@@ -36,6 +37,10 @@ async def _upload_course_material_with_chunk(
     *,
     course_id: int,
     monkeypatch,
+    db_session=None,
+    object_storage=None,
+    user_id: int | None = None,
+    process_job: bool = True,
 ):
     from app.services.parser_service import Chunk, ParseResult
 
@@ -62,6 +67,31 @@ async def _upload_course_material_with_chunk(
     )
 
     assert response.status_code == 200
+    if process_job:
+        assert db_session is not None and object_storage is not None
+        assert user_id is not None
+        from app.db.models import MaterialJob
+        from app.tasks.parse_material import process_material_job
+
+        material_id = response.json()["data"]["id"]
+        job = await db_session.scalar(
+            select(MaterialJob).where(MaterialJob.material_id == material_id)
+        )
+        assert job is not None
+
+        class TestJobQueue:
+            async def enqueue_job(self, _function_name, *args, **kwargs):
+                return SimpleNamespace(job_id=kwargs.get("_job_id") or args[0])
+
+        await process_material_job(
+            {
+                "db_session": db_session,
+                "object_storage": object_storage,
+                "redis": TestJobQueue(),
+            },
+            job.public_id,
+            user_id,
+        )
     return response.json()["data"], retrieval
 
 
@@ -137,7 +167,12 @@ async def test_course_delete_removes_private_material_objects_chunks_and_metadat
         "data"
     ]
     uploaded, retrieval = await _upload_course_material_with_chunk(
-        client_with_db, course_id=course["id"], monkeypatch=monkeypatch
+        client_with_db,
+        course_id=course["id"],
+        monkeypatch=monkeypatch,
+        db_session=db_session,
+        object_storage=object_storage,
+        user_id=authenticated_user.id,
     )
     material = await db_session.get(Material, uploaded["id"])
     assert material is not None
@@ -181,7 +216,12 @@ async def test_course_delete_keeps_deleting_material_for_retry_when_object_clean
         "data"
     ]
     uploaded, retrieval = await _upload_course_material_with_chunk(
-        client_with_db, course_id=course["id"], monkeypatch=monkeypatch
+        client_with_db,
+        course_id=course["id"],
+        monkeypatch=monkeypatch,
+        db_session=db_session,
+        object_storage=object_storage,
+        user_id=1,
     )
     material = await db_session.get(Material, uploaded["id"])
     assert material is not None
@@ -220,7 +260,10 @@ async def test_course_delete_reclaims_an_expired_processing_material(
         "data"
     ]
     uploaded, _retrieval = await _upload_course_material_with_chunk(
-        client_with_db, course_id=course["id"], monkeypatch=monkeypatch
+        client_with_db,
+        course_id=course["id"],
+        monkeypatch=monkeypatch,
+        process_job=False,
     )
     material = await db_session.get(Material, uploaded["id"])
     assert material is not None

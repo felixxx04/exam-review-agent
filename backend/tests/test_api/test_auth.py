@@ -1,12 +1,11 @@
 from __future__ import annotations
 
-import datetime
-
 import pytest
 from httpx import ASGITransport, AsyncClient
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
 from app.core.middleware import RateLimitMiddleware
+from app.core.config import settings
 from app.db.database import get_db
 from app.db.models import Base, User
 from app.main import app
@@ -14,7 +13,8 @@ from app.services.auth_service import AuthService, hash_password
 
 
 @pytest.fixture
-async def auth_environment():
+async def auth_environment(monkeypatch):
+    monkeypatch.setattr(settings, "auth_cookie_secure", True)
     engine = create_async_engine("sqlite+aiosqlite:///:memory:")
     async with engine.begin() as connection:
         await connection.run_sync(Base.metadata.create_all)
