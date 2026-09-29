@@ -7,6 +7,10 @@ Run from `backend/`:
 ```powershell
 python -m app.benchmarks.free_resource_benchmark --offline
 pytest -q tests/test_free_resource_benchmark.py
+
+# Remote SiliconFlow probe (reads the key only inside the benchmark process)
+python -m app.benchmarks.free_resource_benchmark --siliconflow --task embedding --api-key-file <local-key-file>
+python -m app.benchmarks.free_resource_benchmark --siliconflow --task reranker --api-key-file <local-key-file>
 ```
 
 The offline command uses fixed fixture providers. Its timing and memory figures
@@ -44,7 +48,7 @@ required when comparing providers. Model size may be taken from an explicit
 The fixture contract passes for both local and remote-compatible Embedding and
 Cross-Encoder provider specs, including model identity, output dimension,
 retrieval quality, and report serialization. This validates the measurement
-contract only. No real local model or remote endpoint result is recorded here.
+contract only.
 
 On 2026-09-27, the available host reported approximately 1.9 GiB free physical
 memory. Its existing Hugging Face cache contains about 2.7 GiB for
@@ -71,6 +75,27 @@ check, not a production quality estimate.
 | Cross-Encoder | `BAAI/bge-reranker-base` | 1,134,408,930 bytes | 1,998.4 ms | 9.65 pages/s | 1,010.1 MB | 1.0 | 1.0 |
 
 Both measurements used CPU inference, the cached immutable snapshot, and the
-same fixture. No remote provider was configured, so the remote Embedding and
-Cross-Encoder rows remain pending. These local results do not authorize a
-production model or retrieval-path change.
+same fixture. These local results do not authorize a production model or
+retrieval-path change.
+
+## Remote SiliconFlow Measurements (2026-09-29)
+
+The remote provider was measured in two fresh Python processes using the same
+two-document, two-query fixture and `top_k=1`. The API key was read from a
+local file by the CLI process and is not part of the report. `first_load_ms`
+includes construction of the HTTP client; `pages_per_second` is the number of
+fixture document or reranker candidate calls completed per second. Hosted
+model aliases were used, so the revision is not pinned and these figures are
+an endpoint snapshot rather than a reproducible model release benchmark.
+
+| Task | Provider | Endpoint | First load | Throughput | Peak working set | Recall@1 | MRR |
+| --- | --- | --- | ---: | ---: | ---: | ---: | ---: |
+| Embedding | `BAAI/bge-m3` | `api.siliconflow.cn/v1/embeddings` | 409.6 ms | 3.477 pages/s | 42.66 MB | 1.0 | 1.0 |
+| Cross-Encoder | `BAAI/bge-reranker-v2-m3` | `api.siliconflow.cn/v1/rerank` | 422.1 ms | 8.665 pages/s | 41.99 MB | 1.0 | 1.0 |
+
+The remote reports returned no artifact size because hosted weights are not
+available to the local process. Perfect quality on this two-item fixture only
+proves that the provider adapter and benchmark pipeline agree; it is not a
+production quality estimate. The provider remains benchmark-only and does not
+change `EmbeddingService`, `RetrievalService`, Chroma/BM25, or PostgreSQL /
+pgvector retrieval.

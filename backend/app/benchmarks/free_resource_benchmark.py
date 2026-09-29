@@ -511,17 +511,52 @@ def offline_report() -> list[dict[str, Any]]:
 
 def main() -> None:
     parser = argparse.ArgumentParser(
-        description="Run the offline free-resource benchmark"
+        description="Run offline or explicit SiliconFlow free-resource benchmarks"
     )
     parser.add_argument(
         "--offline",
         action="store_true",
         help="run deterministic fixture providers without network access",
     )
+    parser.add_argument(
+        "--siliconflow",
+        action="store_true",
+        help="run one real remote provider against the fixed fixture",
+    )
+    parser.add_argument(
+        "--task",
+        choices=("embedding", "reranker"),
+        help="remote task to measure in this process",
+    )
+    parser.add_argument(
+        "--api-key-file",
+        type=Path,
+        help="read the SiliconFlow API key from a local file",
+    )
     args = parser.parse_args()
+    if args.siliconflow:
+        if args.offline:
+            parser.error("--offline and --siliconflow cannot be combined")
+        if args.task is None:
+            parser.error("--siliconflow requires --task")
+        if args.api_key_file is None:
+            parser.error("--siliconflow requires --api-key-file")
+        try:
+            api_key = args.api_key_file.read_text(encoding="utf-8-sig").strip()
+        except OSError:
+            parser.error("unable to read the SiliconFlow API key file")
+        if not api_key:
+            parser.error("the SiliconFlow API key file is empty")
+        from app.benchmarks.siliconflow_provider import siliconflow_report
+
+        report = siliconflow_report(api_key, args.task)
+        print(json.dumps(report, ensure_ascii=False, indent=2, sort_keys=True))
+        return
+    if args.api_key_file is not None or args.task is not None:
+        parser.error("--task and --api-key-file require --siliconflow")
     if not args.offline:
         parser.error(
-            "only --offline is supported; inject a provider from Python for real probes"
+            "select --offline or configure --siliconflow for a real remote probe"
         )
     print(json.dumps(offline_report(), ensure_ascii=False, indent=2, sort_keys=True))
 

@@ -377,3 +377,65 @@ def test_offline_command_is_explicit_and_emits_four_provider_results(
     with pytest.raises(SystemExit) as error:
         benchmark.main()
     assert error.value.code == 2
+
+
+def test_siliconflow_command_requires_task_and_api_key_file(monkeypatch):
+    monkeypatch.setattr("sys.argv", ["benchmark", "--siliconflow"])
+
+    with pytest.raises(SystemExit) as error:
+        benchmark.main()
+
+    assert error.value.code == 2
+
+
+def test_siliconflow_command_reads_key_and_emits_report(monkeypatch, tmp_path, capsys):
+    key_file = tmp_path / "siliconflow.key"
+    key_file.write_text(" secret-token\n", encoding="utf-8")
+    captured = []
+
+    def fake_report(api_key, task):
+        captured.append((api_key, task))
+        return [{"task": task, "provider": {"name": "fake"}}]
+
+    monkeypatch.setattr(
+        "app.benchmarks.siliconflow_provider.siliconflow_report", fake_report
+    )
+    monkeypatch.setattr(
+        "sys.argv",
+        [
+            "benchmark",
+            "--siliconflow",
+            "--task",
+            "embedding",
+            "--api-key-file",
+            str(key_file),
+        ],
+    )
+
+    benchmark.main()
+
+    assert captured == [("secret-token", "embedding")]
+    output = capsys.readouterr().out
+    assert '"task": "embedding"' in output
+    assert "secret-token" not in output
+
+
+def test_siliconflow_command_rejects_empty_key_file(monkeypatch, tmp_path):
+    key_file = tmp_path / "empty.key"
+    key_file.write_text("\n", encoding="utf-8")
+    monkeypatch.setattr(
+        "sys.argv",
+        [
+            "benchmark",
+            "--siliconflow",
+            "--task",
+            "reranker",
+            "--api-key-file",
+            str(key_file),
+        ],
+    )
+
+    with pytest.raises(SystemExit) as error:
+        benchmark.main()
+
+    assert error.value.code == 2
