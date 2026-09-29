@@ -3,8 +3,8 @@
 > 更新日期：2026-09-30
 > 项目目录：`C:\Users\asus\Documents\exam-review-agent`  
 > 当前分支：`main`
-> 当前提交：`7dc5cac test: close pre-Task 3 verification gaps`
-> 远程状态：本轮收口提交已推送；`main` 与 `origin/main` 均指向 `7b3de59`；`codex/phase-1-postgres` 仍指向 `4a0ed0c`。
+> 当前提交：本轮 Task 3 前置收口合并提交（具体哈希以 `git log -1` 为准）
+> 远程状态：本轮 Task 3 前置收口提交已推送，`main` 与 `origin/main` 同步；`codex/phase-1-postgres` 仍指向 `4a0ed0c`。
 >
 > **当前状态覆盖（2026-09-27）：** Task 2.2 已完成 lease 修复、聚焦回归和交接；Task 2.3 已由 `7bd3ffd`（RED 契约）和 `57c0c3d`（实现）完成；Task 2.4 已完成离线 RED/GREEN benchmark。Task 3.1、pgvector 检索切换、Planner/Agent Runtime 和无关重构仍未开始。下文 2026-09-24 的 Task 2.2 状态是历史快照，不作为当前执行指令。
 >
@@ -14,7 +14,7 @@
 > Task 2.2 当前状态：实现、lease 修复、离线聚焦回归和提交已完成；真实 PostgreSQL/Redis/MinIO 集成在缺少服务变量时跳过。
 > 基线提交：`23c17b5 feat: polish learning workspace UI and review flows`
 >
-> 重要区分：`65505dd` 已包含 Task 2.4 SiliconFlow provider、CLI、测试和 benchmark 文档；本轮新增测试收口与状态文档修改尚未提交。Task 3.1 尚未开始。
+> 重要区分：`65505dd` 已包含 Task 2.4 SiliconFlow provider、CLI、测试和 benchmark 文档；本轮测试收口与状态文档更新已包含在 Task 3 前置收口合并提交中。Task 3.1 尚未开始。
 
 ## 1. 给新会话的执行指令
 
