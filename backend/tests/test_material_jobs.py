@@ -8,7 +8,7 @@ from sqlalchemy import select
 
 from app.db.models import Course, Material, MaterialJob, MaterialJobStatus, User
 from app.services.job_service import JobService
-from app.services.object_storage import StoredObject
+from app.tasks.worker import WorkerConfig
 
 
 MINIMAL_PDF = b"%PDF-1.4\n1 0 obj\n<< /Type /Catalog >>\nendobj\ntrailer\n<<>>\n%%EOF\n"
@@ -24,6 +24,19 @@ class RecordingQueue:
         if self.error is not None:
             raise self.error
         return SimpleNamespace(job_id=kwargs.get("_job_id"))
+
+
+class AsyncCloseQueue(RecordingQueue):
+    def __init__(self) -> None:
+        super().__init__()
+        self.aclose_called = False
+        self.close_called = False
+
+    async def aclose(self) -> None:
+        self.aclose_called = True
+
+    def close(self) -> None:
+        self.close_called = True
 
 
 async def _material(db_session, authenticated_user) -> Material:
@@ -103,6 +116,29 @@ async def test_enqueue_failure_leaves_postgres_job_queued_for_recovery(
 
 
 @pytest.mark.asyncio
+async def test_enqueue_prefers_async_queue_close_when_owned(
+    db_session, authenticated_user, monkeypatch
+):
+    material = await _material(db_session, authenticated_user)
+    queue = AsyncCloseQueue()
+
+    async def get_pool(_cls):
+        return queue
+
+    monkeypatch.setattr(WorkerConfig, "get_pool", classmethod(get_pool))
+    job = await JobService(db_session).create_material_job(
+        user_id=authenticated_user.id,
+        material_id=material.id,
+        course_id=material.course_id,
+        enqueue=False,
+    )
+
+    assert await JobService(db_session).enqueue_material_job(job)
+    assert queue.aclose_called is True
+    assert queue.close_called is False
+
+
+@pytest.mark.asyncio
 async def test_cancel_queued_job_is_idempotent_and_sets_material_failure(
     db_session, authenticated_user
 ):
@@ -178,10 +214,8 @@ async def test_recovery_scanner_requeues_stale_running_and_missing_enqueue_jobs(
         status=MaterialJobStatus.RUNNING,
         attempt_count=1,
         max_attempts=3,
-        started_at=datetime.datetime.now(datetime.UTC)
-        - datetime.timedelta(minutes=10),
-        updated_at=datetime.datetime.now(datetime.UTC)
-        - datetime.timedelta(minutes=10),
+        started_at=datetime.datetime.now(datetime.UTC) - datetime.timedelta(minutes=10),
+        updated_at=datetime.datetime.now(datetime.UTC) - datetime.timedelta(minutes=10),
         idempotency_key="material:stale:process:0",
     )
     db_session.add(stale)
@@ -285,8 +319,12 @@ async def test_worker_processes_one_job_and_duplicate_delivery_is_idempotent(
             return None
 
     retrieval = RetrievalStub()
-    monkeypatch.setattr("app.services.parser_service.ParserService", lambda: ParserStub())
-    monkeypatch.setattr("app.services.retrieval_service.RetrievalService", lambda: retrieval)
+    monkeypatch.setattr(
+        "app.services.parser_service.ParserService", lambda: ParserStub()
+    )
+    monkeypatch.setattr(
+        "app.services.retrieval_service.RetrievalService", lambda: retrieval
+    )
 
     queue = RecordingQueue()
     service = JobService(db_session, queue=queue)
