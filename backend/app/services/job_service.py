@@ -32,7 +32,9 @@ SAFE_INDEX_CLEANUP_ERROR_CODE = "INDEX_CLEANUP_PENDING"
 
 
 class JobQueue(Protocol):
-    async def enqueue_job(self, function_name: str, *args: Any, **kwargs: Any) -> Any: ...
+    async def enqueue_job(
+        self, function_name: str, *args: Any, **kwargs: Any
+    ) -> Any: ...
 
 
 QueueFactory = Callable[[], Awaitable[JobQueue]]
@@ -167,9 +169,7 @@ class JobService:
             await self.db.commit()
             return True
 
-        delay = 0 if immediate else min(
-            3600, 2 ** max(job.attempt_count - 1, 0)
-        )
+        delay = 0 if immediate else min(3600, 2 ** max(job.attempt_count - 1, 0))
         job.status = MaterialJobStatus.QUEUED
         job.progress_percent = 0
         job.current_step = "queued"
@@ -187,9 +187,7 @@ class JobService:
         await self._enqueue(job)
         return True
 
-    async def _lock_user(
-        self, user_id: int, *, require_active: bool = False
-    ) -> User:
+    async def _lock_user(self, user_id: int, *, require_active: bool = False) -> User:
         await bind_tenant_context(self.db, user_id)
         user = await self.db.scalar(
             select(User).where(User.id == user_id).with_for_update()
@@ -309,7 +307,9 @@ class JobService:
             return False
         finally:
             if owns_queue:
-                close = getattr(queue, "close", None)
+                close = getattr(queue, "aclose", None)
+                if close is None:
+                    close = getattr(queue, "close", None)
                 if close is not None:
                     result = close()
                     if hasattr(result, "__await__"):
@@ -383,9 +383,7 @@ class JobService:
             await delete_material_chunks(self.db, material=material)
         except Exception as exc:
             await self.db.rollback()
-            raise AppException(
-                "Material index cleanup is pending", "CONFLICT"
-            ) from exc
+            raise AppException("Material index cleanup is pending", "CONFLICT") from exc
         delay = min(3600, 2 ** max(job.attempt_count, 0))
         job.status = MaterialJobStatus.QUEUED
         job.attempt_count = 0
@@ -413,7 +411,9 @@ class JobService:
         await self._enqueue(job)
         return job
 
-    async def cancel_material_job(self, *, user_id: int, material_id: int) -> MaterialJob:
+    async def cancel_material_job(
+        self, *, user_id: int, material_id: int
+    ) -> MaterialJob:
         await self._lock_user(user_id, require_active=True)
         material = await self.db.scalar(
             select(Material)
@@ -527,7 +527,9 @@ class JobService:
             statement = statement.where(MaterialJob.status == status)
         return list((await self.db.scalars(statement)).all())
 
-    async def retry_material_job(self, *, user_id: int, material_id: int) -> MaterialJob:
+    async def retry_material_job(
+        self, *, user_id: int, material_id: int
+    ) -> MaterialJob:
         await self._lock_user(user_id, require_active=True)
         job = await self.get_material_job(user_id=user_id, material_id=material_id)
         return await self.retry_job(user_id=user_id, job_id=job.public_id)
@@ -753,7 +755,10 @@ class JobService:
             .with_for_update()
             .execution_options(populate_existing=True)
         )
-        if material is not None and material.processing_status == ProcessingStatus.READY:
+        if (
+            material is not None
+            and material.processing_status == ProcessingStatus.READY
+        ):
             job.status = MaterialJobStatus.SUCCEEDED
             job.progress_percent = 100
             job.current_step = "completed"
@@ -840,10 +845,14 @@ class JobService:
                 processing_lease_id=None,
                 processing_lease_expires_at=None,
                 error_message=(
-                    None if job.status == MaterialJobStatus.QUEUED else SAFE_PROCESSING_ERROR
+                    None
+                    if job.status == MaterialJobStatus.QUEUED
+                    else SAFE_PROCESSING_ERROR
                 ),
                 parse_error=(
-                    None if job.status == MaterialJobStatus.QUEUED else SAFE_PROCESSING_ERROR
+                    None
+                    if job.status == MaterialJobStatus.QUEUED
+                    else SAFE_PROCESSING_ERROR
                 ),
             )
         )
@@ -947,12 +956,14 @@ class JobService:
             await self.db.rollback()
             return False
         now = self._now()
-        is_due = job.status == MaterialJobStatus.QUEUED and self._aware(
-            job.available_at
-        ) <= now
-        is_stale = job.status == MaterialJobStatus.RUNNING and self._aware(
-            job.updated_at
-        ) < older_than
+        is_due = (
+            job.status == MaterialJobStatus.QUEUED
+            and self._aware(job.available_at) <= now
+        )
+        is_stale = (
+            job.status == MaterialJobStatus.RUNNING
+            and self._aware(job.updated_at) < older_than
+        )
         is_cleanup_retry = (
             job.status == MaterialJobStatus.FAILED
             and job.error_code == SAFE_INDEX_CLEANUP_ERROR_CODE
@@ -1081,9 +1092,7 @@ class JobService:
         jobs.sort(key=lambda item: (-item.priority, item.created_at, item.id))
         return jobs[:limit]
 
-    async def _find_job_for_admin(
-        self, job_id: str
-    ) -> tuple[int, MaterialJob] | None:
+    async def _find_job_for_admin(self, job_id: str) -> tuple[int, MaterialJob] | None:
         await self.db.commit()
         owner_ids = list((await self.db.scalars(select(User.id))).all())
         for owner_id in owner_ids:
