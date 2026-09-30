@@ -1,27 +1,79 @@
 from __future__ import annotations
 
+from types import SimpleNamespace
+from unittest.mock import AsyncMock, Mock
+
 import pytest
+
+from app.schemas.quiz import Question, QuizResponse
 
 
 class TestQuizGenerate:
-
-    @pytest.mark.skip(reason="Requires real LLM/embedding services - run with API keys")
     @pytest.mark.asyncio
-    async def test_generate_quiz_validates_input(self, client):
-        response = await client.post(
+    async def test_generate_quiz_validates_input(self, client_with_db, monkeypatch):
+        build_agent = Mock()
+        monkeypatch.setattr("app.api.quiz._build_quiz_agent", build_agent)
+
+        response = await client_with_db.post(
             "/api/quiz/generate",
-            json={"topic": "量子力学", "difficulty": 0.5, "count": 3},
+            json={"difficulty": 0.5, "count": 3},
         )
-        assert response.status_code in (200, 404)
 
-    @pytest.mark.skip(reason="Requires real LLM/embedding services - run with API keys")
+        assert response.status_code == 422
+        build_agent.assert_not_called()
+
     @pytest.mark.asyncio
-    async def test_generate_quiz_default_count(self, client):
-        response = await client.post(
+    async def test_generate_quiz_default_count(self, client_with_db, monkeypatch):
+        agent = SimpleNamespace(
+            generate_quiz=AsyncMock(
+                return_value=QuizResponse(
+                    questions=[
+                        Question(
+                            question="矩阵的秩表示什么？",
+                            options=["线性无关行数", "行列式"],
+                            correct="线性无关行数",
+                            explanation="秩是矩阵中线性无关行或列的最大数目。",
+                            source_chunk_ids=["chunk-1"],
+                        )
+                    ],
+                    topic="线性代数",
+                )
+            )
+        )
+        build_agent = Mock(return_value=agent)
+        monkeypatch.setattr("app.api.quiz._build_quiz_agent", build_agent)
+
+        response = await client_with_db.post(
             "/api/quiz/generate",
             json={"topic": "线性代数"},
         )
-        assert response.status_code in (200, 404)
+
+        assert response.status_code == 200
+        assert response.json()["data"] == {
+            "questions": [
+                {
+                    "id": "q-1",
+                    "question": "矩阵的秩表示什么？",
+                    "question_type": "multiple_choice",
+                    "options": ["线性无关行数", "行列式"],
+                    "correct": "线性无关行数",
+                    "explanation": "秩是矩阵中线性无关行或列的最大数目。",
+                    "difficulty": 0.5,
+                    "topic": "线性代数",
+                    "source_chunk_ids": ["chunk-1"],
+                }
+            ],
+            "topic": "线性代数",
+            "total": 1,
+        }
+        build_agent.assert_called_once_with()
+        agent.generate_quiz.assert_awaited_once()
+        kwargs = agent.generate_quiz.await_args.kwargs
+        assert kwargs["topic"] == "线性代数"
+        assert kwargs["difficulty"] == 0.5
+        assert kwargs["count"] == 5
+        assert kwargs["material_scope"] is None
+        assert kwargs["course_id"] is not None
 
 
 class TestQuizSubmit:

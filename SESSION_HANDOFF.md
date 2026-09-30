@@ -8,10 +8,10 @@
 >
 > **当前状态覆盖（2026-09-27）：** Task 2.2 已完成 lease 修复、聚焦回归和交接；Task 2.3 已由 `7bd3ffd`（RED 契约）和 `57c0c3d`（实现）完成；Task 2.4 已完成离线 RED/GREEN benchmark。Task 3.1、pgvector 检索切换、Planner/Agent Runtime 和无关重构仍未开始。下文 2026-09-24 的 Task 2.2 状态是历史快照，不作为当前执行指令。
 >
-> **本次会话状态覆盖（2026-09-30）：** Task 2.2/2.3/2.4 前置收口已完成。后端全量 `491 passed, 12 skipped`；Ruff、Bandit、compileall、diff 检查通过。12 个 skip 仅需要真实 PostgreSQL/MinIO 环境变量或真实 LLM/Embedding API key。修复了测试环境安全 Cookie 配置和异步 Worker 课程删除清理流程；生产配置和检索路径未改变。Task 3.1 仍未开始。
+> **本次会话状态覆盖（2026-09-30）：** Task 2.2/2.3/2.4 前置收口已完成。两个原本无条件跳过的测验生成 API 测试已改为 SQLite + fake agent 的离线契约测试；PostgreSQL RLS/删除配额 8 项与 MinIO 生命周期/材料 API 2 项真实集成测试均已执行并通过。后端全量 `503 passed, 0 skipped`，综合覆盖率 `82%`；测试产生 4 个既有 `job_service.py` 异步 close 弃用警告。生产配置和检索路径未改变。Task 3.1 仍未开始。
 > Task 1.4 最终功能提交：`3b5e37e feat: complete deletion and quota reliability`
 > Task 2.1 最终生产 GREEN checkpoint：`faa1e25 fix: bound object version pagination`（完整安全加固提交链见 2.4；Task 2.1 已获用户验收）
-> Task 2.2 当前状态：实现、lease 修复、离线聚焦回归和提交已完成；真实 PostgreSQL/Redis/MinIO 集成在缺少服务变量时跳过。
+> Task 2.2 当前状态：实现、lease 修复、离线聚焦回归和提交已完成；本次已在隔离 PostgreSQL/Redis/MinIO 环境补跑真实集成验证。
 > 基线提交：`23c17b5 feat: polish learning workspace UI and review flows`
 >
 > 重要区分：`65505dd` 已包含 Task 2.4 SiliconFlow provider、CLI、测试和 benchmark 文档；本轮测试收口与状态文档更新已包含在 Task 3 前置收口合并提交中。Task 3.1 尚未开始。

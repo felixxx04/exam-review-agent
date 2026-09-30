@@ -508,8 +508,8 @@ run.cancelled
 - 上传仅持久化 `Material` 与 PostgreSQL `MaterialJob` 后返回；Redis/ARQ 只负责唤醒 Worker。Job 保留 attempt、lease fencing、进度、退避重试和安全错误摘要；重复投递按 Job ID 幂等。
 - Worker 处理对象下载、解析、切片、索引和 READY 状态；支持取消、用户重处理、管理员列表/优先级/重试，以及每 15 分钟恢复扫描。恢复也调用 Task 2.1 的租户绑定资料/对象预留清理入口，不另造存储事实源。
 - 资料删除、账号注销、Job 持久化失败、重处理事务失败和跨租户访问均由数据库状态与所有权围栏保护。索引部分写入且补偿失败时保留持久 chunk 清理意图并终结当前 Job；恢复扫描清理成功后才重新排队。
-- 验证：阶段 2/Task 2.3 定向回归 `131 passed`，后端全量 `491 passed, 12 skipped`；12 个 skip 仅因真实 PostgreSQL/MinIO 环境变量或真实 LLM/Embedding API key 未配置。Task 2.2 聚焦 Job/Worker 回归、课程删除与材料处理路径已通过；`git diff --check`、`compileall`、Ruff 和 Bandit 通过。
-- Task 2.2 的实现、TDD 回归和阶段 2 验收证据已完成；真实集成测试仍按环境变量显式跳过，不伪造为通过。Task 2.3 已完成并继续执行下一项授权任务。
+- 验证：阶段 2/Task 2.3 定向回归 `131 passed`；补测后端全量 `503 passed, 0 skipped`，综合覆盖率 `82%`。PostgreSQL RLS/删除配额 8 项、MinIO 生命周期/材料 API 2 项真实集成测试均已在隔离服务中执行并通过；两个原无条件 skip 的测验生成 API 测试已改为离线契约测试并通过。`git diff --check`、`compileall`、Ruff 和 Bandit 通过；保留 4 个既有 `job_service.py` 异步 close 弃用警告。
+- Task 2.2 的实现、TDD 回归、真实服务集成验证和阶段 2 验收证据已完成；Task 2.3 已完成并继续执行下一项授权任务。
 
 ### Task 2.3：解析与切片质量（已完成）
 
