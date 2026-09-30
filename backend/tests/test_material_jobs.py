@@ -39,6 +39,15 @@ class AsyncCloseQueue(RecordingQueue):
         self.close_called = True
 
 
+class SyncCloseQueue(RecordingQueue):
+    def __init__(self) -> None:
+        super().__init__()
+        self.close_called = False
+
+    def close(self) -> None:
+        self.close_called = True
+
+
 async def _material(db_session, authenticated_user) -> Material:
     course = Course(
         user_id=authenticated_user.id,
@@ -136,6 +145,28 @@ async def test_enqueue_prefers_async_queue_close_when_owned(
     assert await JobService(db_session).enqueue_material_job(job)
     assert queue.aclose_called is True
     assert queue.close_called is False
+
+
+@pytest.mark.asyncio
+async def test_enqueue_falls_back_to_sync_queue_close_when_owned(
+    db_session, authenticated_user, monkeypatch
+):
+    material = await _material(db_session, authenticated_user)
+    queue = SyncCloseQueue()
+
+    async def get_pool(_cls):
+        return queue
+
+    monkeypatch.setattr(WorkerConfig, "get_pool", classmethod(get_pool))
+    job = await JobService(db_session).create_material_job(
+        user_id=authenticated_user.id,
+        material_id=material.id,
+        course_id=material.course_id,
+        enqueue=False,
+    )
+
+    assert await JobService(db_session).enqueue_material_job(job)
+    assert queue.close_called is True
 
 
 @pytest.mark.asyncio
