@@ -106,9 +106,9 @@ async def test_expired_and_disabled_invites_are_rejected(db_session):
     service = AuthService(db_session)
     admin = await _admin(db_session)
     expired = await service.create_invite(actor=admin)
-    expired.invite.expires_at = datetime.datetime.now(datetime.UTC) - datetime.timedelta(
-        seconds=1
-    )
+    expired.invite.expires_at = datetime.datetime.now(
+        datetime.UTC
+    ) - datetime.timedelta(seconds=1)
     await db_session.commit()
 
     with pytest.raises(InvalidInviteError):
@@ -182,13 +182,17 @@ async def test_refresh_rotation_stores_only_hashes_and_rejects_reuse(db_session)
         )
 
     active = (
-        await db_session.execute(
-            select(RefreshToken).where(
-                RefreshToken.session_id == initial.session_id,
-                RefreshToken.revoked_at.is_(None),
+        (
+            await db_session.execute(
+                select(RefreshToken).where(
+                    RefreshToken.session_id == initial.session_id,
+                    RefreshToken.revoked_at.is_(None),
+                )
             )
         )
-    ).scalars().all()
+        .scalars()
+        .all()
+    )
     assert active == []
 
 
@@ -277,7 +281,8 @@ async def test_invite_and_admin_input_boundaries_are_enforced(db_session):
     with pytest.raises(InvalidInviteError):
         await service.create_invite(
             actor=admin,
-            expires_at=datetime.datetime.now(datetime.UTC) - datetime.timedelta(seconds=1),
+            expires_at=datetime.datetime.now(datetime.UTC)
+            - datetime.timedelta(seconds=1),
         )
     with pytest.raises(ForbiddenError):
         await service.create_invite(actor=regular)
@@ -300,7 +305,9 @@ async def test_expired_or_missing_refresh_sessions_are_rejected(db_session):
             )
         )
     ).scalar_one()
-    stored.expires_at = datetime.datetime.now(datetime.UTC) - datetime.timedelta(seconds=1)
+    stored.expires_at = datetime.datetime.now(datetime.UTC) - datetime.timedelta(
+        seconds=1
+    )
     await db_session.commit()
 
     with pytest.raises(InvalidSessionError):
@@ -439,7 +446,9 @@ async def test_logout_revokes_only_the_selected_session(db_session):
 
 
 @pytest.mark.asyncio
-async def test_disabled_user_cannot_login_or_refresh_and_sessions_are_revoked(db_session):
+async def test_disabled_user_cannot_login_or_refresh_and_sessions_are_revoked(
+    db_session,
+):
     service = AuthService(db_session)
     admin = await _admin(db_session)
     invite = await service.create_invite(actor=admin, max_uses=1)
@@ -462,9 +471,13 @@ async def test_disabled_user_cannot_login_or_refresh_and_sessions_are_revoked(db
             csrf_token=issued.csrf_token,
         )
     tokens = (
-        await db_session.execute(
-            select(RefreshToken).where(RefreshToken.user_id == issued.user.id)
+        (
+            await db_session.execute(
+                select(RefreshToken).where(RefreshToken.user_id == issued.user.id)
+            )
         )
-    ).scalars().all()
+        .scalars()
+        .all()
+    )
     assert tokens
     assert all(token.revoked_at is not None for token in tokens)

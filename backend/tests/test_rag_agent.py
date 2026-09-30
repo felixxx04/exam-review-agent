@@ -44,9 +44,7 @@ async def test_rag_agent_returns_empty_when_no_chunks_found():
     agent = RAGAgent(llm_service=AsyncMock(), retrieval_service=AsyncMock())
 
     agent.retrieval.search = AsyncMock(return_value=[])
-    agent.llm.invoke = AsyncMock(
-        return_value="抱歉，没有找到相关资料来回答您的问题。"
-    )
+    agent.llm.invoke = AsyncMock(return_value="抱歉，没有找到相关资料来回答您的问题。")
 
     result = await agent.answer("什么是暗物质", user_id="test")
 
@@ -78,7 +76,9 @@ async def test_rag_agent_passes_material_scope_as_metadata_filter():
     )
 
     call_kwargs = agent.retrieval.search.call_args.kwargs
-    assert call_kwargs["metadata_filter"] == {"source": {"$in": ["physics.pdf", "quantum.pdf"]}}
+    assert call_kwargs["metadata_filter"] == {
+        "source": {"$in": ["physics.pdf", "quantum.pdf"]}
+    }
 
 
 @pytest.mark.asyncio

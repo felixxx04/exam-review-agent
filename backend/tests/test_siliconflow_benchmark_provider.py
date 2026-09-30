@@ -257,7 +257,11 @@ def test_siliconflow_report_constructs_provider_inside_measured_factory(monkeypa
 
         @staticmethod
         def _vector(text):
-            return ([1.0] + [0.0] * 1023) if "量子" in text else ([0.0] + [1.0] + [0.0] * 1022)
+            return (
+                ([1.0] + [0.0] * 1023)
+                if "量子" in text
+                else ([0.0] + [1.0] + [0.0] * 1022)
+            )
 
         def close(self):
             pass

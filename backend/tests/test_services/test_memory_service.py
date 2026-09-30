@@ -9,7 +9,9 @@ from app.services.memory_service import MemoryService
 async def test_get_or_create_default_conversation(db_session, authenticated_user):
     service = MemoryService(db_session)
 
-    conversation = await service.get_or_create_active_conversation(authenticated_user.id)
+    conversation = await service.get_or_create_active_conversation(
+        authenticated_user.id
+    )
     same_conversation = await service.get_or_create_active_conversation(
         authenticated_user.id
     )
@@ -21,7 +23,9 @@ async def test_get_or_create_default_conversation(db_session, authenticated_user
 @pytest.mark.asyncio
 async def test_save_messages_and_build_context(db_session, authenticated_user):
     service = MemoryService(db_session)
-    conversation = await service.get_or_create_active_conversation(authenticated_user.id)
+    conversation = await service.get_or_create_active_conversation(
+        authenticated_user.id
+    )
 
     await service.save_message(
         user_id=authenticated_user.id,
@@ -50,7 +54,10 @@ async def test_save_messages_and_build_context(db_session, authenticated_user):
     assert context["learning_profile"]["weak_concepts"] == []
     assert len(context["recent_messages"]) == 2
     assert context["recent_messages"][0]["role"] == "user"
-    assert context["recent_messages"][1]["content"] == "幻读是同一事务中再次查询出现新增行。"
+    assert (
+        context["recent_messages"][1]["content"]
+        == "幻读是同一事务中再次查询出现新增行。"
+    )
 
 
 @pytest.mark.asyncio

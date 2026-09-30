@@ -18,9 +18,7 @@ class LLMProviderError(AppException):
 
 class FileParsingError(AppException):
     def __init__(self, filename: str, message: str = ""):
-        super().__init__(
-            f"Failed to parse {filename}: {message}", "FILE_PARSING_ERROR"
-        )
+        super().__init__(f"Failed to parse {filename}: {message}", "FILE_PARSING_ERROR")
 
 
 class RateLimitExceededError(AppException):

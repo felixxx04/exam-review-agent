@@ -27,10 +27,7 @@ def _set_tenant_context_after_begin(
 async def bind_tenant_context(session: AsyncSession, user_id: str | int) -> None:
     """Bind a trusted tenant ID to the current and future session transactions."""
     session.sync_session.info[TENANT_USER_ID_KEY] = str(user_id)
-    if (
-        session.get_bind().dialect.name == "postgresql"
-        and session.in_transaction()
-    ):
+    if session.get_bind().dialect.name == "postgresql" and session.in_transaction():
         await session.execute(
             text("SELECT set_config('app.current_user_id', :user_id, true)"),
             {"user_id": str(user_id)},

@@ -132,9 +132,7 @@ async def test_failed_job_is_requeued_and_delivered_when_attempts_remain(
 
 
 @pytest.mark.asyncio
-async def test_automatic_retry_clears_processing_lease(
-    db_session, authenticated_user
-):
+async def test_automatic_retry_clears_processing_lease(db_session, authenticated_user):
     material = await _material(db_session, authenticated_user)
     material.processing_status = ProcessingStatus.PROCESSING
     material.processing_lease_id = "failed-attempt-lease"
@@ -173,9 +171,9 @@ async def test_recovery_fences_stale_material_processing_attempt(
     material = await _material(db_session, authenticated_user)
     material.processing_status = ProcessingStatus.PROCESSING
     material.processing_lease_id = "stale-worker-lease"
-    material.processing_lease_expires_at = datetime.datetime.now(datetime.UTC) - datetime.timedelta(
-        minutes=10
-    )
+    material.processing_lease_expires_at = datetime.datetime.now(
+        datetime.UTC
+    ) - datetime.timedelta(minutes=10)
     db_session.add(
         MaterialJob(
             user_id=authenticated_user.id,
@@ -248,9 +246,7 @@ async def test_cancel_material_job_does_not_overwrite_a_terminal_job(
 
 
 @pytest.mark.asyncio
-async def test_retry_job_rejects_deleted_material(
-    db_session, authenticated_user
-):
+async def test_retry_job_rejects_deleted_material(db_session, authenticated_user):
     material = await _material(db_session, authenticated_user)
     material.storage_status = StorageStatus.DELETED
     job = MaterialJob(
@@ -729,10 +725,8 @@ async def test_recovery_finalizes_ready_material_instead_of_requeueing_or_downgr
         status=MaterialJobStatus.RUNNING,
         attempt_count=3,
         max_attempts=3,
-        started_at=datetime.datetime.now(datetime.UTC)
-        - datetime.timedelta(minutes=10),
-        updated_at=datetime.datetime.now(datetime.UTC)
-        - datetime.timedelta(minutes=10),
+        started_at=datetime.datetime.now(datetime.UTC) - datetime.timedelta(minutes=10),
+        updated_at=datetime.datetime.now(datetime.UTC) - datetime.timedelta(minutes=10),
         idempotency_key="material:ready-recovery:process:0",
     )
     db_session.add(job)
@@ -835,10 +829,8 @@ async def test_recovery_cleans_stale_chunks_before_requeue(
         status=MaterialJobStatus.RUNNING,
         attempt_count=1,
         max_attempts=3,
-        started_at=datetime.datetime.now(datetime.UTC)
-        - datetime.timedelta(minutes=10),
-        updated_at=datetime.datetime.now(datetime.UTC)
-        - datetime.timedelta(minutes=10),
+        started_at=datetime.datetime.now(datetime.UTC) - datetime.timedelta(minutes=10),
+        updated_at=datetime.datetime.now(datetime.UTC) - datetime.timedelta(minutes=10),
         idempotency_key="material:recovery-cleanup:process:0",
     )
     db_session.add(job)

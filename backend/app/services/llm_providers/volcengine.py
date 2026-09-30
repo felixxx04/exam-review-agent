@@ -14,6 +14,4 @@ class VolcengineProvider(OpenAICompatibleProvider):
         model: str = "deepseek-v3-2-251201",
         client=None,
     ) -> None:
-        super().__init__(
-            api_key=api_key, base_url=base_url, model=model, client=client
-        )
+        super().__init__(api_key=api_key, base_url=base_url, model=model, client=client)

@@ -65,7 +65,9 @@ async def _login_admin(client: AsyncClient):
 
 
 @pytest.mark.asyncio
-async def test_login_sets_secure_cookie_session_without_returning_tokens(auth_environment):
+async def test_login_sets_secure_cookie_session_without_returning_tokens(
+    auth_environment,
+):
     client, _, _ = auth_environment
 
     response = await _login_admin(client)
@@ -75,8 +77,12 @@ async def test_login_sets_secure_cookie_session_without_returning_tokens(auth_en
     assert "refresh_token" not in data
     assert data["user"]["username"] == "admin"
     cookies = response.headers.get_list("set-cookie")
-    access_cookie = next(cookie for cookie in cookies if cookie.startswith("access_token="))
-    refresh_cookie = next(cookie for cookie in cookies if cookie.startswith("refresh_token="))
+    access_cookie = next(
+        cookie for cookie in cookies if cookie.startswith("access_token=")
+    )
+    refresh_cookie = next(
+        cookie for cookie in cookies if cookie.startswith("refresh_token=")
+    )
     assert "HttpOnly" in access_cookie and "Secure" in access_cookie
     assert "SameSite=lax" in access_cookie
     assert "HttpOnly" in refresh_cookie and "Path=/api/auth" in refresh_cookie
@@ -201,7 +207,9 @@ async def test_refresh_rotates_cookies_and_logout_revokes_session(auth_environme
 
 
 @pytest.mark.asyncio
-async def test_admin_can_disable_account_and_disabled_session_stops_working(auth_environment):
+async def test_admin_can_disable_account_and_disabled_session_stops_working(
+    auth_environment,
+):
     client, session, admin = auth_environment
     service = AuthService(session)
     created = await service.create_invite(actor=admin, max_uses=1)
@@ -228,7 +236,9 @@ async def test_admin_can_disable_account_and_disabled_session_stops_working(auth
 
 
 @pytest.mark.asyncio
-async def test_revoked_or_disabled_sessions_reject_saved_access_tokens(auth_environment):
+async def test_revoked_or_disabled_sessions_reject_saved_access_tokens(
+    auth_environment,
+):
     client, session, admin = auth_environment
     service = AuthService(session)
     created = await service.create_invite(actor=admin, max_uses=1)

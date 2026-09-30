@@ -37,16 +37,14 @@ class QuizGenerator:
         Returns:
             List of Question objects with source citations.
         """
-        effective_difficulty = difficulty_signal if difficulty_signal is not None else difficulty
+        effective_difficulty = (
+            difficulty_signal if difficulty_signal is not None else difficulty
+        )
         prompt = self._build_prompt(chunks, effective_difficulty, count)
-        response = await self.llm_service.invoke([
-            {"role": "user", "content": prompt}
-        ])
+        response = await self.llm_service.invoke([{"role": "user", "content": prompt}])
         return self._parse_response(response, chunks)
 
-    def _build_prompt(
-        self, chunks: list, difficulty: float, count: int
-    ) -> str:
+    def _build_prompt(self, chunks: list, difficulty: float, count: int) -> str:
         chunk_texts = []
         for i, chunk in enumerate(chunks):
             chunk_texts.append(f"[{i}] {chunk.text}")
@@ -68,16 +66,14 @@ class QuizGenerator:
             f"4. 每道题必须提供explanation解释正确答案\n"
             f"5. 返回严格的JSON数组格式\n\n"
             f"参考资料:\n{material}\n\n"
-            f'返回格式示例:\n'
+            f"返回格式示例:\n"
             f'[{{"question":"问题内容","options":["A. 选项1","B. 选项2",'
             f'"C. 选项3","D. 选项4"],"correct":"B",'
             f'"explanation":"解释文本","source_chunk_ids":["chunk-0"]}}]\n\n'
             f"请生成{count}道题，直接返回JSON数组:"
         )
 
-    def _parse_response(
-        self, response: str, chunks: list
-    ) -> list[Question]:
+    def _parse_response(self, response: str, chunks: list) -> list[Question]:
         try:
             text = response.strip()
             if text.startswith("```"):
@@ -90,11 +86,13 @@ class QuizGenerator:
 
         questions = []
         for item in data:
-            questions.append(Question(
-                question=item["question"],
-                options=item.get("options", []),
-                correct=item["correct"],
-                explanation=item.get("explanation", ""),
-                source_chunk_ids=item.get("source_chunk_ids", []),
-            ))
+            questions.append(
+                Question(
+                    question=item["question"],
+                    options=item.get("options", []),
+                    correct=item["correct"],
+                    explanation=item.get("explanation", ""),
+                    source_chunk_ids=item.get("source_chunk_ids", []),
+                )
+            )
         return questions

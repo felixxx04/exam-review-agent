@@ -80,7 +80,9 @@ class LLMService:
     ) -> None:
         self._providers = providers
         self._default_provider = default_provider
-        self._fallback_chain: list[str] = fallback_chain if fallback_chain is not None else ["glm", "minimax"]
+        self._fallback_chain: list[str] = (
+            fallback_chain if fallback_chain is not None else ["glm", "minimax"]
+        )
         self._max_retries = max_retries
         self._breakers: dict[str, CircuitBreaker] = {
             name: CircuitBreaker(failure_threshold, recovery_timeout)
@@ -114,9 +116,7 @@ class LLMService:
         for provider_name in provider_names:
             breaker = self._breakers.get(provider_name)
             if breaker is not None and breaker.is_open():
-                logger.warning(
-                    "Circuit breaker open for %s, skipping", provider_name
-                )
+                logger.warning("Circuit breaker open for %s, skipping", provider_name)
                 continue
 
             provider = self._providers.get(provider_name)

@@ -52,18 +52,20 @@ async def test_create_admin_rejects_short_password(db_session):
 @pytest.mark.asyncio
 async def test_run_rejects_mismatched_password_confirmation(monkeypatch):
     responses = iter(["Admin-pass-123", "Different-pass-123"])
-    monkeypatch.setattr(create_admin_module.getpass, "getpass", lambda _prompt: next(responses))
+    monkeypatch.setattr(
+        create_admin_module.getpass, "getpass", lambda _prompt: next(responses)
+    )
 
     with pytest.raises(SystemExit, match="Passwords do not match"):
         await _run("local_admin", "Local Admin")
 
 
 @pytest.mark.asyncio
-async def test_run_creates_admin_with_session_factory(
-    db_session, monkeypatch, capsys
-):
+async def test_run_creates_admin_with_session_factory(db_session, monkeypatch, capsys):
     responses = iter(["Admin-pass-123", "Admin-pass-123"])
-    monkeypatch.setattr(create_admin_module.getpass, "getpass", lambda _prompt: next(responses))
+    monkeypatch.setattr(
+        create_admin_module.getpass, "getpass", lambda _prompt: next(responses)
+    )
 
     class SessionContext:
         async def __aenter__(self):

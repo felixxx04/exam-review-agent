@@ -51,9 +51,7 @@ async def test_mistake_repository_persists_across_sessions(tmp_path):
 
         async with session_factory() as second_session:
             second_repository = SqlAlchemyMistakeRepository(second_session)
-            records = await second_repository.list_for_user(
-                user_id, concept="事务隔离"
-            )
+            records = await second_repository.list_for_user(user_id, concept="事务隔离")
             updated = await second_repository.update(
                 user_id,
                 "mistake-persisted",
@@ -102,9 +100,7 @@ async def test_session_factory_repository_binds_each_tenant_operation(monkeypatc
             return None
 
     monkeypatch.setattr(mistakes_module, "bind_tenant_context", record_binding)
-    monkeypatch.setattr(
-        mistakes_module, "SqlAlchemyMistakeRepository", FakeRepository
-    )
+    monkeypatch.setattr(mistakes_module, "SqlAlchemyMistakeRepository", FakeRepository)
     repository = SessionFactoryMistakeRepository(lambda: SessionContext())
 
     await repository.create({"user_id": "11"})

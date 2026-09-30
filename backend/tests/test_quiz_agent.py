@@ -112,7 +112,9 @@ async def test_quiz_agent_returns_quiz_response():
 
     agent.retrieval.search = AsyncMock(
         return_value=[
-            SearchResult(text="量子力学基本概念", score=0.9, metadata={"source": "physics.pdf"}),
+            SearchResult(
+                text="量子力学基本概念", score=0.9, metadata={"source": "physics.pdf"}
+            ),
         ]
     )
     agent.generator.llm_service.invoke = AsyncMock(
@@ -186,7 +188,11 @@ async def test_quiz_agent_falls_back_to_scoped_material_when_topic_is_generic():
         quiz_generator=AsyncMock(),
     )
     fallback_chunks = [
-        SearchResult(text="MQ 消息队列可以用于解耦、异步和削峰", score=0.1, metadata={"source": "MQ.docx"}),
+        SearchResult(
+            text="MQ 消息队列可以用于解耦、异步和削峰",
+            score=0.1,
+            metadata={"source": "MQ.docx"},
+        ),
     ]
     agent.retrieval.search = AsyncMock(side_effect=[[], fallback_chunks])
     agent.generator.generate = AsyncMock(return_value=[])
@@ -225,7 +231,9 @@ async def test_quiz_agent_passes_material_scope():
     )
 
     call_kwargs = agent.retrieval.search.call_args.kwargs
-    assert call_kwargs["metadata_filter"] == {"source": {"$in": ["notes.pdf", "slides.pdf"]}}
+    assert call_kwargs["metadata_filter"] == {
+        "source": {"$in": ["notes.pdf", "slides.pdf"]}
+    }
 
 
 @pytest.mark.asyncio

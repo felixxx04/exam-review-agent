@@ -43,9 +43,7 @@ class MistakeSummarizer:
             mistakes = mistakes[-INCREMENTAL_WINDOW:]
 
         prompt = self._build_prompt(mistakes, mode)
-        response = await self.llm.invoke([
-            {"role": "user", "content": prompt}
-        ])
+        response = await self.llm.invoke([{"role": "user", "content": prompt}])
         return response
 
     def _build_prompt(self, mistakes: list[dict], mode: str) -> str:

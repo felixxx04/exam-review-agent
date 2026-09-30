@@ -136,7 +136,9 @@ class TestLLMService:
         service._breakers["deepseek"].record_failure()
         service._breakers["deepseek"].record_failure()
 
-        mock_providers["deepseek"].invoke = AsyncMock(return_value="Should not be called")
+        mock_providers["deepseek"].invoke = AsyncMock(
+            return_value="Should not be called"
+        )
         mock_providers["glm"].invoke = AsyncMock(return_value="GLM fallback")
 
         result = await service.invoke([{"role": "user", "content": "Hello"}])
@@ -167,14 +169,14 @@ class TestLLMService:
     @pytest.mark.asyncio
     async def test_invoke_custom_temperature(self, service, mock_providers):
         mock_providers["deepseek"].invoke = AsyncMock(return_value="OK")
-        await service.invoke(
-            [{"role": "user", "content": "Hi"}], temperature=0.7
-        )
+        await service.invoke([{"role": "user", "content": "Hi"}], temperature=0.7)
         call_kwargs = mock_providers["deepseek"].invoke.call_args[1]
         assert call_kwargs.get("temperature") == 0.7
 
     @pytest.mark.asyncio
-    async def test_invoke_no_fallback_chain_raises_immediately(self, service, mock_providers):
+    async def test_invoke_no_fallback_chain_raises_immediately(
+        self, service, mock_providers
+    ):
         """When fallback_chain is empty, fail immediately on primary error."""
         service_no_fallback = LLMService(
             providers=mock_providers,

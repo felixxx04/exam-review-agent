@@ -10,7 +10,6 @@ from app.db.models import ConversationMessage
 
 
 class TestChatSSE:
-
     @pytest.mark.asyncio
     async def test_chat_returns_sse_stream(self, client_with_db, monkeypatch):
         async def fake_run_orchestrator(*args, **kwargs):
@@ -89,10 +88,16 @@ class TestChatSSE:
 
         assert response.status_code == 200
         rows = (
-            await db_session.execute(
-                select(ConversationMessage).order_by(ConversationMessage.created_at.asc())
+            (
+                await db_session.execute(
+                    select(ConversationMessage).order_by(
+                        ConversationMessage.created_at.asc()
+                    )
+                )
             )
-        ).scalars().all()
+            .scalars()
+            .all()
+        )
         roles = [
             row.role.value if hasattr(row.role, "value") else str(row.role)
             for row in rows
@@ -138,7 +143,9 @@ class TestChatSSE:
 
         monkeypatch.setattr("app.api.chat.run_orchestrator", fake_run_orchestrator)
 
-        response = await client_with_db.post("/api/chat", json={"message": "给我出五道题"})
+        response = await client_with_db.post(
+            "/api/chat", json={"message": "给我出五道题"}
+        )
 
         assert response.status_code == 200
         assert '"event": "error"' not in response.text
@@ -152,9 +159,7 @@ class TestChatSSE:
         async def failing_run_orchestrator(*args, **kwargs):
             raise RuntimeError("database password and provider response")
 
-        monkeypatch.setattr(
-            "app.api.chat.run_orchestrator", failing_run_orchestrator
-        )
+        monkeypatch.setattr("app.api.chat.run_orchestrator", failing_run_orchestrator)
 
         response = await client_with_db.post("/api/chat", json={"message": "继续"})
 

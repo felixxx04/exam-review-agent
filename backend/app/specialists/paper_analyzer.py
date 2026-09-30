@@ -105,11 +105,11 @@ class PaperAnalyzer:
         concepts: list[str] = []
         for pattern in cls.KEYWORD_PATTERNS:
             for match in pattern.finditer(text):
-                rest = text[match.end():].strip()
+                rest = text[match.end() :].strip()
                 # Take up to the first punctuation or newline
                 concept_end = re.search(r"[，。；,\.;\n]", rest)
                 if concept_end:
-                    concept_name = rest[:concept_end.start()].strip()
+                    concept_name = rest[: concept_end.start()].strip()
                 else:
                     concept_name = rest[:50].strip()
                 if concept_name and len(concept_name) < 50:

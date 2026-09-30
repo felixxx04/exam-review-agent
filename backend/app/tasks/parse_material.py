@@ -35,9 +35,7 @@ async def _job_session(ctx: dict[str, Any]):
         yield session
 
 
-async def process_material_job(
-    ctx: dict[str, Any], job_id: str, user_id: int
-) -> None:
+async def process_material_job(ctx: dict[str, Any], job_id: str, user_id: int) -> None:
     """Claim and execute one material job, keeping PostgreSQL authoritative."""
     async with _job_session(ctx) as db:
         queue = ctx.get("redis")
