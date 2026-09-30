@@ -40,6 +40,6 @@ Task 1.1 已将业务默认连接切换到 PostgreSQL，并建立 `vector(1024)`
 - fixture 性能数值不是模型实测。当前 Windows 主机约有 1.9 GiB 可用内存；缓存中的 `BAAI/bge-large-zh-v1.5` 与 `BAAI/bge-reranker-base` 目录分别约 2.7 GiB 和 1.1 GiB，因此本次没有尝试冷启动，也没有取得小型本地模型或远程 endpoint 的实际测量。
 - 不据模型名称、artifact 大小或 fixture 数值决定生产 provider。Task 2.4 的真实资源/检索效果比较仍需在有足够内存的隔离进程中，对小型本地模型和明确配置的远程兼容 provider 使用同一标注集测量；该证据齐备前维持现有生产路径。
 - 2026-09-28 已在 Windows CPU 隔离进程完成本地实测：`BAAI/bge-small-zh-v1.5` 为 96,405,966 bytes、冷启动 90.5 ms、约 158.1 页/秒、峰值工作集 412.8 MB；`BAAI/bge-reranker-base` 为 1,134,408,930 bytes、冷启动 1,998.4 ms、约 9.65 页/秒、峰值工作集 1,010.1 MB。两者在两文档 fixture 上 Recall@1/MRR 均为 1.0，该质量结果只证明 runner 链路可用。
-- 2026-09-29 已在两个新鲜 Python 进程完成 SiliconFlow 远程实测：`BAAI/bge-m3` 为冷启动 409.6 ms、约 3.477 页/秒、峰值工作集 42.66 MB；`BAAI/bge-reranker-v2-m3` 为冷启动 422.1 ms、约 8.665 页/秒、峰值工作集 41.99 MB。两者在同一两文档 fixture 上 Recall@1/MRR 均为 1.0；托管 alias 未固定 revision，且本地无法测量远程 artifact 大小。
+- 2026-09-30 已在两个新鲜 Python 进程复测 SiliconFlow 远程 provider：`BAAI/bge-m3` 为冷启动 278.9 ms、约 2.193 页/秒、峰值工作集 42.63 MB；`BAAI/bge-reranker-v2-m3` 为冷启动 271.1 ms、约 6.378 页/秒、峰值工作集 41.96 MB。两者在同一两文档 fixture 上 Recall@1/MRR 均为 1.0；托管 alias 未固定 revision，且本地无法测量远程 artifact 大小。该 key 仅在 benchmark 进程内使用，不用于 DeepSeek 聊天冒烟。
 - 远程结果补齐了 Task 2.4 的 provider 对照证据，但 fixture 规模和 alias 版本限制了结论范围；不据这些数值选择生产 provider，不切换生产检索路径。
 - 本工作不替换 Embedding/Reranker，不改 Chroma/进程内 BM25，不切换 pgvector 检索；生产检索迁移仍属于 Task 3.1。

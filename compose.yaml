@@ -39,8 +39,8 @@ services:
     restart: unless-stopped
 
   minio:
-    image: minio/minio:RELEASE.2025-04-22T22-12-26Z
-    command: server /data --console-address ":9001"
+    image: bitnamilegacy/minio@sha256:451fe6858cb770cc9d0e77ba811ce287420f781c7c1b806a386f6896471a349c
+    command: server /bitnami/minio/data --console-address ":9001"
     environment:
       MINIO_ROOT_USER: ${MINIO_ROOT_USER:?Set MINIO_ROOT_USER in .env}
       MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:?Set MINIO_ROOT_PASSWORD in .env}
@@ -48,7 +48,7 @@ services:
       - "${MINIO_BIND_ADDRESS:-127.0.0.1}:${MINIO_API_PORT:-9000}:9000"
       - "${MINIO_BIND_ADDRESS:-127.0.0.1}:${MINIO_CONSOLE_PORT:-9001}:9001"
     volumes:
-      - minio_data:/data
+      - minio_data:/bitnami/minio/data
     healthcheck:
       test:
         ["CMD-SHELL", "curl -f http://localhost:9000/minio/health/live || exit 1"]
@@ -58,7 +58,7 @@ services:
     restart: unless-stopped
 
   minio-init:
-    image: minio/mc:RELEASE.2025-05-21T01-59-54Z
+    image: bitnamilegacy/minio-client@sha256:00dcc4e58ada0df45bb7d9ee435af98295f96c27c3c68292ce78ec700a87b511
     entrypoint: ["/bin/sh"]
     depends_on:
       minio:
@@ -79,8 +79,7 @@ services:
         if ! mc admin user info local "$${S3_ACCESS_KEY_ID}" >/dev/null 2>&1; then
           mc admin user add local "$${S3_ACCESS_KEY_ID}" "$${S3_SECRET_ACCESS_KEY}"
         fi
-        policy_template=$$(cat /policy/object-storage-policy.json)
-        printf '%s\n' "$${policy_template//__S3_BUCKET__/$${S3_BUCKET}}" > /tmp/object-storage-policy.json
+        sed "s|__S3_BUCKET__|$${S3_BUCKET}|g" /policy/object-storage-policy.json > /tmp/object-storage-policy.json
         mc admin policy create local exam-review-object-storage /tmp/object-storage-policy.json
         mc admin policy attach local exam-review-object-storage --user "$${S3_ACCESS_KEY_ID}"
     volumes:

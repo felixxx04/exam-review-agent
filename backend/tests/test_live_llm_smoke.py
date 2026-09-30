@@ -29,6 +29,10 @@ def test_read_key_uses_environment_key_without_file(monkeypatch):
     assert live_llm_smoke._read_key(None) == "env-key"
 
 
+def test_read_key_returns_empty_for_missing_file(tmp_path):
+    assert live_llm_smoke._read_key(tmp_path / "missing.key") == ""
+
+
 @pytest.mark.asyncio
 async def test_run_smoke_validates_question_contract(monkeypatch):
     class FakeGenerator:

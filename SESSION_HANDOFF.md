@@ -8,13 +8,13 @@
 >
 > **当前状态覆盖（2026-09-27）：** Task 2.2 已完成 lease 修复、聚焦回归和交接；Task 2.3 已由 `7bd3ffd`（RED 契约）和 `57c0c3d`（实现）完成；Task 2.4 已完成离线 RED/GREEN benchmark。Task 3.1、pgvector 检索切换、Planner/Agent Runtime 和无关重构仍未开始。下文 2026-09-24 的 Task 2.2 状态是历史快照，不作为当前执行指令。
 >
-> **本次会话状态覆盖（2026-09-30）：** Task 2.2/2.3/2.4 前置收口已完成。两个原本无条件跳过的测验生成 API 测试已改为 SQLite + fake agent 的离线契约测试；PostgreSQL RLS/删除配额 8 项与 MinIO 生命周期/材料 API 2 项真实集成测试均已执行并通过。后端全量 `503 passed, 0 skipped`，综合覆盖率 `82%`；测试产生 4 个既有 `job_service.py` 异步 close 弃用警告。生产配置和检索路径未改变。Task 3.1 仍未开始。
+> **本次会话状态覆盖（2026-09-30）：** Task 2 前置收口与非阻塞质量债务处理完成。后端全量 `510 passed, 0 skipped`，综合覆盖率 `82%`；真实 PostgreSQL 8 项、MinIO 2 项通过。真实 SiliconFlow Embedding/Reranker benchmark 均通过，最新结果已写入 benchmark 文档；本机保存的 SiliconFlow key 仅用于 benchmark，不可用于 DeepSeek 聊天冒烟。DeepSeek CLI 已补充环境变量优先级、跨平台默认路径和离线契约测试；真实 DeepSeek 冒烟需单独的 DeepSeek key。全仓 Ruff lint/format、Bandit、compileall、diff 检查通过；修复 ARQ Redis pool 关闭优先使用 `aclose()`，并补齐同步 `close()` 回退测试。Compose MinIO/MC 使用固定 digest，隔离端口 `19000/19001` 的 bootstrap 与集成测试通过。生产检索路径未改变。Task 3.1 仍未开始。
 > Task 1.4 最终功能提交：`3b5e37e feat: complete deletion and quota reliability`
 > Task 2.1 最终生产 GREEN checkpoint：`faa1e25 fix: bound object version pagination`（完整安全加固提交链见 2.4；Task 2.1 已获用户验收）
-> Task 2.2 当前状态：实现、lease 修复、离线聚焦回归和提交已完成；本次已在隔离 PostgreSQL/Redis/MinIO 环境补跑真实集成验证。
+> Task 2.2 当前状态：实现、lease 修复、离线聚焦回归、真实 PostgreSQL/Redis/MinIO 集成与异步队列关闭兼容修复均已完成。
 > 基线提交：`23c17b5 feat: polish learning workspace UI and review flows`
 >
-> 重要区分：`65505dd` 已包含 Task 2.4 SiliconFlow provider、CLI、测试和 benchmark 文档；本轮测试收口与状态文档更新已包含在 Task 3 前置收口合并提交中。Task 3.1 尚未开始。
+> 重要区分：`65505dd` 已包含 Task 2.4 SiliconFlow provider、CLI、测试和 benchmark 文档；本轮质量债务修复、Compose 可复现性及验证证据均已另行提交。Task 3.1 尚未开始。
 
 ## 1. 给新会话的执行指令
 
@@ -52,14 +52,14 @@
 - 全局 Git 身份已配置为 `felixxx04 <rifuturech@163.com>`；截至本交接，Task 2.2 已按用户此前要求提交并推送，远程与本地同步。
 - 仓库根目录目前没有 `.codegraph/`，因此无需使用 CodeGraph；如果新会话发现该目录后来出现，再按 `AGENTS.md` 先使用 CodeGraph。
 
-Task 2.2 已完成实现、回归验证和阶段验收证据；真实 PostgreSQL/MinIO 与真实 LLM/Embedding 测试仍需要显式环境变量，当前以 12 个 skip 记录。Task 2.3 解析/切片契约和 Task 2.4 离线/SiliconFlow benchmark 均已完成；进入 Task 3 前只剩用户验收决定。
+Task 2.2 已完成实现、回归验证和阶段验收证据；真实 PostgreSQL/MinIO 集成与离线模型契约均已执行。Task 2.3 解析/切片契约和 Task 2.4 离线/SiliconFlow benchmark 均已完成；进入 Task 3 前只剩用户验收决定。
 
 ## 2.5 Task 2.2（2026-09-24）执行状态
 
 - PostgreSQL MaterialJob 是唯一任务状态事实源，ARQ/Redis 仅作唤醒；上传和 Job 在同一事务内持久化。Worker 支持解析/索引、进度、取消、attempt fencing、指数退避、用户重处理、管理员优先级/重试和周期恢复扫描。
 - 删除、注销及创建 Job 失败时保留 Task 1.4/2.1 的事务、用户锁、配额与对象清理边界。部分索引写入后的外部清理失败会保存 `INDEX_CLEANUP_PENDING`，由恢复扫描清理完成后重新排队。
 - 验证：`tests/test_material_jobs.py tests/test_task22_followup.py` 为 `33 passed`；部分索引清理恢复场景 `1 passed`；`git diff --check`、`compileall`、Task 2.2 代码范围 Ruff 通过。
-- 未通过/未完成：`tests/test_api/test_materials.py` 全组在本机 Redis 未运行时等待 ARQ enqueue，未获得最终汇总；Docker CLI/Engine 当前不可用，真实 PostgreSQL/Redis/MinIO 验证未执行。全 Task 2.2 全量后端回归、Bandit、mypy、coverage 尚未完成。
+- 历史快照（2026-09-24，在 Docker 恢复前）：`tests/test_api/test_materials.py` 全组曾在本机 Redis 未运行时等待 ARQ enqueue，未获得最终汇总；当时 Docker CLI/Engine 不可用，真实 PostgreSQL/Redis/MinIO 验证未执行。该状态已由本次会话顶部记录的 `510 passed, 0 skipped`、真实集成测试和质量门结果取代。
 - 当前 Task 2.2 已由 `4a0ed0c` 提交，`main` 与远程同步。工作树没有已跟踪修改；未跟踪的 `frontend/.capture-screenshots.mjs` 与 `frontend/screenshots/` 是已有用户文件，未修改、未清理、不得纳入本任务提交。
 - processing lease 风险已修复：`702f375` 在 `JobService.mark_failed()` 自动重试路径清除 `processing_lease_id` 与 `processing_lease_expires_at`，并由 `test_task22_followup.py` 回归覆盖。
 - 当前停止于 **Task 2.4 benchmark 用户验收与提交门**；本地和远程真实 provider 数据已记录。不得开始 Task 3.1、pgvector 检索切换、Planner/Agent Runtime 或无关重构。

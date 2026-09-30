@@ -508,8 +508,8 @@ run.cancelled
 - 上传仅持久化 `Material` 与 PostgreSQL `MaterialJob` 后返回；Redis/ARQ 只负责唤醒 Worker。Job 保留 attempt、lease fencing、进度、退避重试和安全错误摘要；重复投递按 Job ID 幂等。
 - Worker 处理对象下载、解析、切片、索引和 READY 状态；支持取消、用户重处理、管理员列表/优先级/重试，以及每 15 分钟恢复扫描。恢复也调用 Task 2.1 的租户绑定资料/对象预留清理入口，不另造存储事实源。
 - 资料删除、账号注销、Job 持久化失败、重处理事务失败和跨租户访问均由数据库状态与所有权围栏保护。索引部分写入且补偿失败时保留持久 chunk 清理意图并终结当前 Job；恢复扫描清理成功后才重新排队。
-- 验证：阶段 2/Task 2.3 定向回归 `131 passed`；补测后端全量 `503 passed, 0 skipped`，综合覆盖率 `82%`。PostgreSQL RLS/删除配额 8 项、MinIO 生命周期/材料 API 2 项真实集成测试均已在隔离服务中执行并通过；两个原无条件 skip 的测验生成 API 测试已改为离线契约测试并通过。`git diff --check`、`compileall`、Ruff 和 Bandit 通过；保留 4 个既有 `job_service.py` 异步 close 弃用警告。
-- Task 2.2 的实现、TDD 回归、真实服务集成验证和阶段 2 验收证据已完成；Task 2.3 已完成并继续执行下一项授权任务。
+- 验证：阶段 2/Task 2.3 定向回归 `131 passed`；最终后端全量 `510 passed, 0 skipped`，综合覆盖率 `82%`。PostgreSQL RLS/删除配额 8 项、MinIO 生命周期/材料 API 2 项真实集成测试均在隔离服务中通过；两个原无条件 skip 的测验生成 API 测试已改为离线契约测试并通过。全仓 Ruff lint/format、`git diff --check`、`compileall` 与 Bandit 通过，弃用警告已清零。DeepSeek 聊天冒烟 CLI 已增加显式 key 选择契约；SiliconFlow key 不用于该聊天测试。
+- Task 2.2 的实现、TDD 回归、真实服务集成验证和阶段 2 验收证据已完成；Task 2.3 已完成。生产检索路径未切换，Task 3.1 仍待后续明确启动。
 
 ### Task 2.3：解析与切片质量（已完成）
 
@@ -525,7 +525,7 @@ run.cancelled
 - [x] Cross-Encoder 同样做真实 provider 基准；不能满足免费实例时必须有可配置替代。
 - [x] 将当前限制与不切生产检索路径的结论写入 ADR；不凭模型名称或 fixture 数值决定生产方案。
 
-**Task 2.4 实现与实测记录（2026-09-29）**：`backend/app/benchmarks/free_resource_benchmark.py` 提供纯注入 runner、固定数据集、JSON 报告及 Recall@k/MRR、首次加载、吞吐、模型 artifact 大小和操作系统进程峰值内存指标。离线 fixture 契约与 SiliconFlow provider/CLI 聚焦测试通过，目标覆盖率为 88%。本地真实 provider 与远程 SiliconFlow Embedding/Reranker 均在隔离进程使用同一两文档 fixture 完成；远程 `BAAI/bge-m3` 为 409.6 ms、3.477 页/秒、42.66 MB，`BAAI/bge-reranker-v2-m3` 为 422.1 ms、8.665 页/秒、41.99 MB，Recall@1/MRR 均为 1.0。托管 alias 未固定 revision，fixture 质量不代表生产质量，也不改变生产 provider 或检索路径。详见 `docs/benchmarks/free-resource-benchmark.md` 与 ADR-0001。
+**Task 2.4 实现与实测记录（2026-09-30 复测）**：`backend/app/benchmarks/free_resource_benchmark.py` 提供纯注入 runner、固定数据集、JSON 报告及 Recall@k/MRR、首次加载、吞吐、模型 artifact 大小和操作系统进程峰值内存指标。离线 fixture 契约与 SiliconFlow provider/CLI 聚焦测试通过，目标覆盖率为 88%。本地真实 provider 与远程 SiliconFlow Embedding/Reranker 均使用同一两文档 fixture 完成；最新远程 Embedding `BAAI/bge-m3` 为 278.9 ms、2.193 页/秒、42.63 MB，Reranker `BAAI/bge-reranker-v2-m3` 为 271.1 ms、6.378 页/秒、41.96 MB，Recall@1/MRR 均为 1.0。托管 alias 未固定 revision，fixture 质量不代表生产质量，也不改变生产 provider 或检索路径。详见 `docs/benchmarks/free-resource-benchmark.md` 与 ADR-0001。
 
 **阶段 2 验收门**
 

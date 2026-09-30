@@ -78,7 +78,7 @@ Both measurements used CPU inference, the cached immutable snapshot, and the
 same fixture. These local results do not authorize a production model or
 retrieval-path change.
 
-## Remote SiliconFlow Measurements (2026-09-29)
+## Remote SiliconFlow Measurements (2026-09-30 rerun)
 
 The remote provider was measured in two fresh Python processes using the same
 two-document, two-query fixture and `top_k=1`. The API key was read from a
@@ -90,12 +90,26 @@ an endpoint snapshot rather than a reproducible model release benchmark.
 
 | Task | Provider | Endpoint | First load | Throughput | Peak working set | Recall@1 | MRR |
 | --- | --- | --- | ---: | ---: | ---: | ---: | ---: |
-| Embedding | `BAAI/bge-m3` | `api.siliconflow.cn/v1/embeddings` | 409.6 ms | 3.477 pages/s | 42.66 MB | 1.0 | 1.0 |
-| Cross-Encoder | `BAAI/bge-reranker-v2-m3` | `api.siliconflow.cn/v1/rerank` | 422.1 ms | 8.665 pages/s | 41.99 MB | 1.0 | 1.0 |
+| Embedding | `BAAI/bge-m3` | `api.siliconflow.cn/v1/embeddings` | 278.9 ms | 2.193 pages/s | 42.63 MB | 1.0 | 1.0 |
+| Cross-Encoder | `BAAI/bge-reranker-v2-m3` | `api.siliconflow.cn/v1/rerank` | 271.1 ms | 6.378 pages/s | 41.96 MB | 1.0 | 1.0 |
 
-The remote reports returned no artifact size because hosted weights are not
+The rerun used fresh Python processes and returned no artifact size because hosted weights are not
 available to the local process. Perfect quality on this two-item fixture only
 proves that the provider adapter and benchmark pipeline agree; it is not a
 production quality estimate. The provider remains benchmark-only and does not
 change `EmbeddingService`, `RetrievalService`, Chroma/BM25, or PostgreSQL /
 pgvector retrieval.
+
+The benchmark key is read only inside the process from the supplied local file;
+it is never printed or serialized into the report. This SiliconFlow key is
+provider-specific and cannot be used for the separate DeepSeek chat smoke test.
+
+For the local Docker setup used for this rerun, the existing `minio-temp`
+container occupied ports 9000/9001. The managed service was started without
+stopping it by overriding the published ports for that process:
+
+```powershell
+$env:MINIO_API_PORT='19000'
+$env:MINIO_CONSOLE_PORT='19001'
+docker compose --env-file .env up -d minio minio-init
+```

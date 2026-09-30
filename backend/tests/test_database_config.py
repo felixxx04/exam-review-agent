@@ -70,15 +70,17 @@ def test_compose_runs_minio_initialization_through_a_shell_entrypoint():
     assert minio_init["command"][0] == "-ec"
 
 
-def test_compose_minio_initialization_does_not_require_sed():
+def test_compose_minio_initialization_uses_posix_policy_substitution():
     compose = yaml.safe_load(
         (REPOSITORY_ROOT / "compose.yaml").read_text(encoding="utf-8")
     )
     script = compose["services"]["minio-init"]["command"][1]
 
-    assert "sed " not in script
-    assert "policy_template=$$(cat /policy/object-storage-policy.json)" in script
-    assert "policy_template//__S3_BUCKET__" in script
+    assert 'sed "s|__S3_BUCKET__|$${S3_BUCKET}|g"' in script
+    assert (
+        "/policy/object-storage-policy.json > /tmp/object-storage-policy.json" in script
+    )
+    assert "policy_template=$$(cat /policy/object-storage-policy.json)" not in script
 
 
 def test_minio_policy_only_allows_version_listing_for_material_object_prefixes():
