@@ -508,7 +508,7 @@ run.cancelled
 - 上传仅持久化 `Material` 与 PostgreSQL `MaterialJob` 后返回；Redis/ARQ 只负责唤醒 Worker。Job 保留 attempt、lease fencing、进度、退避重试和安全错误摘要；重复投递按 Job ID 幂等。
 - Worker 处理对象下载、解析、切片、索引和 READY 状态；支持取消、用户重处理、管理员列表/优先级/重试，以及每 15 分钟恢复扫描。恢复也调用 Task 2.1 的租户绑定资料/对象预留清理入口，不另造存储事实源。
 - 资料删除、账号注销、Job 持久化失败、重处理事务失败和跨租户访问均由数据库状态与所有权围栏保护。索引部分写入且补偿失败时保留持久 chunk 清理意图并终结当前 Job；恢复扫描清理成功后才重新排队。
-- 验证：阶段 2/Task 2.3 定向回归 `131 passed`；最终后端全量 `510 passed, 0 skipped`，综合覆盖率 `82%`。PostgreSQL RLS/删除配额 8 项、MinIO 生命周期/材料 API 2 项真实集成测试均在隔离服务中通过；两个原无条件 skip 的测验生成 API 测试已改为离线契约测试并通过。全仓 Ruff lint/format、`git diff --check`、`compileall` 与 Bandit 通过，弃用警告已清零。DeepSeek 聊天冒烟 CLI 已增加显式 key 选择契约；SiliconFlow key 不用于该聊天测试。
+- 验证：阶段 2/Task 2.3 定向回归 `131 passed`；最终后端全量 `510 passed, 0 skipped`，综合覆盖率 `82%`。PostgreSQL RLS/删除配额 8 项、MinIO 生命周期/材料 API 2 项真实集成测试均在隔离服务中通过；两个原无条件 skip 的测验生成 API 测试已改为离线契约测试并通过。全仓 Ruff lint/format、`git diff --check`、`compileall` 与 Bandit 通过，弃用警告已清零。使用独立 DeepSeek key 的真实聊天冒烟已通过，输出 1 道四选项题；SiliconFlow key 不用于该聊天测试。
 - Task 2.2 的实现、TDD 回归、真实服务集成验证和阶段 2 验收证据已完成；Task 2.3 已完成。生产检索路径未切换，Task 3.1 仍待后续明确启动。
 
 ### Task 2.3：解析与切片质量（已完成）
