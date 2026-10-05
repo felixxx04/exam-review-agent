@@ -180,8 +180,8 @@ class RetrievalService:
             chunk_ids = [
                 str(item.get("chunk_id") or uuid.uuid4()) for item in chunks
             ]
-        if len(chunk_ids) != len(chunks):
-            raise ValueError("chunk_ids must have the same length as chunks")
+        if len(chunk_ids) != len(chunks) or len(set(chunk_ids)) != len(chunk_ids):
+            raise ValueError("chunk_ids must be unique and match the indexed chunks")
         if self._uses_adapter or self._uses_database:
             if course_id is None:
                 raise ValueError("course_id is required for database retrieval")
