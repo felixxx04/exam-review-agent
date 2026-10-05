@@ -33,6 +33,7 @@ class QuizAgent:
         material_scope: list[str] | None = None,
         adaptive: bool = False,
         course_id: int | None = None,
+        db_session=None,
     ) -> QuizResponse:
         """Generate a quiz by retrieving content and creating questions.
 

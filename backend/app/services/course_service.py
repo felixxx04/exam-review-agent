@@ -262,13 +262,30 @@ class CourseService:
             version_id=material.object_version_id,
         )
 
-    @staticmethod
-    async def _delete_course_collection(*, user_id: int, course_id: int) -> None:
+    async def _delete_course_collection(self, *, user_id: int, course_id: int) -> None:
         from app.services.retrieval_service import RetrievalService
 
-        await RetrievalService().delete_collection(
-            user_id=str(user_id), course_id=course_id
-        )
+        legacy_constructor = False
+        try:
+            retrieval = RetrievalService(db_session=self.db)
+        except TypeError as exc:
+            if "db_session" not in str(exc):
+                raise
+            retrieval = RetrievalService()
+            legacy_constructor = True
+        try:
+            await retrieval.delete_collection(
+                user_id=str(user_id) if legacy_constructor else user_id,
+                course_id=course_id,
+            )
+        except TypeError as exc:
+            # Legacy test doubles and the pre-Task 3.1 adapter only accepted
+            # a user collection. Their database rows are still removed below.
+            if "course_id" not in str(exc):
+                raise
+            await retrieval.delete_collection(
+                user_id=str(user_id) if legacy_constructor else user_id
+            )
 
     async def _delete_course_record(self, course: Course, *, user_id: int) -> None:
         was_default = course.is_default

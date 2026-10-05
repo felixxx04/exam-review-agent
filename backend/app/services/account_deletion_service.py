@@ -343,6 +343,22 @@ class AccountDeletionService:
 
         try:
             await self.cleaner.clean(user_id, course_ids, materials)
+            # The legacy cleaner remains responsible for compatibility with
+            # existing vector-store implementations.  PostgreSQL is now the
+            # durable retrieval source of truth, so remove its rows through
+            # this tenant-bound session before deleting the account.
+            from app.services.retrieval_service import RetrievalService
+
+            retrieval = RetrievalService(db_session=self.db)
+            try:
+                await retrieval.delete_collection(user_id=user_id)
+            except TypeError:
+                # Older adapters may require a course scope; rows are also
+                # removed by the account cascade below.
+                for course_id in course_ids:
+                    await retrieval.delete_collection(
+                        user_id=user_id, course_id=course_id
+                    )
         except Exception as exc:
             logger.exception(
                 "Account artifact cleanup failed job_id=%s user_id=%s error_type=%s",

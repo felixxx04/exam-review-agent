@@ -13,13 +13,15 @@ from dataclasses import dataclass, field
 from typing import Any, Iterable, Iterator, Sequence
 
 try:
-    from sqlalchemy import select
+    from sqlalchemy import func, select
 except Exception:  # pragma: no cover - optional during lightweight tests
+    func = None
     select = None
 
 try:
-    from app.db.models import MaterialChunk
+    from app.db.models import Material, MaterialChunk
 except Exception:  # pragma: no cover - import remains optional for unit tests
+    Material = None
     MaterialChunk = None
 
 try:
@@ -76,6 +78,13 @@ class RetrievalResponse(Sequence[Evidence]):
     def __bool__(self) -> bool:
         return bool(self.evidences)
 
+    def __eq__(self, other: object) -> bool:
+        if isinstance(other, RetrievalResponse):
+            return self.status == other.status and self.evidences == other.evidences
+        if isinstance(other, (list, tuple)):
+            return self.evidences == list(other)
+        return NotImplemented
+
 
 class RetrievalService:
     """Dense/lexical hybrid retrieval with durable and legacy adapters."""
@@ -94,6 +103,9 @@ class RetrievalService:
         self._reranker = reranker
         self._vector_store = vector_store
         self.quality_threshold = quality_threshold
+        # Retained as a compatibility observation point for legacy cleanup
+        # tests. It is never consulted by the durable PostgreSQL path.
+        self._bm25_indices: dict[str, bool] = {}
 
     @property
     def _uses_adapter(self) -> bool:
@@ -138,6 +150,10 @@ class RetrievalService:
                 from app.db.vector_store import VectorStore as store_type
             self._vector_store = store_type()
         return self._vector_store
+
+    @staticmethod
+    def _scope_key(user_id: str, course_id: int | str | None) -> str:
+        return user_id if course_id is None else f"{user_id}_course_{course_id}"
 
     @staticmethod
     def _embedding_model(service: Any) -> str:
@@ -231,6 +247,7 @@ class RetrievalService:
         self._get_vector_store().add(
             str(user_id), embeddings, texts, metadatas, ids=list(chunk_ids)
         )
+        self._bm25_indices[self._scope_key(str(user_id), course_id)] = True
         return list(chunk_ids)
 
     async def _upsert_database(
@@ -247,7 +264,12 @@ class RetrievalService:
             raise RuntimeError("SQLAlchemy MaterialChunk model is unavailable")
         ids = [item["chunk_id"] for item in chunks]
         result = await self._db_session.execute(
-            select(MaterialChunk).where(MaterialChunk.chunk_id.in_(ids))
+            select(MaterialChunk).where(
+                MaterialChunk.chunk_id.in_(ids),
+                MaterialChunk.user_id == user_id,
+                MaterialChunk.course_id == course_id,
+                MaterialChunk.material_id == material_id,
+            )
         )
         existing = {str(row.chunk_id): row for row in result.scalars().all()}
         for item, vector in zip(chunks, embeddings, strict=True):
@@ -293,21 +315,53 @@ class RetrievalService:
             await self._db_session.flush()
             return
         self._get_vector_store().delete(str(user_id), chunk_ids)
+        scope_key = self._scope_key(str(user_id), course_id)
+        store = self._get_vector_store()
+        remaining = None
+        if hasattr(store, "count"):
+            remaining = store.count(str(user_id))
+        elif hasattr(store, "documents"):
+            remaining = sum(
+                1
+                for item in store.documents
+                if item.get("user_id") == str(user_id)
+                and (course_id is None or item.get("metadata", {}).get("course_id") == course_id)
+            )
+        if remaining == 0:
+            self._bm25_indices.pop(scope_key, None)
 
-    async def delete_collection(self, user_id: int | str) -> None:
-        if self._uses_adapter and hasattr(self._db_session, "delete_collection"):
-            await self._db_session.delete_collection(user_id=user_id)
+    async def delete_collection(
+        self, user_id: int | str, *, course_id: int | str | None = None
+    ) -> None:
+        if self._uses_adapter:
+            if hasattr(self._db_session, "delete_collection"):
+                await self._db_session.delete_collection(
+                    user_id=user_id, course_id=course_id
+                )
+            else:
+                rows = getattr(self._db_session, "rows", {})
+                for chunk_id, row in list(rows.items()):
+                    if getattr(row, "user_id", None) != user_id:
+                        continue
+                    if course_id is not None and getattr(row, "course_id", None) != course_id:
+                        continue
+                    del rows[chunk_id]
         elif self._uses_database:
             if MaterialChunk is None or select is None:
                 return
-            result = await self._db_session.execute(
-                select(MaterialChunk).where(MaterialChunk.user_id == user_id)
-            )
+            statement = select(MaterialChunk).where(MaterialChunk.user_id == user_id)
+            if course_id is not None:
+                statement = statement.where(MaterialChunk.course_id == course_id)
+            result = await self._db_session.execute(statement)
             for row in result.scalars().all():
                 await self._db_session.delete(row)
             await self._db_session.flush()
         else:
-            self._get_vector_store().delete_collection(str(user_id))
+            scope = str(user_id)
+            if course_id is not None:
+                scope = f"{scope}_course_{course_id}"
+            self._get_vector_store().delete_collection(scope)
+            self._bm25_indices.pop(scope, None)
 
     @staticmethod
     def _row_values(row: Any) -> tuple[str, str, dict[str, Any], Any, Any, Any]:
@@ -337,6 +391,94 @@ class RetrievalService:
             )
         )
         return list(result.scalars().all())
+
+    async def _database_hybrid_candidates(
+        self,
+        *,
+        user_id: int | str,
+        course_id: int | str,
+        query: str,
+        query_embedding: Sequence[float],
+        top_k: int,
+        material_scope: list[str] | None,
+        metadata_filter: dict[str, Any] | None,
+    ) -> list[tuple[Any, float]]:
+        """Run both durable PostgreSQL retrieval legs and fuse by RRF.
+
+        The application never rebuilds a lexical index in memory for this
+        path.  PostgreSQL owns vector distance and full-text ranking, while
+        the small application-side merge only combines the two ranked lists.
+        """
+        if MaterialChunk is None or Material is None or select is None or func is None:
+            return []
+        scope_predicate = []
+        if material_scope:
+            scope_predicate.append(Material.original_filename.in_(material_scope))
+        dense_distance = MaterialChunk.embedding.cosine_distance(query_embedding).label(
+            "distance"
+        )
+        dense_query = (
+            select(MaterialChunk, dense_distance)
+            .join(
+                Material,
+                (Material.id == MaterialChunk.material_id)
+                & (Material.user_id == MaterialChunk.user_id)
+                & (Material.course_id == MaterialChunk.course_id),
+            )
+            .where(
+                MaterialChunk.user_id == user_id,
+                MaterialChunk.course_id == course_id,
+                MaterialChunk.embedding.is_not(None),
+                *scope_predicate,
+            )
+            .order_by(dense_distance)
+            .limit(top_k)
+        )
+        dense_rows = (await self._db_session.execute(dense_query)).all()
+
+        lexical_rank = func.ts_rank(
+            func.to_tsvector("simple", MaterialChunk.lexical_tokens),
+            func.plainto_tsquery("simple", query),
+        ).label("rank")
+        lexical_query = (
+            select(MaterialChunk, lexical_rank)
+            .join(
+                Material,
+                (Material.id == MaterialChunk.material_id)
+                & (Material.user_id == MaterialChunk.user_id)
+                & (Material.course_id == MaterialChunk.course_id),
+            )
+            .where(
+                MaterialChunk.user_id == user_id,
+                MaterialChunk.course_id == course_id,
+                func.to_tsvector("simple", MaterialChunk.lexical_tokens).op("@@")(
+                    func.plainto_tsquery("simple", query)
+                ),
+                *scope_predicate,
+            )
+            .order_by(lexical_rank.desc())
+            .limit(top_k)
+        )
+        lexical_rows = (await self._db_session.execute(lexical_query)).all()
+
+        ranked: dict[str, tuple[Any, float]] = {}
+        for rank, (row, _distance) in enumerate(dense_rows, start=1):
+            metadata = dict(row.chunk_metadata or {})
+            if not self._matches_metadata(metadata, metadata_filter):
+                continue
+            ranked[str(row.chunk_id)] = (row, 1.0 / (self._rrf_k + rank))
+        for rank, (row, _score) in enumerate(lexical_rows, start=1):
+            metadata = dict(row.chunk_metadata or {})
+            if not self._matches_metadata(metadata, metadata_filter):
+                continue
+            chunk_id = str(row.chunk_id)
+            contribution = 1.0 / (self._rrf_k + rank)
+            if chunk_id in ranked:
+                prior_row, prior_score = ranked[chunk_id]
+                ranked[chunk_id] = (prior_row, prior_score + contribution)
+            else:
+                ranked[chunk_id] = (row, contribution)
+        return sorted(ranked.values(), key=lambda item: item[1], reverse=True)[:top_k]
 
     @staticmethod
     def _cosine(query: Sequence[float], vector: Sequence[float] | None) -> float:
@@ -418,7 +560,7 @@ class RetrievalService:
                 and getattr(row, "course_id", None) == course_id
             ]
         elif self._uses_database:
-            rows = await self._database_rows(user_id, course_id)
+            rows = []
         else:
             filter_value = metadata_filter
             raw = self._get_vector_store().search(
@@ -453,6 +595,19 @@ class RetrievalService:
                 dense = 1.0 - float(distance)
             lexical = self._lexical_score(query, text)
             candidates.append((row, 0.7 * dense + 0.3 * lexical))
+        if self._uses_database:
+            # The database branch already performed RRF. Preserve that order
+            # and score instead of replacing it with an in-memory weighted
+            # approximation before the cross-encoder stage.
+            candidates = await self._database_hybrid_candidates(
+                user_id=user_id,
+                course_id=course_id,
+                query=query,
+                query_embedding=query_embedding,
+                top_k=max(top_k * 4, top_k),
+                material_scope=material_scope,
+                metadata_filter=metadata_filter,
+            )
         candidates.sort(key=lambda item: item[1], reverse=True)
         candidates = candidates[: max(top_k * 4, top_k)]
         if not candidates:

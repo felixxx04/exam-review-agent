@@ -36,6 +36,7 @@ class RAGAgent:
         material_scope: list[str] | None = None,
         memory_context: dict | None = None,
         course_id: int | None = None,
+        db_session=None,
     ) -> AgentResponse:
         """Answer a question using RAG with the user's materials."""
         metadata_filter = None

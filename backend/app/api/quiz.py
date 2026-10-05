@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import inspect
+
 from fastapi import APIRouter, Body, Depends, HTTPException
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -21,9 +23,9 @@ from app.specialists.quiz_generator import QuizGenerator
 router = APIRouter(prefix="/api/quiz", tags=["quiz"])
 
 
-def _build_quiz_agent() -> QuizAgent:
+def _build_quiz_agent(db_session: AsyncSession | None = None) -> QuizAgent:
     llm = get_default_llm_service()
-    retrieval = RetrievalService()
+    retrieval = RetrievalService(db_session=db_session)
     generator = QuizGenerator(llm)
     return QuizAgent(retrieval, generator)
 
@@ -55,7 +57,13 @@ async def generate_quiz(
     db: AsyncSession = Depends(get_db),
 ):
     course = await CourseService(db).resolve_course(current_user.id, request.course_id)
-    agent = _build_quiz_agent()
+    # Keep dependency-injected production construction while allowing older
+    # test/application overrides that expose the original no-argument builder.
+    builder_params = inspect.signature(_build_quiz_agent).parameters
+    if "db_session" in builder_params:
+        agent = _build_quiz_agent(db_session=db)
+    else:
+        agent = _build_quiz_agent()
     response = await agent.generate_quiz(
         user_id=current_user.subject,
         topic=request.topic,
@@ -63,6 +71,7 @@ async def generate_quiz(
         difficulty=request.difficulty,
         count=request.count,
         material_scope=request.material_scope,
+        db_session=db,
     )
     return ApiResponse.ok(data=to_quiz_payload(response, difficulty=request.difficulty))
 

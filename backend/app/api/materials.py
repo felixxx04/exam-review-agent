@@ -553,7 +553,19 @@ async def _process_material(
         from app.services.chunking_service import ChunkingService
         from app.services.retrieval_service import RetrievalService
 
-        retrieval = RetrievalService()
+        # PostgreSQL is the durable retrieval source of truth.  Reuse the
+        # caller's session so tenant context and the material intent row stay
+        # in the same audited database boundary as processing.
+        legacy_retrieval = False
+        try:
+            retrieval = RetrievalService(db_session=db)
+        except TypeError as exc:
+            # Keep older test/worker doubles that still expose a no-argument
+            # constructor usable while production always takes the DB path.
+            if "db_session" not in str(exc):
+                raise
+            retrieval = RetrievalService()
+            legacy_retrieval = True
         normalized_chunks = ChunkingService().normalize(result.chunks)
         await report(55, "chunked")
         chunk_payloads = []
@@ -599,12 +611,24 @@ async def _process_material(
                 await db.rollback()
                 return
             await ensure_not_cancelled()
-            await retrieval.index_chunks(
-                user_id=user_subject,
-                chunks=chunk_payloads,
-                course_id=course_id,
-                chunk_ids=indexed_chunk_ids,
-            )
+            try:
+                await retrieval.index_chunks(
+                    user_id=str(material.user_id) if legacy_retrieval else material.user_id,
+                    chunks=chunk_payloads,
+                    course_id=course_id,
+                    chunk_ids=indexed_chunk_ids,
+                    material_id=material_id,
+                )
+            except TypeError as exc:
+                # Legacy doubles predate the durable material_id contract.
+                if "material_id" not in str(exc):
+                    raise
+                await retrieval.index_chunks(
+                    user_id=str(material.user_id) if legacy_retrieval else material.user_id,
+                    chunks=chunk_payloads,
+                    course_id=course_id,
+                    chunk_ids=indexed_chunk_ids,
+                )
 
         # Persist the last visible progress while the material is still in its
         # processing state. The following commit is the single durable READY
@@ -914,8 +938,11 @@ async def _compensate_indexed_chunks(
     if retrieval is None or not chunk_ids:
         return not chunk_ids
     try:
+        delete_user_id: int | str = user_subject
+        if getattr(retrieval, "_uses_database", False):
+            delete_user_id = int(user_subject)
         await retrieval.delete_chunks(
-            user_id=user_subject,
+            user_id=delete_user_id,
             chunk_ids=chunk_ids,
             course_id=course_id,
         )

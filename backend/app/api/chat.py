@@ -67,6 +67,7 @@ async def chat(
                 course_id=conversation_course_id,
                 material_scope=request.material_scope,
                 memory_context=memory_context,
+                db_session=db,
             )
             messages = result.get("messages", [])
             citations = result.get("citations")

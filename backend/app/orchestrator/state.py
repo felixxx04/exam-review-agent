@@ -14,3 +14,4 @@ class AgentState(TypedDict):
     citations: NotRequired[list[dict]]
     quiz: NotRequired[dict | None]
     memory_context: NotRequired[dict[str, Any]]
+    db_session: NotRequired[Any]

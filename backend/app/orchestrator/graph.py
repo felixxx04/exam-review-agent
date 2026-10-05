@@ -32,15 +32,15 @@ def router(state: AgentState) -> str:
     return state["intent"]
 
 
-def _build_rag_agent() -> RAGAgent:
+def _build_rag_agent(db_session=None) -> RAGAgent:
     llm = get_default_llm_service()
-    retrieval = RetrievalService()
+    retrieval = RetrievalService(db_session=db_session)
     return RAGAgent(llm_service=llm, retrieval_service=retrieval)
 
 
-def _build_quiz_agent() -> QuizAgent:
+def _build_quiz_agent(db_session=None) -> QuizAgent:
     llm = get_default_llm_service()
-    retrieval = RetrievalService()
+    retrieval = RetrievalService(db_session=db_session)
     generator = QuizGenerator(llm)
     tracker = TrackerAgent(
         mistake_repository=SessionFactoryMistakeRepository(AsyncSessionLocal),
@@ -138,13 +138,19 @@ def _summarize_review(concepts: list[dict]) -> str:
 async def handle_qa_node(state: AgentState) -> dict[str, Any]:
     """Answer a question against uploaded materials."""
     question = _get_last_user_message(state)
-    agent = _build_rag_agent()
+    try:
+        agent = _build_rag_agent(db_session=state.get("db_session"))
+    except TypeError as exc:
+        if "db_session" not in str(exc):
+            raise
+        agent = _build_rag_agent()
     response = await agent.answer(
         question=question,
         user_id=state["user_id"],
         course_id=state.get("course_id"),
         material_scope=state.get("material_scope"),
         memory_context=state.get("memory_context"),
+        db_session=state.get("db_session"),
     )
     return {
         "messages": [AIMessage(content=response.content)],
@@ -159,7 +165,12 @@ async def handle_quiz_node(state: AgentState) -> dict[str, Any]:
     topic = _derive_quiz_topic(message)
     difficulty = 0.5
 
-    agent = _build_quiz_agent()
+    try:
+        agent = _build_quiz_agent(db_session=state.get("db_session"))
+    except TypeError as exc:
+        if "db_session" not in str(exc):
+            raise
+        agent = _build_quiz_agent()
     response = await agent.generate_quiz(
         user_id=state["user_id"],
         topic=topic,
@@ -167,6 +178,7 @@ async def handle_quiz_node(state: AgentState) -> dict[str, Any]:
         difficulty=difficulty,
         count=count,
         material_scope=state.get("material_scope"),
+        db_session=state.get("db_session"),
     )
     quiz_payload = to_quiz_payload(response, difficulty=difficulty)
 

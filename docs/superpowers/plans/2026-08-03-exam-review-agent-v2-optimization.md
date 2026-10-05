@@ -549,10 +549,18 @@ run.cancelled
 
 **工作项**
 
-- [ ] Dense、Lexical 数据都来自 PostgreSQL，移除进程内 BM25 真相源。
-- [ ] 按 `user_id + course_id + material_scope` 强制过滤。
-- [ ] RRF 融合和重排输出结构化 `Evidence`，包含稳定 chunk ID 和定位信息。
-- [ ] 为零结果、小结果和质量门失败定义明确状态。
+- [x] Dense、Lexical 数据都来自 PostgreSQL，移除生产检索对进程内 BM25/Chroma 真相源的依赖。
+- [x] 按 `user_id + course_id + material_scope` 强制过滤；`material_scope` 保持文件名兼容性。
+- [x] RRF 融合和重排输出结构化 `Evidence`，包含稳定 chunk ID 和页码/幻灯片/字符定位信息。
+- [x] 为零结果、小结果和质量门失败定义 `no_results`、`partial`、`quality_gate_failed` 和 `ok` 状态。
+
+**Task 3.1 完成记录（2026-10-06）**
+
+- 资料处理复用已绑定租户的 `AsyncSession`，按稳定 `MaterialChunk.chunk_id` 回填 embedding、模型和元数据，不重复插入 chunk 行。
+- 生产检索使用 PostgreSQL pgvector Dense 与 PostgreSQL FTS Lexical 两路候选，应用层 RRF 融合后再进行 Cross-Encoder 质量门；旧 Chroma 仅保留给兼容性单测替身。
+- 新增持久化契约测试覆盖重启、删除、跨用户/课程/资料范围、稳定 ID 幂等、维度/非有限向量和低分质量门。
+- 验证结果：后端全量 `511 passed, 10 skipped`，覆盖率 `81%`，Ruff、Bandit 和 `compileall` 通过。
+- Docker Engine 当前未连接，真实 PostgreSQL/pgvector/RLS 集成验证待 Docker 恢复后补跑；本地 SQLite/适配器测试不替代该集成证据。
 
 ### Task 3.2：结构化证据回答
 

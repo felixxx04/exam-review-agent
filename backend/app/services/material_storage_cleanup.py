@@ -78,11 +78,29 @@ async def delete_material_chunks(
     if chunk_ids:
         from app.services.retrieval_service import RetrievalService
 
-        await RetrievalService().delete_chunks(
-            user_id=str(material.user_id),
-            chunk_ids=chunk_ids,
-            course_id=material.course_id,
-        )
+        # Keep cleanup in the same session/tenant boundary as the durable
+        # MaterialChunk intent rows.  This also makes deletion auditable and
+        # prevents a legacy process-local index from becoming authoritative.
+        legacy_constructor = False
+        try:
+            retrieval = RetrievalService(db_session=db)
+        except TypeError as exc:
+            if "db_session" not in str(exc):
+                raise
+            retrieval = RetrievalService()
+            legacy_constructor = True
+        try:
+            await retrieval.delete_chunks(
+                user_id=str(material.user_id) if legacy_constructor else material.user_id,
+                chunk_ids=chunk_ids,
+                course_id=material.course_id,
+            )
+        except TypeError as exc:
+            if "course_id" not in str(exc):
+                raise
+            await retrieval.delete_chunks(
+                user_id=str(material.user_id), chunk_ids=chunk_ids
+            )
     await db.execute(
         delete(MaterialChunk).where(MaterialChunk.material_id == material.id)
     )
