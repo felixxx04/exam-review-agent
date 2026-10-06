@@ -50,7 +50,10 @@ class TestChatSSE:
 
     @pytest.mark.asyncio
     async def test_chat_with_material_scope(self, client_with_db, monkeypatch):
+        captured = {}
+
         async def fake_run_orchestrator(*args, **kwargs):
+            captured.update(kwargs)
             return {
                 "messages": [AIMessage(content="带资料范围的回复")],
                 "citations": [{"source": "quantum.pdf", "page": 1}],
@@ -65,6 +68,9 @@ class TestChatSSE:
             },
         )
         assert response.status_code == 200
+        assert captured["user_id"] == 1
+        assert isinstance(captured["user_id"], int)
+        assert captured["material_scope"] == ["quantum.pdf"]
 
     @pytest.mark.asyncio
     async def test_chat_persists_user_and_assistant_messages(

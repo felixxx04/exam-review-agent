@@ -79,6 +79,7 @@ async def test_rag_agent_passes_material_scope_as_metadata_filter():
     assert call_kwargs["metadata_filter"] == {
         "source": {"$in": ["physics.pdf", "quantum.pdf"]}
     }
+    assert call_kwargs["material_scope"] == ["physics.pdf", "quantum.pdf"]
 
 
 @pytest.mark.asyncio

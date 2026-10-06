@@ -96,6 +96,17 @@ class VectorStore:
         except NotFoundError:
             pass
 
+    def delete_by_metadata(self, user_id: str, metadata_filter: dict) -> None:
+        """Delete only matching rows from a legacy user-level collection."""
+        try:
+            collection = self._client.get_collection(self._collection_name(user_id))
+        except NotFoundError:
+            return
+        result = collection.get(where=metadata_filter, include=["metadatas"])
+        ids = result.get("ids") or []
+        if ids:
+            collection.delete(ids=ids)
+
     def count(self, user_id: str) -> int:
         """Get count of documents in user collection."""
         collection = self._get_or_create_collection(user_id)

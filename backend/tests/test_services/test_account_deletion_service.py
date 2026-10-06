@@ -98,6 +98,82 @@ async def test_account_deletion_removes_database_files_and_vector_scopes(
 
 
 @pytest.mark.asyncio
+async def test_account_deletion_does_not_swallow_internal_retrieval_type_error(
+    db_session, object_storage, monkeypatch
+):
+    from app.services.account_deletion_service import (
+        AccountArtifactCleaner,
+        AccountDeletionService,
+    )
+
+    user, _course, _material = await _user_with_material(
+        db_session, object_storage, "delete_retrieval_type_error"
+    )
+    calls = []
+
+    class RetrievalWithInternalTypeError:
+        def __init__(self, *, db_session):
+            del db_session
+
+        async def delete_collection(self, **kwargs):
+            calls.append(kwargs)
+            raise TypeError("retrieval adapter failed while encoding rows")
+
+    monkeypatch.setattr(
+        "app.services.retrieval_service.RetrievalService",
+        RetrievalWithInternalTypeError,
+    )
+    service = AccountDeletionService(
+        db_session,
+        AccountArtifactCleaner(object_storage, RecordingVectorStore()),
+    )
+
+    requested = await service.request(user.id)
+    await service.execute(requested.job.public_id)
+
+    assert calls == [{"user_id": user.id}]
+    assert requested.job.status == "failed"
+    assert requested.job.error_code == "ARTIFACT_CLEANUP_FAILED"
+
+
+@pytest.mark.asyncio
+async def test_account_deletion_supports_course_scoped_retrieval_adapter(
+    db_session, object_storage, monkeypatch
+):
+    from app.services.account_deletion_service import (
+        AccountArtifactCleaner,
+        AccountDeletionService,
+    )
+
+    user, course, _material = await _user_with_material(
+        db_session, object_storage, "delete_course_scoped_adapter"
+    )
+    calls = []
+
+    class CourseScopedRetrieval:
+        def __init__(self, *, db_session):
+            del db_session
+
+        async def delete_collection(self, user_id, course_id):
+            calls.append((user_id, course_id))
+
+    monkeypatch.setattr(
+        "app.services.retrieval_service.RetrievalService",
+        CourseScopedRetrieval,
+    )
+    service = AccountDeletionService(
+        db_session,
+        AccountArtifactCleaner(object_storage, RecordingVectorStore()),
+    )
+
+    requested = await service.request(user.id)
+    await service.execute(requested.job.public_id)
+
+    assert requested.job.status == "succeeded"
+    assert calls == [(user.id, course.id)]
+
+
+@pytest.mark.asyncio
 async def test_account_deletion_fences_queued_and_running_material_jobs(
     db_session, object_storage
 ):

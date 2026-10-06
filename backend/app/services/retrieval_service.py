@@ -8,6 +8,8 @@ yet been migrated to dependency-injected database sessions.
 from __future__ import annotations
 
 import math
+import hashlib
+import re
 import uuid
 from dataclasses import dataclass, field
 from typing import Any, Iterable, Iterator, Sequence
@@ -31,6 +33,12 @@ except Exception:  # pragma: no cover - construction is intentionally lazy
 
 
 VECTOR_DIMENSION = 1024
+
+
+def _lexical_tokens(text: str) -> str:
+    """Build the simple-tokenizer input shared by indexing and querying."""
+    tokens = re.findall(r"[\u4e00-\u9fff]|[A-Za-z0-9_]+", str(text).lower())
+    return " ".join(tokens)
 
 
 @dataclass
@@ -89,20 +97,66 @@ class RetrievalResponse(Sequence[Evidence]):
 class RetrievalService:
     """Dense/lexical hybrid retrieval with durable and legacy adapters."""
 
+    _cross_encoder: Any | None = None
+
     def __init__(
         self,
-        db_session: Any | None = None,
-        embedding_service: Any | None = None,
-        reranker: Any | None = None,
-        vector_store: Any | None = None,
+        *args: Any,
         quality_threshold: float = 0.3,
+        rrf_k: int = 60,
+        vector_store: Any | None = None,
+        embedding_service: Any | None = None,
+        db_session: Any | None = None,
+        reranker: Any | None = None,
         **_: Any,
     ) -> None:
+        if len(args) > 5:
+            raise TypeError(
+                "RetrievalService accepts at most five positional arguments"
+            )
+        if args:
+            # The pre-persistence service accepted threshold/rrf/store/embed
+            # positionally.  During Task 3.1 an interim db-first form existed;
+            # recognize both forms so old workers do not silently misbind.
+            first = args[0]
+            legacy_shape = isinstance(first, (int, float)) or (
+                first is None and len(args) > 1 and isinstance(args[1], (int, float))
+            )
+            if legacy_shape:
+                names = (
+                    "quality_threshold",
+                    "rrf_k",
+                    "vector_store",
+                    "embedding_service",
+                )
+                values = dict(zip(names, args, strict=False))
+                quality_threshold = values.get("quality_threshold", quality_threshold)
+                rrf_k = values.get("rrf_k", rrf_k)
+                vector_store = values.get("vector_store", vector_store)
+                embedding_service = values.get("embedding_service", embedding_service)
+            else:
+                names = (
+                    "db_session",
+                    "embedding_service",
+                    "reranker",
+                    "vector_store",
+                    "quality_threshold",
+                )
+                values = dict(zip(names, args, strict=False))
+                db_session = values.get("db_session", db_session)
+                embedding_service = values.get("embedding_service", embedding_service)
+                reranker = values.get("reranker", reranker)
+                vector_store = values.get("vector_store", vector_store)
+                quality_threshold = values.get("quality_threshold", quality_threshold)
         self._db_session = db_session
         self._embedding_service = embedding_service
         self._reranker = reranker
         self._vector_store = vector_store
-        self.quality_threshold = quality_threshold
+        self.quality_threshold = float(quality_threshold)
+        self._quality_threshold = self.quality_threshold
+        if int(rrf_k) < 0:
+            raise ValueError("rrf_k must be non-negative")
+        self._rrf_k = int(rrf_k)
         # Retained as a compatibility observation point for legacy cleanup
         # tests. It is never consulted by the durable PostgreSQL path.
         self._bm25_indices: dict[str, bool] = {}
@@ -134,9 +188,12 @@ class RetrievalService:
 
     @classmethod
     def _get_cross_encoder(cls) -> Any:
+        if cls._cross_encoder is not None:
+            return cls._cross_encoder
         from sentence_transformers import CrossEncoder
 
-        return CrossEncoder("BAAI/bge-reranker-base")
+        cls._cross_encoder = CrossEncoder("BAAI/bge-reranker-base")
+        return cls._cross_encoder
 
     def _get_reranker(self) -> Any:
         if self._reranker is None:
@@ -156,6 +213,18 @@ class RetrievalService:
         return user_id if course_id is None else f"{user_id}_course_{course_id}"
 
     @staticmethod
+    def _database_user_id(user_id: int | str) -> int:
+        if isinstance(user_id, bool) or not isinstance(user_id, (int, str)):
+            raise ValueError("user_id must be an integer")
+        try:
+            normalized = int(user_id)
+        except (TypeError, ValueError) as exc:
+            raise ValueError("user_id must be an integer") from exc
+        if isinstance(user_id, str) and str(normalized) != user_id.strip():
+            raise ValueError("user_id must be an integer")
+        return normalized
+
+    @staticmethod
     def _embedding_model(service: Any) -> str:
         return str(
             getattr(service, "model_name", None)
@@ -165,7 +234,9 @@ class RetrievalService:
         )
 
     @staticmethod
-    def _validate_embeddings(embeddings: Iterable[Sequence[float]], *, durable: bool) -> None:
+    def _validate_embeddings(
+        embeddings: Iterable[Sequence[float]], *, durable: bool
+    ) -> None:
         for vector in embeddings:
             if durable and len(vector) != VECTOR_DIMENSION:
                 raise ValueError(
@@ -193,12 +264,11 @@ class RetrievalService:
     ) -> list[str]:
         """Embed and persist chunks, updating stable IDs when supplied."""
         if chunk_ids is None:
-            chunk_ids = [
-                str(item.get("chunk_id") or uuid.uuid4()) for item in chunks
-            ]
+            chunk_ids = [str(item.get("chunk_id") or uuid.uuid4()) for item in chunks]
         if len(chunk_ids) != len(chunks) or len(set(chunk_ids)) != len(chunk_ids):
             raise ValueError("chunk_ids must be unique and match the indexed chunks")
         if self._uses_adapter or self._uses_database:
+            user_id = self._database_user_id(user_id)
             if course_id is None:
                 raise ValueError("course_id is required for database retrieval")
             if material_id is None:
@@ -206,13 +276,20 @@ class RetrievalService:
             if material_id is None:
                 raise ValueError("material_id is required for database retrieval")
 
-        payloads = [self._chunk_payload(item, cid) for item, cid in zip(chunks, chunk_ids, strict=True)]
+        payloads = [
+            self._chunk_payload(item, cid)
+            for item, cid in zip(chunks, chunk_ids, strict=True)
+        ]
         texts = [item["text"] for item in payloads]
         embedding_service = self._get_embedding_service()
         embeddings = list(embedding_service.embed_documents(texts))
         if len(embeddings) != len(payloads):
-            raise ValueError("embedding service returned an unexpected number of vectors")
-        self._validate_embeddings(embeddings, durable=self._uses_adapter or self._uses_database)
+            raise ValueError(
+                "embedding service returned an unexpected number of vectors"
+            )
+        self._validate_embeddings(
+            embeddings, durable=self._uses_adapter or self._uses_database
+        )
 
         if self._uses_adapter:
             await self._db_session.upsert_chunks(
@@ -244,10 +321,11 @@ class RetrievalService:
             if material_id is not None:
                 metadata.setdefault("material_id", material_id)
             metadatas.append(metadata)
+        scope_key = self._scope_key(str(user_id), course_id)
         self._get_vector_store().add(
-            str(user_id), embeddings, texts, metadatas, ids=list(chunk_ids)
+            scope_key, embeddings, texts, metadatas, ids=list(chunk_ids)
         )
-        self._bm25_indices[self._scope_key(str(user_id), course_id)] = True
+        self._bm25_indices[scope_key] = True
         return list(chunk_ids)
 
     async def _upsert_database(
@@ -272,20 +350,36 @@ class RetrievalService:
             )
         )
         existing = {str(row.chunk_id): row for row in result.scalars().all()}
+        missing = [
+            item["chunk_id"] for item in chunks if item["chunk_id"] not in existing
+        ]
+        if missing:
+            # Validate the complete intent set before mutating any ORM row.
+            raise ValueError(f"material chunk intent not found: {', '.join(missing)}")
         for item, vector in zip(chunks, embeddings, strict=True):
             row = existing.get(item["chunk_id"])
-            if row is None:
-                # Production indexing pre-allocates intent rows.  Refuse to
-                # silently create a second source of truth here.
-                raise ValueError(f"material chunk intent not found: {item['chunk_id']}")
+            metadata = dict(item.get("metadata") or {})
+            text = item["text"]
             row.user_id = user_id
             row.course_id = course_id
             row.material_id = material_id
-            row.content = item["text"]
-            row.text_preview = item["text"][:500]
+            row.content = text
+            row.text_preview = text[:300]
+            row.page_number = metadata.get("page_number", metadata.get("page"))
+            row.slide_number = metadata.get("slide_number", metadata.get("slide"))
+            row.section_title = metadata.get("section_title", metadata.get("section"))
+            row.section_level = metadata.get("section_level")
+            row.parent_chunk_index = metadata.get(
+                "parent_chunk_index", item.get("chunk_index")
+            )
+            row.char_start = metadata.get("char_start", 0)
+            row.char_end = metadata.get("char_end", len(text))
+            row.char_count = metadata.get("char_count", len(text))
+            row.content_hash = hashlib.sha256(text.encode("utf-8")).hexdigest()
+            row.lexical_tokens = _lexical_tokens(text)
             row.embedding = vector
             row.embedding_model = embedding_model
-            row.chunk_metadata = item["metadata"]
+            row.chunk_metadata = metadata
         await self._db_session.flush()
 
     async def delete_chunks(
@@ -295,6 +389,7 @@ class RetrievalService:
         course_id: int | str | None = None,
     ) -> None:
         if self._uses_adapter:
+            user_id = self._database_user_id(user_id)
             if course_id is None:
                 raise ValueError("course_id is required for database retrieval")
             await self._db_session.delete_chunks(
@@ -302,6 +397,7 @@ class RetrievalService:
             )
             return
         if self._uses_database:
+            user_id = self._database_user_id(user_id)
             if MaterialChunk is None or select is None:
                 raise RuntimeError("SQLAlchemy MaterialChunk model is unavailable")
             statement = select(MaterialChunk).where(
@@ -314,18 +410,21 @@ class RetrievalService:
                 await self._db_session.delete(row)
             await self._db_session.flush()
             return
-        self._get_vector_store().delete(str(user_id), chunk_ids)
         scope_key = self._scope_key(str(user_id), course_id)
+        self._get_vector_store().delete(scope_key, chunk_ids)
         store = self._get_vector_store()
         remaining = None
         if hasattr(store, "count"):
-            remaining = store.count(str(user_id))
+            remaining = store.count(scope_key)
         elif hasattr(store, "documents"):
             remaining = sum(
                 1
                 for item in store.documents
-                if item.get("user_id") == str(user_id)
-                and (course_id is None or item.get("metadata", {}).get("course_id") == course_id)
+                if item.get("user_id") == scope_key
+                and (
+                    course_id is None
+                    or item.get("metadata", {}).get("course_id") == course_id
+                )
             )
         if remaining == 0:
             self._bm25_indices.pop(scope_key, None)
@@ -334,6 +433,7 @@ class RetrievalService:
         self, user_id: int | str, *, course_id: int | str | None = None
     ) -> None:
         if self._uses_adapter:
+            user_id = self._database_user_id(user_id)
             if hasattr(self._db_session, "delete_collection"):
                 await self._db_session.delete_collection(
                     user_id=user_id, course_id=course_id
@@ -343,10 +443,14 @@ class RetrievalService:
                 for chunk_id, row in list(rows.items()):
                     if getattr(row, "user_id", None) != user_id:
                         continue
-                    if course_id is not None and getattr(row, "course_id", None) != course_id:
+                    if (
+                        course_id is not None
+                        and getattr(row, "course_id", None) != course_id
+                    ):
                         continue
                     del rows[chunk_id]
         elif self._uses_database:
+            user_id = self._database_user_id(user_id)
             if MaterialChunk is None or select is None:
                 return
             statement = select(MaterialChunk).where(MaterialChunk.user_id == user_id)
@@ -357,30 +461,51 @@ class RetrievalService:
                 await self._db_session.delete(row)
             await self._db_session.flush()
         else:
-            scope = str(user_id)
-            if course_id is not None:
-                scope = f"{scope}_course_{course_id}"
-            self._get_vector_store().delete_collection(scope)
+            scope = self._scope_key(str(user_id), course_id)
+            store = self._get_vector_store()
+            store.delete_collection(scope)
+            if course_id is not None and hasattr(store, "delete_by_metadata"):
+                store.delete_by_metadata(str(user_id), {"course_id": course_id})
             self._bm25_indices.pop(scope, None)
 
     @staticmethod
     def _row_values(row: Any) -> tuple[str, str, dict[str, Any], Any, Any, Any]:
         if isinstance(row, dict):
             chunk_id = str(row.get("chunk_id") or row.get("id") or "")
-            text = str(row.get("text") or row.get("content") or row.get("document") or "")
+            text = str(
+                row.get("text") or row.get("content") or row.get("document") or ""
+            )
             metadata = dict(row.get("metadata") or row.get("chunk_metadata") or {})
-            return chunk_id, text, metadata, row.get("embedding"), row.get("distance"), row
+            return (
+                chunk_id,
+                text,
+                metadata,
+                row.get("embedding"),
+                row.get("distance"),
+                row,
+            )
         chunk_id = str(getattr(row, "chunk_id", getattr(row, "id", "")))
         text = str(getattr(row, "content", getattr(row, "text", "")))
-        metadata = dict(getattr(row, "chunk_metadata", getattr(row, "metadata", {})) or {})
-        return chunk_id, text, metadata, getattr(row, "embedding", None), getattr(row, "distance", None), row
+        metadata = dict(
+            getattr(row, "chunk_metadata", getattr(row, "metadata", {})) or {}
+        )
+        return (
+            chunk_id,
+            text,
+            metadata,
+            getattr(row, "embedding", None),
+            getattr(row, "distance", None),
+            row,
+        )
 
     async def _adapter_rows(self) -> list[Any]:
         rows = getattr(self._db_session, "rows", {})
         values = rows.values() if isinstance(rows, dict) else rows
         return list(values)
 
-    async def _database_rows(self, user_id: int | str, course_id: int | str) -> list[Any]:
+    async def _database_rows(
+        self, user_id: int | str, course_id: int | str
+    ) -> list[Any]:
         if MaterialChunk is None or select is None:
             return []
         result = await self._db_session.execute(
@@ -414,6 +539,14 @@ class RetrievalService:
         scope_predicate = []
         if material_scope:
             scope_predicate.append(Material.original_filename.in_(material_scope))
+        # RAG/Quiz pass source restrictions as a metadata filter.  Push that
+        # predicate into both SQL legs before LIMIT so an out-of-scope chunk
+        # cannot consume a candidate slot.
+        source_filter = (metadata_filter or {}).get("source")
+        if isinstance(source_filter, dict) and "$in" in source_filter:
+            scope_predicate.append(Material.original_filename.in_(source_filter["$in"]))
+        elif source_filter is not None:
+            scope_predicate.append(Material.original_filename == source_filter)
         dense_distance = MaterialChunk.embedding.cosine_distance(query_embedding).label(
             "distance"
         )
@@ -436,9 +569,10 @@ class RetrievalService:
         )
         dense_rows = (await self._db_session.execute(dense_query)).all()
 
+        lexical_query_text = _lexical_tokens(query)
         lexical_rank = func.ts_rank(
             func.to_tsvector("simple", MaterialChunk.lexical_tokens),
-            func.plainto_tsquery("simple", query),
+            func.plainto_tsquery("simple", lexical_query_text),
         ).label("rank")
         lexical_query = (
             select(MaterialChunk, lexical_rank)
@@ -452,7 +586,7 @@ class RetrievalService:
                 MaterialChunk.user_id == user_id,
                 MaterialChunk.course_id == course_id,
                 func.to_tsvector("simple", MaterialChunk.lexical_tokens).op("@@")(
-                    func.plainto_tsquery("simple", query)
+                    func.plainto_tsquery("simple", lexical_query_text)
                 ),
                 *scope_predicate,
             )
@@ -493,7 +627,9 @@ class RetrievalService:
             return 0.0
 
     @staticmethod
-    def _matches_metadata(metadata: dict[str, Any], metadata_filter: dict[str, Any] | None) -> bool:
+    def _matches_metadata(
+        metadata: dict[str, Any], metadata_filter: dict[str, Any] | None
+    ) -> bool:
         if not metadata_filter:
             return True
         for key, expected in metadata_filter.items():
@@ -524,7 +660,9 @@ class RetrievalService:
             course_id=getattr(raw, "course_id", metadata.get("course_id", course_id)),
             material_id=getattr(raw, "material_id", metadata.get("material_id")),
             source=source,
-            page_number=getattr(raw, "page_number", metadata.get("page_number", metadata.get("page"))),
+            page_number=getattr(
+                raw, "page_number", metadata.get("page_number", metadata.get("page"))
+            ),
             slide_number=getattr(raw, "slide_number", metadata.get("slide_number")),
             section_title=getattr(raw, "section_title", metadata.get("section_title")),
             section_level=getattr(raw, "section_level", metadata.get("section_level")),
@@ -547,9 +685,13 @@ class RetrievalService:
             return RetrievalResponse("no_results", [])
         if (self._uses_adapter or self._uses_database) and course_id is None:
             raise ValueError("course_id is required for database retrieval")
+        if self._uses_adapter or self._uses_database:
+            user_id = self._database_user_id(user_id)
         embedding_service = self._get_embedding_service()
         query_embedding = embedding_service.embed_query(query)
-        self._validate_embeddings([query_embedding], durable=self._uses_adapter or self._uses_database)
+        self._validate_embeddings(
+            [query_embedding], durable=self._uses_adapter or self._uses_database
+        )
 
         if self._uses_adapter:
             rows = await self._adapter_rows()
@@ -563,9 +705,29 @@ class RetrievalService:
             rows = []
         else:
             filter_value = metadata_filter
-            raw = self._get_vector_store().search(
-                str(user_id), query_embedding, top_k=max(top_k * 4, top_k), metadata_filter=filter_value
+            store = self._get_vector_store()
+            scope_key = self._scope_key(str(user_id), course_id)
+            raw = store.search(
+                scope_key,
+                query_embedding,
+                top_k=max(top_k * 4, top_k),
+                metadata_filter=filter_value,
             )
+            if course_id is not None:
+                # Read legacy user-level collections until they are reindexed;
+                # merge rather than replacing new-scope results.
+                legacy_raw = store.search(
+                    str(user_id),
+                    query_embedding,
+                    top_k=max(top_k * 4, top_k),
+                    metadata_filter=filter_value,
+                )
+                seen_ids = {str(item.get("id") or item.get("chunk_id")) for item in raw}
+                raw.extend(
+                    item
+                    for item in legacy_raw
+                    if str(item.get("id") or item.get("chunk_id")) not in seen_ids
+                )
             rows = []
             for item in raw:
                 item = dict(item)
@@ -620,12 +782,15 @@ class RetrievalService:
         except TypeError:
             rerank_scores = list(reranker.predict(pairs))
         scored = [
-            (row, float(score)) for (row, _), score in zip(candidates, rerank_scores, strict=False)
+            (row, float(score))
+            for (row, _), score in zip(candidates, rerank_scores, strict=False)
         ]
         if not scored:
             return RetrievalResponse("no_results", [])
         if apply_quality_gate:
-            kept = [(row, score) for row, score in scored if score >= self.quality_threshold]
+            kept = [
+                (row, score) for row, score in scored if score >= self.quality_threshold
+            ]
             if not kept:
                 return RetrievalResponse("quality_gate_failed", [])
         else:
@@ -640,10 +805,10 @@ class RetrievalService:
 
     @staticmethod
     def _lexical_score(query: str, text: str) -> float:
-        terms = [term for term in query.lower().split() if term]
+        terms = [term for term in _lexical_tokens(query).split() if term]
         if not terms:
             return 0.0
-        lower = text.lower()
+        lower = _lexical_tokens(text)
         return min(1.0, sum(term in lower for term in terms) / len(terms))
 
 

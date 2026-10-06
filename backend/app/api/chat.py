@@ -63,7 +63,7 @@ async def chat(
 
             result = await run_orchestrator(
                 message=request.message,
-                user_id=current_user.subject,
+                user_id=current_user.id,
                 course_id=conversation_course_id,
                 material_scope=request.material_scope,
                 memory_context=memory_context,

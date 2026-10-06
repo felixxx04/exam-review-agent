@@ -227,7 +227,9 @@ graph.add_conditional_edges(
 orchestrator = graph.compile()
 
 
-async def run_orchestrator(message: str, user_id: str, **kwargs: Any) -> dict[str, Any]:
+async def run_orchestrator(
+    message: str, user_id: int | str, **kwargs: Any
+) -> dict[str, Any]:
     """Convenience function to run the orchestrator with a single message.
 
     Args:

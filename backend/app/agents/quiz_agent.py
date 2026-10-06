@@ -26,7 +26,7 @@ class QuizAgent:
 
     async def generate_quiz(
         self,
-        user_id: str,
+        user_id: int | str,
         topic: str,
         difficulty: float = 0.5,
         count: int = 5,
@@ -56,6 +56,7 @@ class QuizAgent:
             query=topic,
             top_k=count,
             metadata_filter=metadata_filter,
+            material_scope=material_scope,
             course_id=course_id,
         )
         if not chunks and material_scope:
@@ -64,6 +65,7 @@ class QuizAgent:
                 query=topic,
                 top_k=count,
                 metadata_filter=metadata_filter,
+                material_scope=material_scope,
                 apply_quality_gate=False,
                 course_id=course_id,
             )
@@ -89,7 +91,7 @@ class QuizAgent:
 
     async def grade_answer(
         self,
-        user_id: str,
+        user_id: int | str,
         question_id: str,
         correct_answer: str,
         student_answer: str,

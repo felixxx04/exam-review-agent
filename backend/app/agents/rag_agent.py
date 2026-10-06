@@ -32,7 +32,7 @@ class RAGAgent:
     async def answer(
         self,
         question: str,
-        user_id: str,
+        user_id: int | str,
         material_scope: list[str] | None = None,
         memory_context: dict | None = None,
         course_id: int | None = None,
@@ -48,6 +48,7 @@ class RAGAgent:
             query=question,
             top_k=5,
             metadata_filter=metadata_filter,
+            material_scope=material_scope,
             course_id=course_id,
         )
 

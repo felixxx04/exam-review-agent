@@ -206,6 +206,7 @@ async def test_quiz_agent_falls_back_to_scoped_material_when_topic_is_generic():
     assert agent.retrieval.search.await_count == 2
     fallback_call = agent.retrieval.search.await_args_list[1].kwargs
     assert fallback_call["metadata_filter"] == {"source": {"$in": ["MQ.docx"]}}
+    assert fallback_call["material_scope"] == ["MQ.docx"]
     assert fallback_call["apply_quality_gate"] is False
     agent.generator.generate.assert_awaited_once()
 
@@ -234,6 +235,7 @@ async def test_quiz_agent_passes_material_scope():
     assert call_kwargs["metadata_filter"] == {
         "source": {"$in": ["notes.pdf", "slides.pdf"]}
     }
+    assert call_kwargs["material_scope"] == ["notes.pdf", "slides.pdf"]
 
 
 @pytest.mark.asyncio

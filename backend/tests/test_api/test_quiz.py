@@ -69,11 +69,38 @@ class TestQuizGenerate:
         build_agent.assert_called_once_with()
         agent.generate_quiz.assert_awaited_once()
         kwargs = agent.generate_quiz.await_args.kwargs
+        assert kwargs["user_id"] == 1
+        assert isinstance(kwargs["user_id"], int)
         assert kwargs["topic"] == "线性代数"
         assert kwargs["difficulty"] == 0.5
         assert kwargs["count"] == 5
         assert kwargs["material_scope"] is None
         assert kwargs["course_id"] is not None
+
+    @pytest.mark.asyncio
+    async def test_generate_quiz_passes_material_scope_to_agent(
+        self, client_with_db, monkeypatch
+    ):
+        agent = SimpleNamespace(
+            generate_quiz=AsyncMock(
+                return_value=QuizResponse(questions=[], topic="线性代数")
+            )
+        )
+        monkeypatch.setattr("app.api.quiz._build_quiz_agent", Mock(return_value=agent))
+
+        response = await client_with_db.post(
+            "/api/quiz/generate",
+            json={
+                "topic": "线性代数",
+                "material_scope": ["linear.pdf"],
+            },
+        )
+
+        assert response.status_code == 200
+        kwargs = agent.generate_quiz.await_args.kwargs
+        assert kwargs["user_id"] == 1
+        assert isinstance(kwargs["user_id"], int)
+        assert kwargs["material_scope"] == ["linear.pdf"]
 
 
 class TestQuizSubmit:

@@ -65,7 +65,7 @@ async def generate_quiz(
     else:
         agent = _build_quiz_agent()
     response = await agent.generate_quiz(
-        user_id=current_user.subject,
+        user_id=current_user.id,
         topic=request.topic,
         course_id=course.id,
         difficulty=request.difficulty,

@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import datetime
 import hashlib
+import inspect
 import logging
 import secrets
 from dataclasses import dataclass
@@ -350,15 +351,24 @@ class AccountDeletionService:
             from app.services.retrieval_service import RetrievalService
 
             retrieval = RetrievalService(db_session=self.db)
+            delete_collection = retrieval.delete_collection
             try:
-                await retrieval.delete_collection(user_id=user_id)
-            except TypeError:
-                # Older adapters may require a course scope; rows are also
-                # removed by the account cascade below.
-                for course_id in course_ids:
-                    await retrieval.delete_collection(
-                        user_id=user_id, course_id=course_id
-                    )
+                signature = inspect.signature(delete_collection)
+            except (TypeError, ValueError):
+                # Extension-backed callables may not expose a signature; call
+                # the current contract once and preserve any real exception.
+                await delete_collection(user_id=user_id)
+            else:
+                try:
+                    signature.bind(user_id=user_id)
+                except TypeError:
+                    # Older adapters may require a course scope; inspect the
+                    # callable before invoking it so an internal TypeError is
+                    # never mistaken for a signature mismatch.
+                    for course_id in course_ids:
+                        await delete_collection(user_id=user_id, course_id=course_id)
+                else:
+                    await delete_collection(user_id=user_id)
         except Exception as exc:
             logger.exception(
                 "Account artifact cleanup failed job_id=%s user_id=%s error_type=%s",

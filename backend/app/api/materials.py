@@ -64,10 +64,10 @@ class MaterialProcessingCancelled(asyncio.CancelledError):
 
 
 def _lexical_tokens(text: str) -> str:
-    import re
+    # Keep index-time tokenization identical to the durable retrieval query.
+    from app.services.retrieval_service import _lexical_tokens as tokenize
 
-    tokens = re.findall(r"[\u4e00-\u9fff]|[A-Za-z0-9_]+", text.lower())
-    return " ".join(tokens)
+    return tokenize(text)
 
 
 def _display_filename(filename: str) -> str:
@@ -613,7 +613,9 @@ async def _process_material(
             await ensure_not_cancelled()
             try:
                 await retrieval.index_chunks(
-                    user_id=str(material.user_id) if legacy_retrieval else material.user_id,
+                    user_id=str(material.user_id)
+                    if legacy_retrieval
+                    else material.user_id,
                     chunks=chunk_payloads,
                     course_id=course_id,
                     chunk_ids=indexed_chunk_ids,
@@ -624,7 +626,9 @@ async def _process_material(
                 if "material_id" not in str(exc):
                     raise
                 await retrieval.index_chunks(
-                    user_id=str(material.user_id) if legacy_retrieval else material.user_id,
+                    user_id=str(material.user_id)
+                    if legacy_retrieval
+                    else material.user_id,
                     chunks=chunk_payloads,
                     course_id=course_id,
                     chunk_ids=indexed_chunk_ids,
