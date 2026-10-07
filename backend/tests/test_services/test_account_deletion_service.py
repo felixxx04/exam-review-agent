@@ -174,6 +174,76 @@ async def test_account_deletion_supports_course_scoped_retrieval_adapter(
 
 
 @pytest.mark.asyncio
+async def test_account_deletion_supports_legacy_retrieval_factory_without_database_cleanup(
+    db_session, object_storage, monkeypatch
+):
+    from app.services.account_deletion_service import (
+        AccountArtifactCleaner,
+        AccountDeletionService,
+    )
+
+    user, course, _material = await _user_with_material(
+        db_session, object_storage, "delete_legacy_retrieval_factory"
+    )
+
+    class LegacyRetrieval:
+        def __init__(self):
+            pass
+
+    monkeypatch.setattr(
+        "app.services.retrieval_service.RetrievalService", LegacyRetrieval
+    )
+    vector_store = RecordingVectorStore()
+    service = AccountDeletionService(
+        db_session, AccountArtifactCleaner(object_storage, vector_store)
+    )
+
+    requested = await service.request(user.id)
+    await service.execute(requested.job.public_id)
+
+    assert requested.job.status == "succeeded"
+    assert vector_store.deleted == [
+        str(user.id),
+        f"{user.id}_course_{course.id}",
+    ]
+    assert await db_session.get(User, user.id) is None
+
+
+@pytest.mark.asyncio
+async def test_account_deletion_rejects_modern_retrieval_without_cleanup_method(
+    db_session, object_storage, monkeypatch
+):
+    from app.services.account_deletion_service import (
+        AccountArtifactCleaner,
+        AccountDeletionService,
+    )
+
+    user, _course, _material = await _user_with_material(
+        db_session, object_storage, "delete_missing_modern_cleanup"
+    )
+
+    class ModernRetrievalWithoutCleanup:
+        def __init__(self, *, db_session):
+            del db_session
+
+    monkeypatch.setattr(
+        "app.services.retrieval_service.RetrievalService",
+        ModernRetrievalWithoutCleanup,
+    )
+    service = AccountDeletionService(
+        db_session,
+        AccountArtifactCleaner(object_storage, RecordingVectorStore()),
+    )
+
+    requested = await service.request(user.id)
+    await service.execute(requested.job.public_id)
+
+    assert requested.job.status == "failed"
+    assert requested.job.error_code == "ARTIFACT_CLEANUP_FAILED"
+    assert await db_session.get(User, user.id) is not None
+
+
+@pytest.mark.asyncio
 async def test_account_deletion_fences_queued_and_running_material_jobs(
     db_session, object_storage
 ):

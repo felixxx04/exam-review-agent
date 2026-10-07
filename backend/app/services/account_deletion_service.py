@@ -350,25 +350,52 @@ class AccountDeletionService:
             # this tenant-bound session before deleting the account.
             from app.services.retrieval_service import RetrievalService
 
-            retrieval = RetrievalService(db_session=self.db)
-            delete_collection = retrieval.delete_collection
+            legacy_factory = False
             try:
-                signature = inspect.signature(delete_collection)
+                factory_signature = inspect.signature(RetrievalService)
             except (TypeError, ValueError):
-                # Extension-backed callables may not expose a signature; call
+                # Extension-backed factories may not expose a signature; call
                 # the current contract once and preserve any real exception.
-                await delete_collection(user_id=user_id)
+                retrieval = RetrievalService(db_session=self.db)
             else:
                 try:
-                    signature.bind(user_id=user_id)
+                    factory_signature.bind(db_session=self.db)
                 except TypeError:
-                    # Older adapters may require a course scope; inspect the
-                    # callable before invoking it so an internal TypeError is
-                    # never mistaken for a signature mismatch.
-                    for course_id in course_ids:
-                        await delete_collection(user_id=user_id, course_id=course_id)
+                    # Older factories do not accept the durable-session
+                    # keyword. Construct them without arguments so their
+                    # process-local cleanup can remain a compatibility path.
+                    retrieval = RetrievalService()
+                    legacy_factory = True
                 else:
+                    retrieval = RetrievalService(db_session=self.db)
+
+            delete_collection = getattr(retrieval, "delete_collection", None)
+            if delete_collection is None:
+                if not legacy_factory:
+                    raise AttributeError(
+                        "RetrievalService must provide delete_collection"
+                    )
+            else:
+                try:
+                    signature = inspect.signature(delete_collection)
+                except (TypeError, ValueError):
+                    # Extension-backed callables may not expose a signature;
+                    # call the current contract once and preserve any real
+                    # exception.
                     await delete_collection(user_id=user_id)
+                else:
+                    try:
+                        signature.bind(user_id=user_id)
+                    except TypeError:
+                        # Older adapters may require a course scope; inspect
+                        # the callable before invoking it so an internal
+                        # TypeError is never mistaken for a signature mismatch.
+                        for course_id in course_ids:
+                            await delete_collection(
+                                user_id=user_id, course_id=course_id
+                            )
+                    else:
+                        await delete_collection(user_id=user_id)
         except Exception as exc:
             logger.exception(
                 "Account artifact cleanup failed job_id=%s user_id=%s error_type=%s",

@@ -1,20 +1,20 @@
 # Exam Review Agent 会话交接文档
 
-> 更新日期：2026-09-30
+> 更新日期：2026-10-07
 > 项目目录：`C:\Users\asus\Documents\exam-review-agent`  
 > 当前分支：`main`
 > 当前提交：本轮 Task 3 前置收口合并提交（具体哈希以 `git log -1` 为准）
 > 远程状态：本轮 Task 3 前置收口提交已推送，`main` 与 `origin/main` 同步；`codex/phase-1-postgres` 仍指向 `4a0ed0c`。
 >
-> **当前状态覆盖（2026-09-27）：** Task 2.2 已完成 lease 修复、聚焦回归和交接；Task 2.3 已由 `7bd3ffd`（RED 契约）和 `57c0c3d`（实现）完成；Task 2.4 已完成离线 RED/GREEN benchmark。Task 3.1、pgvector 检索切换、Planner/Agent Runtime 和无关重构仍未开始。下文 2026-09-24 的 Task 2.2 状态是历史快照，不作为当前执行指令。
+> **当前状态覆盖（2026-10-07）：** Task 2.2、Task 2.3、Task 2.4 和 Task 3.1 均已完成当前范围的实现、审查与验证；Task 3.2、Planner/Agent Runtime 和无关重构尚未开始。下文早于本覆盖段的状态均为历史快照，不作为当前执行指令。
 >
-> **本次会话状态覆盖（2026-10-03）：** Task 2 前置收口与非阻塞质量债务处理完成。后端全量 `510 passed, 0 skipped`，综合覆盖率 `82%`；真实 PostgreSQL 8 项、MinIO 2 项通过。真实 SiliconFlow Embedding/Reranker benchmark 均通过，最新结果已写入 benchmark 文档；SiliconFlow key 仅用于 benchmark。使用独立的 DeepSeek key 运行 `python -m app.cli.live_llm_smoke --key-file ...` 已通过：`LIVE_LLM_SMOKE=PASS QUESTIONS=1 OPTIONS=4`。全仓 Ruff lint/format、Bandit、compileall、diff 检查通过；修复 ARQ Redis pool 关闭优先使用 `aclose()`，并补齐同步 `close()` 回退测试。Compose MinIO/MC 使用固定 digest，隔离端口 `19000/19001` 的 bootstrap 与集成测试通过。生产检索路径未改变。Task 3.1 仍未开始。
+> **本次会话状态覆盖（2026-10-07）：** Task 3.1 账号删除兼容性审查修复完成。后端全量 `527 passed, 10 skipped`，综合覆盖率 `82%`；真实 PostgreSQL/pgvector/RLS/删除并发集成 `8 passed`，真实 MinIO 对象存储集成 `2 passed`。Docker Desktop Engine `29.7.2` 和 Compose 服务均健康；MinIO 测试使用 `docker compose port minio 9000` 获取实际发布端口，避免旧容器端口映射造成连接拒绝。Task 3.2 尚未开始。
 > Task 1.4 最终功能提交：`3b5e37e feat: complete deletion and quota reliability`
 > Task 2.1 最终生产 GREEN checkpoint：`faa1e25 fix: bound object version pagination`（完整安全加固提交链见 2.4；Task 2.1 已获用户验收）
 > Task 2.2 当前状态：实现、lease 修复、离线聚焦回归、真实 PostgreSQL/Redis/MinIO 集成与异步队列关闭兼容修复均已完成。
 > 基线提交：`23c17b5 feat: polish learning workspace UI and review flows`
 >
-> 重要区分：`65505dd` 已包含 Task 2.4 SiliconFlow provider、CLI、测试和 benchmark 文档；本轮质量债务修复、Compose 可复现性及验证证据均已另行提交。Task 3.1 尚未开始。
+> 重要区分：`65505dd` 已包含 Task 2.4 SiliconFlow provider、CLI、测试和 benchmark 文档；Task 3.1 已完成并通过真实 PostgreSQL/pgvector/RLS 验证。本轮账号删除兼容性修复、动态 MinIO 端口文档和验证证据将随本次提交推送。Task 3.2 尚未开始。
 
 ## 1. 给新会话的执行指令
 

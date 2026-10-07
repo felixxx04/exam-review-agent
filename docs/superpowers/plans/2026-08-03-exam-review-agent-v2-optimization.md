@@ -562,7 +562,7 @@ run.cancelled
 - Review 修复：恢复 `_rrf_k` 与旧构造函数兼容，统一中文 FTS tokenizer，资料范围在 SQL `LIMIT` 前下推，重建索引同步刷新 lexical/hash/定位字段；缺失 intent 在写入前原子失败；Cross-Encoder 使用进程级懒加载；RAG/Quiz 显式传递 `material_scope`，Chat/Quiz 使用整数 `current_user.id`，账号删除不再吞内部 `TypeError`。
 - Legacy Chroma 仅作为兼容路径：新写入使用 user/course scope，检索会回退旧 user-level collection，课程删除按 metadata 定向清理旧数据；生产事实源仍为 PostgreSQL。
 - 修复后验证：后端全量 `523 passed, 10 skipped`，覆盖率 `82%`；本轮改动文件 Ruff lint/format、Bandit、`compileall` 和 `git diff --check` 通过。
-- Docker Engine 当前未连接，真实 PostgreSQL/pgvector/RLS 集成验证待 Docker 恢复后补跑；本地 SQLite/适配器和 SQL 结构契约不替代该集成证据。
+- Docker Engine `29.7.2` 当前已连接；真实 PostgreSQL/pgvector/RLS 集成 `8 passed`，真实 MinIO 集成 `2 passed`。当前运行 MinIO 容器的主机端口由 `docker compose port minio 9000` 确认（本次为 `19000`）；本地 SQLite/适配器和 SQL 结构契约不替代这些真实集成证据。
 
 ### Task 3.2：结构化证据回答
 

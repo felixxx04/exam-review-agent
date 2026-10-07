@@ -139,7 +139,9 @@ python -m pytest tests/integration/test_postgres_rls.py tests/integration/test_p
 私有 MinIO bootstrap 成功后，可用与后端相同的低权限 S3 应用身份运行真实对象存储测试：
 
 ```powershell
-$env:MINIO_INTEGRATION_ENDPOINT_URL="http://127.0.0.1:9000"
+# Use the port published by the running container (the existing stack may use 19000).
+$minioHostPort = (docker compose port minio 9000).Trim().Split(':')[-1]
+$env:MINIO_INTEGRATION_ENDPOINT_URL="http://127.0.0.1:$minioHostPort"
 $env:MINIO_INTEGRATION_BUCKET="<private-bucket>"
 $env:MINIO_INTEGRATION_ACCESS_KEY="<s3-application-access-key>"
 $env:MINIO_INTEGRATION_SECRET_KEY="<s3-application-secret>"
