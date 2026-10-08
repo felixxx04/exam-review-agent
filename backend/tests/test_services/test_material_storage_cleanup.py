@@ -16,7 +16,11 @@ from app.db.models import (
     StorageStatus,
 )
 from app.services import material_storage_cleanup
-from app.services.material_storage_cleanup import recover_stale_material_reservations
+from app.services.course_service import CourseService
+from app.services.material_storage_cleanup import (
+    delete_material_chunks,
+    recover_stale_material_reservations,
+)
 from app.services.quota_service import QuotaService
 from app.services.retrieval_service import RetrievalService
 
@@ -169,6 +173,84 @@ async def test_stale_deleting_material_with_chunks_remains_retryable(
     assert report.pending == 1
     assert material.storage_status == StorageStatus.DELETING
     assert material.object_key not in object_storage.objects
+
+
+@pytest.mark.asyncio
+async def test_delete_material_chunks_does_not_retry_internal_type_error(
+    db_session, authenticated_user, object_storage, monkeypatch
+):
+    material = await _stale_material(
+        db_session,
+        authenticated_user,
+        object_storage,
+        status=StorageStatus.DELETING,
+    )
+    db_session.add(
+        MaterialChunk(
+            material_id=material.id,
+            user_id=material.user_id,
+            course_id=material.course_id,
+            chunk_id="internal-type-error",
+            text_preview="adapter failure",
+            char_count=1,
+            embedding_id="internal-type-error",
+        )
+    )
+    await db_session.commit()
+    calls = 0
+
+    class FailingRetrieval:
+        def __init__(self, *, db_session):
+            del db_session
+
+        async def delete_chunks(self, *, user_id, chunk_ids, course_id):
+            nonlocal calls
+            del user_id, chunk_ids, course_id
+            calls += 1
+            raise TypeError("course_id encoding failed inside adapter")
+
+    monkeypatch.setattr(
+        "app.services.retrieval_service.RetrievalService", FailingRetrieval
+    )
+
+    with pytest.raises(TypeError, match="course_id encoding"):
+        await delete_material_chunks(db_session, material=material)
+
+    assert calls == 1
+    assert (
+        await db_session.scalar(
+            select(MaterialChunk.id).where(MaterialChunk.material_id == material.id)
+        )
+        is not None
+    )
+
+
+@pytest.mark.asyncio
+async def test_course_collection_cleanup_does_not_retry_internal_type_error(
+    db_session, monkeypatch
+):
+    calls = 0
+
+    class FailingRetrieval:
+        def __init__(self, *, db_session):
+            del db_session
+
+        async def delete_collection(self, *, user_id, course_id):
+            nonlocal calls
+            del user_id, course_id
+            calls += 1
+            raise TypeError("course_id encoding failed inside adapter")
+
+    monkeypatch.setattr(
+        "app.services.retrieval_service.RetrievalService", FailingRetrieval
+    )
+
+    with pytest.raises(TypeError, match="course_id encoding"):
+        await CourseService(db_session)._delete_course_collection(
+            user_id=1, course_id=2
+        )
+
+    assert calls == 1
 
 
 @pytest.mark.asyncio

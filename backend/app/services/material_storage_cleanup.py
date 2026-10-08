@@ -18,6 +18,7 @@ from app.db.models import (
     User,
 )
 from app.services.object_storage import ObjectStorage, ObjectStorageError
+from app.services.compatibility import compatible_call_kwargs
 
 
 logger = logging.getLogger(__name__)
@@ -81,26 +82,29 @@ async def delete_material_chunks(
         # Keep cleanup in the same session/tenant boundary as the durable
         # MaterialChunk intent rows.  This also makes deletion auditable and
         # prevents a legacy process-local index from becoming authoritative.
-        legacy_constructor = False
-        try:
-            retrieval = RetrievalService(db_session=db)
-        except TypeError as exc:
-            if "db_session" not in str(exc):
-                raise
-            retrieval = RetrievalService()
-            legacy_constructor = True
-        try:
-            await retrieval.delete_chunks(
-                user_id=str(material.user_id) if legacy_constructor else material.user_id,
-                chunk_ids=chunk_ids,
-                course_id=material.course_id,
-            )
-        except TypeError as exc:
-            if "course_id" not in str(exc):
-                raise
-            await retrieval.delete_chunks(
-                user_id=str(material.user_id), chunk_ids=chunk_ids
-            )
+        constructor_kwargs = compatible_call_kwargs(
+            RetrievalService,
+            modern={"db_session": db},
+            legacy={},
+        )
+        legacy_constructor = not constructor_kwargs
+        retrieval = RetrievalService(**constructor_kwargs)
+        delete_kwargs = {
+            "user_id": str(material.user_id)
+            if legacy_constructor
+            else material.user_id,
+            "chunk_ids": chunk_ids,
+            "course_id": material.course_id,
+        }
+        legacy_delete_kwargs = {
+            key: value for key, value in delete_kwargs.items() if key != "course_id"
+        }
+        selected_delete_kwargs = compatible_call_kwargs(
+            retrieval.delete_chunks,
+            modern=delete_kwargs,
+            legacy=legacy_delete_kwargs,
+        )
+        await retrieval.delete_chunks(**selected_delete_kwargs)
     await db.execute(
         delete(MaterialChunk).where(MaterialChunk.material_id == material.id)
     )

@@ -32,14 +32,14 @@
 
 ## 结果
 
-Task 1.1 已将业务默认连接切换到 PostgreSQL，并建立 `vector(1024)`、JSONB、HNSW、全文索引及错题 Repository。旧 SQLite 数据不迁移。当前 Chroma 只保留为 Phase 3 前的临时检索实现，不与 pgvector 双写向量；Phase 3 将按评测驱动切换检索路径。
+Task 1.1 已将业务默认连接切换到 PostgreSQL，并建立 `vector(1024)`、JSONB、HNSW、全文索引及错题 Repository。旧 SQLite 数据不迁移。Task 3.1 已将生产检索切换为 PostgreSQL pgvector + PostgreSQL FTS，应用层使用 RRF 融合和 Cross-Encoder 重排；Chroma 仅保留为旧调用方兼容路径，不作为生产资料检索事实源。
 
-## Task 2.4 免费资源基准状态（2026-09-27）
+## Task 2.4 免费资源基准状态（更新至 2026-10-08）
 
 - 新增独立、可注入的离线基准 runner，报告模型 artifact 大小、首次加载、单页吞吐、进程峰值工作集/RSS、Recall@k 和 MRR；固定 fixture 同时验证本地与远程兼容 provider 的 Embedding 和 Cross-Encoder 契约。
-- fixture 性能数值不是模型实测。当前 Windows 主机约有 1.9 GiB 可用内存；缓存中的 `BAAI/bge-large-zh-v1.5` 与 `BAAI/bge-reranker-base` 目录分别约 2.7 GiB 和 1.1 GiB，因此本次没有尝试冷启动，也没有取得小型本地模型或远程 endpoint 的实际测量。
-- 不据模型名称、artifact 大小或 fixture 数值决定生产 provider。Task 2.4 的真实资源/检索效果比较仍需在有足够内存的隔离进程中，对小型本地模型和明确配置的远程兼容 provider 使用同一标注集测量；该证据齐备前维持现有生产路径。
+- 初始实施阶段因内存余量有限未加载大模型；后续已在隔离新进程中完成轻量本地与 SiliconFlow 远程实测，详见下列记录。两文档 fixture 的质量数值仅是管线检查，不构成生产效果证据。
+- 不据模型名称、artifact 大小或小型 fixture 数值决定生产 provider。benchmark provider 保持独立，不替换当前生产 Embedding/Reranker 配置。
 - 2026-09-28 已在 Windows CPU 隔离进程完成本地实测：`BAAI/bge-small-zh-v1.5` 为 96,405,966 bytes、冷启动 90.5 ms、约 158.1 页/秒、峰值工作集 412.8 MB；`BAAI/bge-reranker-base` 为 1,134,408,930 bytes、冷启动 1,998.4 ms、约 9.65 页/秒、峰值工作集 1,010.1 MB。两者在两文档 fixture 上 Recall@1/MRR 均为 1.0，该质量结果只证明 runner 链路可用。
-- 2026-09-30 已在两个新鲜 Python 进程复测 SiliconFlow 远程 provider：`BAAI/bge-m3` 为冷启动 278.9 ms、约 2.193 页/秒、峰值工作集 42.63 MB；`BAAI/bge-reranker-v2-m3` 为冷启动 271.1 ms、约 6.378 页/秒、峰值工作集 41.96 MB。两者在同一两文档 fixture 上 Recall@1/MRR 均为 1.0；托管 alias 未固定 revision，且本地无法测量远程 artifact 大小。该 key 仅在 benchmark 进程内使用，不用于 DeepSeek 聊天冒烟。
-- 远程结果补齐了 Task 2.4 的 provider 对照证据，但 fixture 规模和 alias 版本限制了结论范围；不据这些数值选择生产 provider，不切换生产检索路径。
-- 本工作不替换 Embedding/Reranker，不改 Chroma/进程内 BM25，不切换 pgvector 检索；生产检索迁移仍属于 Task 3.1。
+- 2026-10-08 已在两个新鲜 Python 进程复测 SiliconFlow 远程 provider：`BAAI/bge-m3` 为冷启动 306.6 ms、约 3.767 页/秒、峰值工作集 42.77 MB；`BAAI/bge-reranker-v2-m3` 为冷启动 281.8 ms、约 7.224 页/秒、峰值工作集 42.21 MB。两者在同一两文档 fixture 上 Recall@1/MRR 均为 1.0；托管 alias 未固定 revision，且本地无法测量远程 artifact 大小。该 key 仅在 benchmark 进程内使用，不用于 DeepSeek 聊天冒烟。
+- 远程结果补齐了 Task 2.4 的 provider 对照证据，但 fixture 规模和 alias 版本限制了结论范围；不据这些数值选择生产 provider。
+- Task 3.1 已独立完成生产检索迁移。2026-10-08 的真实 pgvector 集成直接验证 `RetrievalService(db_session=...)` 的 1024 维写入、Dense/FTS/RRF、metadata 与课程/资料范围过滤、服务重启后读取及清理；本轮修复还将 JSONB scalar predicate 显式编译为 PostgreSQL `->>` 文本提取，以避免 asyncpg 将 JSONB 与 VARCHAR 比较导致运行时错误。

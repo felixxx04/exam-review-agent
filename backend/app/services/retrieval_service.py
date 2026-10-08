@@ -9,15 +9,20 @@ from __future__ import annotations
 
 import math
 import hashlib
+import inspect
 import re
 import uuid
 from dataclasses import dataclass, field
 from typing import Any, Iterable, Iterator, Sequence
 
 try:
-    from sqlalchemy import func, select
+    from sqlalchemy import cast, func, or_, select
+    from sqlalchemy.dialects.postgresql import JSONB
 except Exception:  # pragma: no cover - optional during lightweight tests
+    cast = None
     func = None
+    JSONB = None
+    or_ = None
     select = None
 
 try:
@@ -452,7 +457,7 @@ class RetrievalService:
         elif self._uses_database:
             user_id = self._database_user_id(user_id)
             if MaterialChunk is None or select is None:
-                return
+                raise RuntimeError("SQLAlchemy MaterialChunk model is unavailable")
             statement = select(MaterialChunk).where(MaterialChunk.user_id == user_id)
             if course_id is not None:
                 statement = statement.where(MaterialChunk.course_id == course_id)
@@ -547,6 +552,38 @@ class RetrievalService:
             scope_predicate.append(Material.original_filename.in_(source_filter["$in"]))
         elif source_filter is not None:
             scope_predicate.append(Material.original_filename == source_filter)
+        for key, expected in (metadata_filter or {}).items():
+            if key == "source":
+                continue
+            # Keep JSON scalar types intact so a numeric/boolean filter cannot
+            # be confused with a string that happens to have the same text.
+            metadata_value = MaterialChunk.chunk_metadata.op("->")(key)
+            if isinstance(expected, dict) and "$in" in expected:
+                values = list(expected["$in"])
+                if not values:
+                    scope_predicate.append(metadata_value.in_([]))
+                elif or_ is not None:
+                    clauses = []
+                    for value in values:
+                        if value is None:
+                            clauses.append(
+                                or_(
+                                    metadata_value.is_(None),
+                                    metadata_value == cast(None, JSONB),
+                                )
+                            )
+                        else:
+                            clauses.append(metadata_value == cast(value, JSONB))
+                    scope_predicate.append(or_(*clauses))
+                else:  # pragma: no cover - only reachable without SQLAlchemy
+                    scope_predicate.append(metadata_value == cast(values[0], JSONB))
+            else:
+                if expected is None:
+                    scope_predicate.append(
+                        metadata_value.is_(None) | (metadata_value == cast(None, JSONB))
+                    )
+                else:
+                    scope_predicate.append(metadata_value == cast(expected, JSONB))
         dense_distance = MaterialChunk.embedding.cosine_distance(query_embedding).label(
             "distance"
         )
@@ -777,14 +814,29 @@ class RetrievalService:
 
         reranker = self._get_reranker()
         pairs = [(query, self._row_values(row)[1]) for row, _ in candidates]
+        predict = reranker.predict
         try:
-            rerank_scores = list(reranker.predict(pairs, show_progress_bar=False))
-        except TypeError:
-            rerank_scores = list(reranker.predict(pairs))
-        scored = [
-            (row, float(score))
-            for (row, _), score in zip(candidates, rerank_scores, strict=False)
-        ]
+            parameters = inspect.signature(predict).parameters
+        except (TypeError, ValueError):
+            parameters = {}
+        if "show_progress_bar" in parameters or any(
+            parameter.kind is inspect.Parameter.VAR_KEYWORD
+            for parameter in parameters.values()
+        ):
+            rerank_scores = list(predict(pairs, show_progress_bar=False))
+        else:
+            rerank_scores = list(predict(pairs))
+        if len(rerank_scores) != len(candidates):
+            raise ValueError("reranker must return one score per candidate")
+        scored = []
+        for (row, _), score in zip(candidates, rerank_scores, strict=True):
+            try:
+                normalized_score = float(score)
+            except (TypeError, ValueError, OverflowError) as exc:
+                raise ValueError("reranker scores must be numeric") from exc
+            if not math.isfinite(normalized_score):
+                raise ValueError("reranker scores must be finite")
+            scored.append((row, normalized_score))
         if not scored:
             return RetrievalResponse("no_results", [])
         if apply_quality_gate:

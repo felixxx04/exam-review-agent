@@ -24,6 +24,7 @@ from app.services.material_storage_cleanup import (
     delete_material_chunks,
     is_processing_lease_active,
 )
+from app.services.compatibility import compatible_call_kwargs
 from app.services.object_storage import ObjectStorage, ObjectStorageError
 from app.services.quota_service import QuotaService
 
@@ -265,27 +266,25 @@ class CourseService:
     async def _delete_course_collection(self, *, user_id: int, course_id: int) -> None:
         from app.services.retrieval_service import RetrievalService
 
-        legacy_constructor = False
-        try:
-            retrieval = RetrievalService(db_session=self.db)
-        except TypeError as exc:
-            if "db_session" not in str(exc):
-                raise
-            retrieval = RetrievalService()
-            legacy_constructor = True
-        try:
-            await retrieval.delete_collection(
-                user_id=str(user_id) if legacy_constructor else user_id,
-                course_id=course_id,
-            )
-        except TypeError as exc:
-            # Legacy test doubles and the pre-Task 3.1 adapter only accepted
-            # a user collection. Their database rows are still removed below.
-            if "course_id" not in str(exc):
-                raise
-            await retrieval.delete_collection(
-                user_id=str(user_id) if legacy_constructor else user_id
-            )
+        constructor_kwargs = compatible_call_kwargs(
+            RetrievalService,
+            modern={"db_session": self.db},
+            legacy={},
+        )
+        legacy_constructor = not constructor_kwargs
+        retrieval = RetrievalService(**constructor_kwargs)
+        delete_kwargs = {
+            "user_id": str(user_id) if legacy_constructor else user_id,
+            "course_id": course_id,
+        }
+        # Legacy test doubles and the pre-Task 3.1 adapter only accepted a
+        # user collection. Their database rows are still removed below.
+        selected_delete_kwargs = compatible_call_kwargs(
+            retrieval.delete_collection,
+            modern=delete_kwargs,
+            legacy={"user_id": delete_kwargs["user_id"]},
+        )
+        await retrieval.delete_collection(**selected_delete_kwargs)
 
     async def _delete_course_record(self, course: Course, *, user_id: int) -> None:
         was_default = course.is_default

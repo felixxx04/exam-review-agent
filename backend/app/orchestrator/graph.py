@@ -12,6 +12,7 @@ from app.repositories.mistakes import SessionFactoryMistakeRepository
 from app.schemas.quiz import to_quiz_payload
 from app.services.llm_service import get_default_llm_service
 from app.services.retrieval_service import RetrievalService
+from app.services.compatibility import compatible_call_kwargs
 from app.specialists.quiz_generator import QuizGenerator
 
 from .router import classify_intent
@@ -138,12 +139,12 @@ def _summarize_review(concepts: list[dict]) -> str:
 async def handle_qa_node(state: AgentState) -> dict[str, Any]:
     """Answer a question against uploaded materials."""
     question = _get_last_user_message(state)
-    try:
-        agent = _build_rag_agent(db_session=state.get("db_session"))
-    except TypeError as exc:
-        if "db_session" not in str(exc):
-            raise
-        agent = _build_rag_agent()
+    build_kwargs = compatible_call_kwargs(
+        _build_rag_agent,
+        modern={"db_session": state.get("db_session")},
+        legacy={},
+    )
+    agent = _build_rag_agent(**build_kwargs)
     response = await agent.answer(
         question=question,
         user_id=state["user_id"],
@@ -165,12 +166,12 @@ async def handle_quiz_node(state: AgentState) -> dict[str, Any]:
     topic = _derive_quiz_topic(message)
     difficulty = 0.5
 
-    try:
-        agent = _build_quiz_agent(db_session=state.get("db_session"))
-    except TypeError as exc:
-        if "db_session" not in str(exc):
-            raise
-        agent = _build_quiz_agent()
+    build_kwargs = compatible_call_kwargs(
+        _build_quiz_agent,
+        modern={"db_session": state.get("db_session")},
+        legacy={},
+    )
+    agent = _build_quiz_agent(**build_kwargs)
     response = await agent.generate_quiz(
         user_id=state["user_id"],
         topic=topic,

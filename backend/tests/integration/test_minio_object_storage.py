@@ -99,38 +99,6 @@ async def test_minio_private_object_lifecycle_and_presigned_download(tmp_path):
     )
     await storage.check_bucket()
 
-    stored = await storage.put_file(
-        key=key,
-        source=source,
-        size_bytes=source.stat().st_size,
-        content_type="application/pdf",
-        sha256=hashlib.sha256(source.read_bytes()).hexdigest(),
-    )
-    access = await storage.presign_get(
-        key=stored.key,
-        filename="notes.pdf",
-        content_type="application/pdf",
-        disposition="attachment",
-        expires_in_seconds=300,
-        version_id=stored.version_id,
-    )
-    downloaded = tmp_path / "downloaded.pdf"
-    await storage.download_to_path(
-        key=stored.key,
-        destination=downloaded,
-        version_id=stored.version_id,
-    )
-
-    unsigned = await _request_secret_url(
-        _SecretUrl(f"{MINIO_ENDPOINT}/{MINIO_BUCKET}/{key}")
-    )
-    signed = await _request_secret_url(_SecretUrl(access.url))
-
-    assert unsigned.status_code in {401, 403, 404}
-    assert signed.status_code == 200
-    assert signed.content == source.read_bytes()
-    assert downloaded.read_bytes() == source.read_bytes()
-
     client = boto3.client(
         "s3",
         endpoint_url=MINIO_ENDPOINT,
@@ -138,49 +106,119 @@ async def test_minio_private_object_lifecycle_and_presigned_download(tmp_path):
         aws_access_key_id=MINIO_ACCESS_KEY,
         aws_secret_access_key=MINIO_SECRET_KEY,
     )
-    with pytest.raises(ClientError) as denied_listing:
-        await asyncio.to_thread(client.list_objects_v2, Bucket=MINIO_BUCKET)
-    assert denied_listing.value.response["ResponseMetadata"]["HTTPStatusCode"] == 403
 
-    exact_versions = await asyncio.to_thread(
-        client.list_object_versions,
-        Bucket=MINIO_BUCKET,
-        Prefix=key,
-    )
-    assert any(
-        version.get("Key") == key for version in exact_versions.get("Versions", [])
-    )
-    with pytest.raises(ClientError) as denied_unscoped_version_listing:
-        await asyncio.to_thread(client.list_object_versions, Bucket=MINIO_BUCKET)
-    assert (
-        denied_unscoped_version_listing.value.response["ResponseMetadata"][
-            "HTTPStatusCode"
-        ]
-        == 403
-    )
+    try:
+        stored = await storage.put_file(
+            key=key,
+            source=source,
+            size_bytes=source.stat().st_size,
+            content_type="application/pdf",
+            sha256=hashlib.sha256(source.read_bytes()).hexdigest(),
+        )
+        access = await storage.presign_get(
+            key=stored.key,
+            filename="notes.pdf",
+            content_type="application/pdf",
+            disposition="attachment",
+            expires_in_seconds=300,
+            version_id=stored.version_id,
+        )
+        downloaded = tmp_path / "downloaded.pdf"
+        await storage.download_to_path(
+            key=stored.key,
+            destination=downloaded,
+            version_id=stored.version_id,
+        )
 
-    await asyncio.to_thread(
-        client.put_object,
-        Bucket=MINIO_BUCKET,
-        Key=key,
-        Body=b"historical retry version",
-        ContentType="application/pdf",
-        Metadata={"sha256": hashlib.sha256(b"historical retry version").hexdigest()},
-    )
+        unsigned = await _request_secret_url(
+            _SecretUrl(f"{MINIO_ENDPOINT}/{MINIO_BUCKET}/{key}")
+        )
+        signed = await _request_secret_url(_SecretUrl(access.url))
 
-    await storage.delete_object(key=stored.key, version_id=stored.version_id)
-    await storage.delete_object(key=stored.key, version_id=stored.version_id)
+        assert unsigned.status_code in {401, 403, 404}
+        assert signed.status_code == 200
+        assert signed.content == source.read_bytes()
+        assert downloaded.read_bytes() == source.read_bytes()
 
-    remaining = await asyncio.to_thread(
-        client.list_object_versions,
-        Bucket=MINIO_BUCKET,
-        Prefix=key,
-    )
-    assert not any(
-        entry.get("Key") == key
-        for group in ("Versions", "DeleteMarkers")
-        for entry in remaining.get(group, [])
-    )
+        with pytest.raises(ClientError) as denied_listing:
+            await asyncio.to_thread(client.list_objects_v2, Bucket=MINIO_BUCKET)
+        assert (
+            denied_listing.value.response["ResponseMetadata"]["HTTPStatusCode"] == 403
+        )
+
+        exact_versions = await asyncio.to_thread(
+            client.list_object_versions,
+            Bucket=MINIO_BUCKET,
+            Prefix=key,
+        )
+        assert any(
+            version.get("Key") == key for version in exact_versions.get("Versions", [])
+        )
+        with pytest.raises(ClientError) as denied_unscoped_version_listing:
+            await asyncio.to_thread(client.list_object_versions, Bucket=MINIO_BUCKET)
+        assert (
+            denied_unscoped_version_listing.value.response["ResponseMetadata"][
+                "HTTPStatusCode"
+            ]
+            == 403
+        )
+
+        await asyncio.to_thread(
+            client.put_object,
+            Bucket=MINIO_BUCKET,
+            Key=key,
+            Body=b"historical retry version",
+            ContentType="application/pdf",
+            Metadata={
+                "sha256": hashlib.sha256(b"historical retry version").hexdigest()
+            },
+        )
+
+        await storage.delete_object(key=stored.key, version_id=stored.version_id)
+        await storage.delete_object(key=stored.key, version_id=stored.version_id)
+
+        remaining = await asyncio.to_thread(
+            client.list_object_versions,
+            Bucket=MINIO_BUCKET,
+            Prefix=key,
+        )
+        assert not any(
+            entry.get("Key") == key
+            for group in ("Versions", "DeleteMarkers")
+            for entry in remaining.get(group, [])
+        )
+    finally:
+        # Assertions above should prove cleanup, but retain a safety net when
+        # an earlier assertion or network call aborts the lifecycle test.
+        primary_exception = sys.exception()
+        cleanup_failed = False
+        cleanup_error: BaseException | None = None
+        cleanup_error_type: str | None = None
+        try:
+            remaining = await asyncio.to_thread(
+                client.list_object_versions,
+                Bucket=MINIO_BUCKET,
+                Prefix=key,
+            )
+            for group in ("Versions", "DeleteMarkers"):
+                for entry in remaining.get(group, []):
+                    await asyncio.to_thread(
+                        client.delete_object,
+                        Bucket=MINIO_BUCKET,
+                        Key=entry["Key"],
+                        VersionId=entry["VersionId"],
+                    )
+        except Exception as exc:
+            cleanup_failed = True
+            cleanup_error = exc
+            cleanup_error_type = type(exc).__name__
+        if cleanup_failed:
+            if primary_exception is None:
+                pytest.fail("MinIO lifecycle cleanup failed", pytrace=False)
+            if cleanup_error is not None:
+                primary_exception.add_note(
+                    f"MinIO lifecycle cleanup also failed ({cleanup_error_type})"
+                )
 
 
 @pytest.mark.skipif(

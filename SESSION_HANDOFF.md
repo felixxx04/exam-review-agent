@@ -1,6 +1,6 @@
 # Exam Review Agent 会话交接文档
 
-> 更新日期：2026-10-07
+> 更新日期：2026-10-08
 > 项目目录：`C:\Users\asus\Documents\exam-review-agent`  
 > 当前分支：`main`
 > 当前提交：本轮 Task 3 前置收口合并提交（具体哈希以 `git log -1` 为准）
@@ -8,13 +8,13 @@
 >
 > **当前状态覆盖（2026-10-07）：** Task 2.2、Task 2.3、Task 2.4 和 Task 3.1 均已完成当前范围的实现、审查与验证；Task 3.2、Planner/Agent Runtime 和无关重构尚未开始。下文早于本覆盖段的状态均为历史快照，不作为当前执行指令。
 >
-> **本次会话状态覆盖（2026-10-07）：** Task 3.1 账号删除兼容性审查修复完成。后端全量 `527 passed, 10 skipped`，综合覆盖率 `82%`；真实 PostgreSQL/pgvector/RLS/删除并发集成 `8 passed`，真实 MinIO 对象存储集成 `2 passed`。Docker Desktop Engine `29.7.2` 和 Compose 服务均健康；MinIO 测试使用 `docker compose port minio 9000` 获取实际发布端口，避免旧容器端口映射造成连接拒绝。Task 3.2 尚未开始。
+> **本次会话状态覆盖（2026-10-08）：** Task 3.1 review 修复完成。后端全量 `536 passed, 11 skipped`，综合覆盖率 `82%`；真实 PostgreSQL/RLS/删除集成 `9 passed`，真实 pgvector 检索 `1 passed`，真实 MinIO 对象存储集成 `2 passed`。Docker Desktop Engine `29.7.2` 和 Compose 服务健康；MinIO 测试使用运行时发布端口 `19000`。SiliconFlow 两个新鲜进程复测成功：Embedding `306.6 ms / 3.767 pages/s / 42.77 MB`，Reranker `281.8 ms / 7.224 pages/s / 42.21 MB`，Recall@1/MRR 均为 `1.0`；托管 alias 未固定 revision。Ruff、Bandit、compileall、pip check 和 diff check 均通过。本轮未开始 Task 3.2。
 > Task 1.4 最终功能提交：`3b5e37e feat: complete deletion and quota reliability`
 > Task 2.1 最终生产 GREEN checkpoint：`faa1e25 fix: bound object version pagination`（完整安全加固提交链见 2.4；Task 2.1 已获用户验收）
 > Task 2.2 当前状态：实现、lease 修复、离线聚焦回归、真实 PostgreSQL/Redis/MinIO 集成与异步队列关闭兼容修复均已完成。
 > 基线提交：`23c17b5 feat: polish learning workspace UI and review flows`
 >
-> 重要区分：`65505dd` 已包含 Task 2.4 SiliconFlow provider、CLI、测试和 benchmark 文档；Task 3.1 已完成并通过真实 PostgreSQL/pgvector/RLS 验证。本轮账号删除兼容性修复、动态 MinIO 端口文档和验证证据将随本次提交推送。Task 3.2 尚未开始。
+> 重要区分：`65505dd` 已包含 Task 2.4 SiliconFlow provider、CLI、测试和 benchmark 文档；Task 3.1 已完成并通过真实 PostgreSQL/pgvector/RLS 验证。本轮账号删除兼容性修复、动态 MinIO 端口文档、集成 teardown 诊断和最新 benchmark 证据将随本次提交推送。Task 3.2 尚未开始。
 
 ## 1. 给新会话的执行指令
 
@@ -34,7 +34,7 @@
 - Docker/PostgreSQL/MinIO 当前环境缺口及不应伪造的验证结论
 - Task 2.2 的提交、离线验证缺口、已知风险、明确非目标与审批条件
 
-当前停止点是 **Task 3 系列开始前验收**。Task 2.2/2.3/2.4 实现、聚焦回归和可复现 benchmark 证据已完成；12 个真实服务/模型测试按缺少环境变量明确跳过。未经用户确认，不得开始生产检索路径切换。
+当前停止点是 **Task 3.1 review 收口与用户验收**。Task 2.2/2.3/2.4 与 Task 3.1 实现、聚焦回归、SiliconFlow benchmark 和真实 PostgreSQL/pgvector/MinIO 证据已完成；11 个需要真实模型或其他外部配置的测试仍按条件明确跳过。Task 3.2 未开始，不能据本轮结果推断其已完成。
 
 不要再次推送或合并无关改动，除非用户明确要求。不要重置、清理或覆盖当前工作树中的任何已有改动。
 

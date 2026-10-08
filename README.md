@@ -2,7 +2,7 @@
 
 面向大学生期末复习场景的 AI 学习助手。用户可以上传课件或讲义，基于资料进行问答、生成练习题、查看薄弱点，并在 `Ask / Quiz / Review` 三种模式之间切换完成复习闭环。
 
-当前仓库已完成 V2 Phase 1 的 Task 1.1～1.4，以及 Phase 2 的 Task 2.1（私有 S3 兼容对象存储）实现、TDD、真实容器验证和安全复审，当前等待用户最终验收。业务默认数据库已切换为 PostgreSQL，现已具备邀请码认证、安全会话、私人多课程隔离、用户数据删除、上传配额和私有 MinIO/S3 原始资料存储。Task 2.2 的 ARQ 任务状态机尚未开始。
+当前仓库已完成 V2 Phase 1 的 Task 1.1～1.4、Phase 2 的 Task 2.1～2.4，以及 Task 3.1 持久化混合检索。业务默认数据库为 PostgreSQL；资料块向量与全文检索均由 PostgreSQL/pgvector 提供，RRF 和重排在应用层完成。Task 2.4 的 SiliconFlow provider 仅用于 benchmark，不改变生产 provider；Task 3.2 尚未开始。
 
 ## 核心功能
 
@@ -30,8 +30,8 @@ backend (FastAPI / Python 3.11-3.12)
   -> 账号注销任务 / S3 对象与旧本地文件清理 / 用户配额
   -> RAG Agent / Quiz Agent / Tracker Agent
   -> PostgreSQL 17（私人课程、业务数据、错题和资料块元数据）
-  -> pgvector 0.8.1 Schema（Phase 3 切换检索实现）
-  -> Chroma（Phase 3 前的临时 Dense Retrieval 实现）
+  -> PostgreSQL + pgvector 0.8.1（持久化 Dense 与全文候选）
+  -> 应用层 RRF + Cross-Encoder 重排
 
 local infrastructure (Docker Compose)
   -> PostgreSQL 17 + pgvector 0.8.1
@@ -129,11 +129,11 @@ python -m pytest tests -q --cov=app
 python -m bandit -r app -c pyproject.toml -ll
 ```
 
-PostgreSQL 容器运行时可额外执行真实 RLS、删除和配额集成测试：
+PostgreSQL 容器运行时可额外执行真实 pgvector 检索、RLS、删除和配额集成测试：
 
 ```powershell
 $env:POSTGRES_INTEGRATION_URL="postgresql+asyncpg://exam_review:exam-review-dev@localhost:5432/exam_review"
-python -m pytest tests/integration/test_postgres_rls.py tests/integration/test_postgres_deletion_quotas.py -q
+python -m pytest tests/integration/test_postgres_retrieval.py tests/integration/test_postgres_rls.py tests/integration/test_postgres_deletion_quotas.py -q
 ```
 
 私有 MinIO bootstrap 成功后，可用与后端相同的低权限 S3 应用身份运行真实对象存储测试：
@@ -150,7 +150,7 @@ $env:POSTGRES_INTEGRATION_URL="postgresql+asyncpg://exam_review:<app-password>@l
 python -m pytest tests/integration/test_minio_object_storage.py -q
 ```
 
-Task 2.1 的最新本地验收结果（2026-08-16）：后端聚焦回归 `217 passed`，真实 PostgreSQL/MinIO 集成 `10 passed`，后端全量 `403 passed, 12 skipped`（综合覆盖率 `82%`），前端 `103 passed`（行覆盖率 `81.08%`），Playwright Smoke `6 passed`；Alembic `20260812_0007 (head)` 无漂移，生产依赖审计为 `0 vulnerabilities`。低权限 MinIO 身份只能按资料对象前缀枚举版本，不能普通列举 Bucket 或无范围枚举版本；删除会清除精确 Key 的全部版本和 delete marker。这些结果仍需用户确认后才进入 Task 2.2。
+最近的 Task 3.1 修复回归：后端全量 `536 passed, 11 skipped`，综合覆盖率 `82%`；真实 PostgreSQL/RLS/删除集成 `9 passed`，真实 pgvector 检索 `1 passed`，真实 MinIO 集成 `2 passed`。真实 pgvector 测试验证了 1024 维向量持久化、Dense/FTS/RRF、类型化 metadata 过滤、课程/资料隔离、服务重启检索和 chunk 清理。当前 Docker/Compose 端口以运行时检查为准；Task 3.2 尚未开始。
 
 前端完整基线：
 

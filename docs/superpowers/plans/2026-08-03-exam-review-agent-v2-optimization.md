@@ -1,6 +1,6 @@
 # 期末复习 Agent V2 优化实施计划
 
-> 状态：阶段 0 与阶段 1（Task 1.1～1.4）已验收；Task 2.1 已完成实现、TDD、复审和真实容器验证，等待用户验收。
+> 状态（2026-10-08）：Task 1.1～1.4、Task 2.1～2.4 与 Task 3.1 已完成当前实现和验证；Task 3.1 本轮 review 修复正在最终收口。Task 3.2、Planner/Agent Runtime 尚未开始。
 >
 > 基线：`main` 分支，提交 `23c17b5`。
 >
@@ -525,7 +525,7 @@ run.cancelled
 - [x] Cross-Encoder 同样做真实 provider 基准；不能满足免费实例时必须有可配置替代。
 - [x] 将当前限制与不切生产检索路径的结论写入 ADR；不凭模型名称或 fixture 数值决定生产方案。
 
-**Task 2.4 实现与实测记录（2026-09-30 复测）**：`backend/app/benchmarks/free_resource_benchmark.py` 提供纯注入 runner、固定数据集、JSON 报告及 Recall@k/MRR、首次加载、吞吐、模型 artifact 大小和操作系统进程峰值内存指标。离线 fixture 契约与 SiliconFlow provider/CLI 聚焦测试通过，目标覆盖率为 88%。本地真实 provider 与远程 SiliconFlow Embedding/Reranker 均使用同一两文档 fixture 完成；最新远程 Embedding `BAAI/bge-m3` 为 278.9 ms、2.193 页/秒、42.63 MB，Reranker `BAAI/bge-reranker-v2-m3` 为 271.1 ms、6.378 页/秒、41.96 MB，Recall@1/MRR 均为 1.0。托管 alias 未固定 revision，fixture 质量不代表生产质量，也不改变生产 provider 或检索路径。详见 `docs/benchmarks/free-resource-benchmark.md` 与 ADR-0001。
+**Task 2.4 实现与实测记录（2026-10-08 复测）**：`backend/app/benchmarks/free_resource_benchmark.py` 提供纯注入 runner、固定数据集、JSON 报告及 Recall@k/MRR、首次加载、吞吐、模型 artifact 大小和操作系统进程峰值内存指标。离线 fixture 契约与 SiliconFlow provider/CLI 聚焦测试通过，目标覆盖率为 88%。本地真实 provider 与远程 SiliconFlow Embedding/Reranker 均使用同一两文档 fixture 完成；最新远程 Embedding `BAAI/bge-m3` 为 306.6 ms、3.767 页/秒、42.77 MB，Reranker `BAAI/bge-reranker-v2-m3` 为 281.8 ms、7.224 页/秒、42.21 MB，Recall@1/MRR 均为 1.0。托管 alias 未固定 revision，fixture 质量不代表生产质量，也不改变生产 provider 或检索路径。详见 `docs/benchmarks/free-resource-benchmark.md` 与 ADR-0001。
 
 **阶段 2 验收门**
 
@@ -561,8 +561,8 @@ run.cancelled
 - 新增持久化契约测试覆盖重启、删除、跨用户/课程/资料范围、稳定 ID 幂等、维度/非有限向量和低分质量门。
 - Review 修复：恢复 `_rrf_k` 与旧构造函数兼容，统一中文 FTS tokenizer，资料范围在 SQL `LIMIT` 前下推，重建索引同步刷新 lexical/hash/定位字段；缺失 intent 在写入前原子失败；Cross-Encoder 使用进程级懒加载；RAG/Quiz 显式传递 `material_scope`，Chat/Quiz 使用整数 `current_user.id`，账号删除不再吞内部 `TypeError`。
 - Legacy Chroma 仅作为兼容路径：新写入使用 user/course scope，检索会回退旧 user-level collection，课程删除按 metadata 定向清理旧数据；生产事实源仍为 PostgreSQL。
-- 修复后验证：后端全量 `523 passed, 10 skipped`，覆盖率 `82%`；本轮改动文件 Ruff lint/format、Bandit、`compileall` 和 `git diff --check` 通过。
-- Docker Engine `29.7.2` 当前已连接；真实 PostgreSQL/pgvector/RLS 集成 `8 passed`，真实 MinIO 集成 `2 passed`。当前运行 MinIO 容器的主机端口由 `docker compose port minio 9000` 确认（本次为 `19000`）；本地 SQLite/适配器和 SQL 结构契约不替代这些真实集成证据。
+- 修复后验证（2026-10-08）：后端全量 `536 passed, 11 skipped`，综合覆盖率 `82%`；Ruff、Bandit、`compileall` 和 `git diff --check` 通过。本轮修复覆盖兼容调用的签名预绑定、reranker 错误路径、有限分数、metadata 过滤顺序与类型语义，以及 durable cleanup fail-closed。
+- Docker Engine `29.7.2` 已恢复连接；真实 PostgreSQL/RLS/删除集成 `9 passed`，真实 pgvector 检索 `1 passed`，真实 MinIO 集成 `2 passed`。MinIO 主机端口由 `docker compose port minio 9000` 确认（本次为 `19000`）；真实 pgvector 测试直接使用 `RetrievalService(db_session=...)`、`MaterialChunk.embedding` 和确定性 1024 维 provider，不以 SQLite/适配器替代。
 
 ### Task 3.2：结构化证据回答
 

@@ -371,3 +371,131 @@ async def test_database_hybrid_candidates_use_rrf_and_push_scope_before_limit() 
     for statement in session.statements:
         sql = str(statement)
         assert sql.index("original_filename") < sql.index("LIMIT")
+
+
+@pytest.mark.asyncio
+async def test_reranker_internal_type_error_is_not_retried() -> None:
+    store = _VectorStore()
+    store.search_results["user-1"] = [
+        {
+            "id": "chunk-1",
+            "document": "retrievable text",
+            "metadata": {"source": "notes.pdf"},
+            "embedding": [1.0, 0.0],
+        }
+    ]
+
+    class _BrokenReranker:
+        calls = 0
+
+        def predict(self, pairs: list[tuple[str, str]], **_: Any) -> list[float]:
+            self.calls += 1
+            raise TypeError("course_id is invalid inside the reranker")
+
+    reranker = _BrokenReranker()
+    service = RetrievalService(
+        vector_store=store,
+        embedding_service=_Embedding(),
+        reranker=reranker,
+    )
+
+    with pytest.raises(TypeError, match="course_id is invalid"):
+        await service.search("user-1", "retrievable")
+    assert reranker.calls == 1
+
+
+@pytest.mark.asyncio
+async def test_reranker_score_count_mismatch_fails_closed() -> None:
+    store = _VectorStore()
+    store.search_results["user-1"] = [
+        {
+            "id": "chunk-1",
+            "document": "first",
+            "metadata": {"source": "notes.pdf"},
+            "embedding": [1.0, 0.0],
+        },
+        {
+            "id": "chunk-2",
+            "document": "second",
+            "metadata": {"source": "notes.pdf"},
+            "embedding": [1.0, 0.0],
+        },
+    ]
+
+    class _ShortReranker:
+        def predict(self, pairs: list[tuple[str, str]], **_: Any) -> list[float]:
+            return [0.9]
+
+    service = RetrievalService(
+        vector_store=store,
+        embedding_service=_Embedding(),
+        reranker=_ShortReranker(),
+    )
+
+    with pytest.raises(ValueError, match="one score per candidate"):
+        await service.search("user-1", "retrievable", top_k=2)
+
+
+@pytest.mark.asyncio
+async def test_reranker_non_finite_score_fails_closed() -> None:
+    store = _VectorStore()
+    store.search_results["user-1"] = [
+        {
+            "id": "chunk-1",
+            "document": "retrievable text",
+            "metadata": {"source": "notes.pdf"},
+            "embedding": [1.0, 0.0],
+        }
+    ]
+
+    class _NonFiniteReranker:
+        def predict(self, pairs: list[tuple[str, str]], **_: Any) -> list[float]:
+            return [float("nan") for _ in pairs]
+
+    service = RetrievalService(
+        vector_store=store,
+        embedding_service=_Embedding(),
+        reranker=_NonFiniteReranker(),
+    )
+
+    with pytest.raises(ValueError, match="scores must be finite"):
+        await service.search("user-1", "retrievable")
+
+
+@pytest.mark.asyncio
+async def test_database_metadata_filter_is_pushed_before_limit() -> None:
+    allowed = SimpleNamespace(
+        chunk_id="allowed",
+        chunk_metadata={"topic": "algebra"},
+    )
+    session = _HybridSession(responses=[[(allowed, 0.1)], [(allowed, 0.9)]])
+    service = RetrievalService(db_session=session, rrf_k=60)
+
+    await service._database_hybrid_candidates(
+        user_id=1,
+        course_id=22,
+        query="数据库",
+        query_embedding=[0.0] * 1024,
+        top_k=2,
+        material_scope=None,
+        metadata_filter={"topic": "algebra"},
+    )
+
+    for statement in session.statements:
+        sql = str(statement)
+        where_start = sql.index("WHERE")
+        limit_start = sql.index("LIMIT")
+        assert "metadata" in sql[where_start:limit_start]
+
+
+@pytest.mark.asyncio
+async def test_database_cleanup_fails_closed_when_model_dependency_is_missing(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    session = _DatabaseSession([])
+    service = RetrievalService(db_session=session)
+    monkeypatch.setattr(retrieval_module, "MaterialChunk", None)
+    monkeypatch.setattr(retrieval_module, "select", None)
+
+    with pytest.raises(RuntimeError, match="MaterialChunk model is unavailable"):
+        await service.delete_collection(1, course_id=22)

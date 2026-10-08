@@ -38,6 +38,7 @@ from app.services.material_storage_cleanup import (
     delete_material_chunks,
     is_processing_lease_active,
 )
+from app.services.compatibility import compatible_call_kwargs
 from app.services.object_storage import (
     ObjectStorage,
     ObjectStorageError,
@@ -556,16 +557,15 @@ async def _process_material(
         # PostgreSQL is the durable retrieval source of truth.  Reuse the
         # caller's session so tenant context and the material intent row stay
         # in the same audited database boundary as processing.
-        legacy_retrieval = False
-        try:
-            retrieval = RetrievalService(db_session=db)
-        except TypeError as exc:
-            # Keep older test/worker doubles that still expose a no-argument
-            # constructor usable while production always takes the DB path.
-            if "db_session" not in str(exc):
-                raise
-            retrieval = RetrievalService()
-            legacy_retrieval = True
+        retrieval_constructor_kwargs = compatible_call_kwargs(
+            RetrievalService,
+            modern={"db_session": db},
+            legacy={},
+        )
+        # Keep older test/worker doubles that still expose a no-argument
+        # constructor usable while production always takes the DB path.
+        legacy_retrieval = not retrieval_constructor_kwargs
+        retrieval = RetrievalService(**retrieval_constructor_kwargs)
         normalized_chunks = ChunkingService().normalize(result.chunks)
         await report(55, "chunked")
         chunk_payloads = []
@@ -611,28 +611,26 @@ async def _process_material(
                 await db.rollback()
                 return
             await ensure_not_cancelled()
-            try:
-                await retrieval.index_chunks(
-                    user_id=str(material.user_id)
-                    if legacy_retrieval
-                    else material.user_id,
-                    chunks=chunk_payloads,
-                    course_id=course_id,
-                    chunk_ids=indexed_chunk_ids,
-                    material_id=material_id,
-                )
-            except TypeError as exc:
-                # Legacy doubles predate the durable material_id contract.
-                if "material_id" not in str(exc):
-                    raise
-                await retrieval.index_chunks(
-                    user_id=str(material.user_id)
-                    if legacy_retrieval
-                    else material.user_id,
-                    chunks=chunk_payloads,
-                    course_id=course_id,
-                    chunk_ids=indexed_chunk_ids,
-                )
+            index_kwargs = {
+                "user_id": str(material.user_id)
+                if legacy_retrieval
+                else material.user_id,
+                "chunks": chunk_payloads,
+                "course_id": course_id,
+                "chunk_ids": indexed_chunk_ids,
+                "material_id": material_id,
+            }
+            legacy_index_kwargs = {
+                key: value
+                for key, value in index_kwargs.items()
+                if key != "material_id"
+            }
+            selected_index_kwargs = compatible_call_kwargs(
+                retrieval.index_chunks,
+                modern=index_kwargs,
+                legacy=legacy_index_kwargs,
+            )
+            await retrieval.index_chunks(**selected_index_kwargs)
 
         # Persist the last visible progress while the material is still in its
         # processing state. The following commit is the single durable READY
